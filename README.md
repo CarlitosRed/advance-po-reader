@@ -2,11 +2,23 @@
 
 Updated October 2, 2026. The active workstream is **local Gate A only**: FastAPI health/configuration, local PostgreSQL/Alembic, and the first versioned contract boundary. It requires no API key and makes no model/provider calls. The long-term product direction remains OpenAI-first after local gates, followed by a separate Apple milestone; Qwen/self-hosting and training remain deferred. Read [PROJECT_GOAL.md](PROJECT_GOAL.md), the [local logic rules](docs/local-logic-rules-2026-10-02.md), and the [research adoption note](docs/research/document-ai-research-adoption-2026-10-02.md). All four supplied research documents and searchable copies are preserved under `docs/research/`.
 
-The repository also contains a previously built self-hosted VLM/candidate prototype and measurements. Those results remain historical and do not verify the proposed OpenAI-first or Apple workflows. The local model stack is not a Gate A dependency. No new FastAPI service, canonical ProductDocument v1 implementation, authoritative commerce catalog, or production cart connection has been verified. Keep supplied customer PDFs local; any external provider transfer requires applicable customer privacy authorization and separate user direction. Website integration still needs the real catalog and cart contract.
+The local Gate A foundation is implemented in `gate_a/` and verified with synthetic fixtures, live HTTP checks, and native PostgreSQL migrations. It starts without provider credentials or a running database. Its ProductDocument v1 envelope and reusable observation/state validators do not implement the full extraction payload. See [Gate A setup and verification](docs/gate-a.md) for commands, health routes, contract boundaries, and current verification limits.
+
+The repository also contains a previously built self-hosted VLM/candidate prototype and measurements. Those results remain historical and do not verify the proposed OpenAI-first or Apple workflows. The local model stack is not a Gate A dependency. Keep supplied customer PDFs local; any external provider transfer requires applicable customer privacy authorization and separate user direction. Website integration still needs the real catalog and cart contract.
 
 ## Current implementation priority
 
-Implement only local Gate A in the active workstream. Future gates may add validated purchase-order uploads, extraction, tenant-scoped candidates, human review/audit, and independent evaluation. Every initial match is a suggestion requiring human approval; cart/order actions are out of scope. No OpenAI calls, AWS, Apple, Qwen inference, or training in Gate A.
+The active workstream stops at local Gate A. Future gates may add validated purchase-order uploads, extraction, tenant-scoped candidates, human review/audit, and independent evaluation. Every initial match is a suggestion requiring human approval; cart/order actions are out of scope. No OpenAI calls, AWS, Apple, Qwen inference, or training in Gate A.
+
+## Run local Gate A
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup-gate-a.ps1 -PythonPath 'PATH_TO_PYTHON_3_12.exe'
+& .\.venv-gate-a\Scripts\python.exe -m gate_a
+& .\.venv-gate-a\Scripts\python.exe -m pytest -c pytest.gate-a.ini
+```
+
+Run the test command in a second terminal while the API is running. Defaults use `127.0.0.1:8000`; `.env.gate-a` can configure another loopback port. PostgreSQL is optional for startup/liveness and required for readiness. Apply migrations explicitly with `python -m alembic upgrade head` in the Gate A environment. [The Gate A guide](docs/gate-a.md) covers Docker Compose, the separate verified native PostgreSQL setup, and synthetic-only integration tests. The commands below belong to the preserved legacy prototype.
 
 ## Existing prototype and commands
 
@@ -111,7 +123,7 @@ Dependencies are pinned from the installed environment. pdfplumber handles posit
 
 The existing native sample measurement recovered 23/23 source product rows and quantities, matched 19 rows, routed 4 rows to review, and excluded one shipping charge. Those PDFs also seeded the provisional catalog. A larger private ZIP inventory and a two-PDF/14-row reviewed subset support only the historic local-model evaluation; see `docs/sample-findings.md` and `docs/framework-first-results.md` for scope and limitations. The results do not measure the planned OpenAI or Apple providers, and planning targets in the new research are not measured results.
 
-The next project milestone is local Gate A, followed by the shared evidence-preserving contract and catalog/extraction/review/evaluation gates in `PROJECT_GOAL.md`. Production use still depends on an authorized authoritative catalog, a defined cart/import contract, independently reviewed evaluation data, and privacy approval for any external processing. The later phone-first product includes a web workflow; the existing CLI remains a comparison prototype.
+Local Gate A has been implemented and verified within its bounded scope. Later shared-payload, catalog, extraction, review and evaluation gates remain governed by `PROJECT_GOAL.md`. Production use still depends on an authorized authoritative catalog, a defined cart/import contract, independently reviewed evaluation data, and privacy approval for any external processing. The later phone-first product includes a web workflow; the existing CLI remains a comparison prototype.
 
 ## Saved context and agent work
 

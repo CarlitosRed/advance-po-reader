@@ -2,7 +2,7 @@
 
 Read `PROJECT_GOAL.md` and `AGENTS.md` before work. The three new research sources agree on OpenAI-first Milestone 1, Apple extraction Milestone 2, and Qwen/self-hosted inference only after measured need. The prior October 1 Qwen-first framework is retained as historical comparison evidence. Full sources and searchable copies are under `docs/research/`; `document-ai-research-adoption-2026-10-02.md` explains their adoption and conflicts.
 
-The latest user request adopts four logic-tightening rules and selects **local Gate A only** for the next workstream. This chat's deliverable is documentation and a new workstream handoff. The next chat is authorized to implement the bounded local foundation below; it is not authorization to begin later gates.
+The latest user request adopts four logic-tightening rules and selects **local Gate A only**. The bounded foundation is now implemented in the isolated Gate A worktree; its [setup/verification guide](gate-a.md) reports the actual behavior and runtime evidence. This workstream stops at Gate A and does not authorize later gates.
 
 ## Direction to continue from
 
@@ -20,9 +20,9 @@ The project has a local native PDF/CLI reader and a self-hosted Qwen prototype w
 
 The provided PDFs and prior reviewed source labels remain private. They may be used in local evaluation. Sending them to a cloud model requires the applicable customer privacy authorization and a user-directed API task. Unreviewed model observations remain predictions. Do not train from them. Existing model digests, source references and prior measurements remain in `config/` and the historical infrastructure/evaluation docs.
 
-## Next workstream: Gate A only
+## Implemented workstream: Gate A only
 
-Implement the local FastAPI health/configuration service, PostgreSQL/Docker Compose/Alembic baseline, and first versioned contract boundary. It must start without an OpenAI key and must make no external provider call. Use synthetic fixtures only. Add focused checks for config, liveness/readiness, database/migration behavior, and contract-state validation.
+The local `gate_a` package implements FastAPI health/configuration and contract-schema GET routes, lazy local PostgreSQL connections, an explicit tenant-only Alembic revision, and ProductDocument v1 envelope/observation/state validators. It starts without a provider key or database. The extraction payload is not finalized. Synthetic-only checks cover config, liveness/readiness, database/migration behavior and contract validation; native PostgreSQL and live HTTP were exercised. Docker Compose is defined but was not executed because Docker was absent. The new Gate A GitHub workflow is prepared, with remote execution still unverified.
 
 Do not add upload endpoints, process supplied PDFs, run Qwen, call OpenAI, create a catalog/matcher, add a review UI/cart, deploy to AWS, implement Apple, or train. Stop when Gate A is verified. Report what ran locally and distinguish infrastructure checks from later unbuilt workflow.
 
@@ -36,7 +36,9 @@ Use synthetic catalogs until the actual tenant catalog and access policy are pro
 
 GitHub: [CarlitosRed/advance-po-reader](https://github.com/CarlitosRed/advance-po-reader), private. The clean `main` branch was based on commit `718f810` and the development branch advances it with the October 2 research review. The original OneDrive checkout and legacy private history are preserved locally; never push legacy refs, use `git push --all`, or use `git push --mirror`. A local pre-push hook blocks the legacy private history and tracked runtime folders.
 
-The documentation update used `C:\Users\carlo\.codex\worktrees\po-reader-development\Advance PO Reader` on `codex/po-reader-development`. The next Gate A chat is being moved to a separate managed worktree based on the updated published commit; use that new task's attached workspace path as authoritative. Do not work in the legacy OneDrive checkout or copy private fixtures into the Gate A worktree. Gate A uses synthetic fixtures and does not need the prior local model helpers.
+The documentation update used `C:\Users\carlo\.codex\worktrees\po-reader-development\Advance PO Reader` on `codex/po-reader-development`. Gate A starts from its published commit `a41bf23c23bce63d38db8d04ccef1fb1137c279d` in `C:\Users\carlo\.codex\worktrees\d9fa\Advance PO Reader` on `codex/local-gate-a`. The task's attached workspace path is authoritative. Its `.venv-gate-a`, native verification cluster, `.env.gate-a` and logs are local and ignored. Do not work in the legacy OneDrive checkout or copy private fixtures into the Gate A worktree. Gate A uses synthetic fixtures and does not need the prior local model helpers.
+
+The user offered the dataset from **Update Goal and Build VLM Test** if useful. Its guide describes candidate transcriptions pending human review; it remains context for a later extraction/adapter gate. Gate A did not copy or consume it and does not promote it to ground truth. A separate active dataset chat owns the legacy dataset work.
 
 Historical test results are recorded in Git history. Recheck the current worktree before claiming a test result. Keep source documents, PDFs, labels, raw text, outputs, review records and model weights out of Git.
 

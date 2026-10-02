@@ -60,3 +60,7 @@ After a high-level scenario review, the user selected local Gate A only for the 
 5. **Apple deferral:** make no Milestone 2 decision now about whether local-only means on-device images, on-device extracted text, or a fully offline flow. Revisit it when Milestone 2 is explicitly started.
 
 The next workstream may implement only the local FastAPI health/configuration foundation, PostgreSQL/Alembic baseline, and first versioned contract boundary. It must start without credentials and use synthetic fixtures. It does not upload or process private PDFs, call a provider, build catalog matching/review/cart behavior, deploy to AWS, implement Apple, or train. See `docs/local-logic-rules-2026-10-02.md` for exact state meanings and scope.
+
+## Gate A implementation follow-up — October 2, 2026
+
+The separate authorized workstream has implemented the bounded local foundation described above. [The Gate A guide](../gate-a.md) distinguishes the health/configuration service, tenant-only PostgreSQL migration and versioned envelope/state validators from the still-unbuilt full extraction payload and all later workflows. Verification uses synthetic fixtures, native PostgreSQL and live HTTP; Docker Compose and remote CI are separate, unexecuted states. The original research review and its documentation-only execution statements above remain historical. No provider, customer-document processing, Apple privacy decision, AWS resource or training was added by Gate A.
