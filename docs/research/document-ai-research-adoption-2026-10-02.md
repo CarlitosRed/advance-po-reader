@@ -48,3 +48,15 @@ After a measured Milestone 1 exit, Milestone 2 can add an Apple capture/extracti
 | `document_ai_work_project_handoff_2026.docx` | `document_ai_work_project_handoff_2026.md` | `c5ae02f928de643b39fe7f72ff99263ec27897fb5e2a4f432b7485174c07f300` |
 
 The prior research DOCX and its original source manifest remain preserved. The adoption decision in this file and `PROJECT_GOAL.md` determines which architecture is current.
+
+## Logic tightening and current local scope
+
+After a high-level scenario review, the user selected local Gate A only for the next implementation workstream. The first four logic refinements below now govern the project; the Apple local-only question remains explicitly deferred to Milestone 2.
+
+1. **Field semantics:** each field has a required observation state (`observed`, `uncertain`, `unreadable`, `not_present`, or `not_applicable`). Raw literal strings and source labels/regions remain immutable. Parsed values, catalog suggestions, and human decisions are separate. A null without a state is invalid. Product, charge/tax/total/note, and unknown row kinds remain distinct.
+2. **Run and audit model:** immutable tenant-scoped source documents are separate from versioned processing runs, provider attempts, observations, suggestions, and review events. Reprocessing creates a new run. Processing state is separate from review state. Tenant-scoped idempotency prevents duplicate request work; uncertain provider outcomes are recorded rather than blindly retried.
+3. **Input scope:** v1 accepts purchase orders only. Unknown/unsupported document types do not enter catalog matching. Ambiguous continuation, page failure, totals, and non-product rows cannot silently become complete product lines.
+4. **Resolution policy:** the initial local workflow is review-only. Every exact/fuzzy/model candidate remains a suggestion until an explicit human approval event. The sample-derived catalog is only a fixture. No cart/order action is allowed before representative independent evaluation, business approval, and the actual catalog/cart contract.
+5. **Apple deferral:** make no Milestone 2 decision now about whether local-only means on-device images, on-device extracted text, or a fully offline flow. Revisit it when Milestone 2 is explicitly started.
+
+The next workstream may implement only the local FastAPI health/configuration foundation, PostgreSQL/Alembic baseline, and first versioned contract boundary. It must start without credentials and use synthetic fixtures. It does not upload or process private PDFs, call a provider, build catalog matching/review/cart behavior, deploy to AWS, implement Apple, or train. See `docs/local-logic-rules-2026-10-02.md` for exact state meanings and scope.
