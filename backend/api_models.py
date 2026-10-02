@@ -52,12 +52,13 @@ class RunRequest(RequestModel):
 
 
 class ReviewRequest(RequestModel):
-    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document"]
+    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "propose_candidate"]
     row_id: StrictStr | None = Field(default=None, max_length=120)
     reviewer: StrictStr = Field(min_length=1, max_length=120)
     reason: StrictStr = Field(min_length=1, max_length=500)
     evidence_reference: list[dict] = Field(default_factory=list, max_length=50)
     selected_candidate_id: UUID | None = None
+    candidate_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=5)
     field_name: Literal["description", "quantity", "unit", "unit_price", "line_total",
                         "identifier.raw_value", "identifier.source_label", "identifier.source_role"] | None = None
     identifier_index: int | None = Field(default=None, ge=0, le=100)
@@ -80,6 +81,11 @@ class ReviewRequest(RequestModel):
                 raise ValueError("approve requires an in-set candidate")
         elif self.selected_candidate_id is not None:
             raise ValueError("only approve can select a candidate")
+        if self.action == "propose_candidate":
+            if not self.candidate_ids or len(set(self.candidate_ids)) != len(self.candidate_ids):
+                raise ValueError("proposal requires one to five distinct scoped candidates")
+        elif self.candidate_ids is not None:
+            raise ValueError("candidate ids only apply to a proposal")
         if self.action == "correct":
             if self.field_name is None:
                 raise ValueError("correct requires a field name")

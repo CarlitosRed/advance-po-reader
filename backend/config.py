@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PO_BACKEND_", env_file=ROOT / ".env.backend",
                                      extra="forbid", frozen=True, hide_input_in_errors=True)
     host: Literal["127.0.0.1", "localhost", "::1"] = "127.0.0.1"
-    port: int = Field(default=8012, ge=1024, le=65535)
-    database_url: SecretStr = SecretStr("postgresql+psycopg://gate_a:gate_a_local@127.0.0.1:55433/gate_a_backend_dev")
+    port: int = Field(default=8014, ge=1024, le=65535)
+    database_url: SecretStr = SecretStr("postgresql+psycopg://gate_a:gate_a_local@127.0.0.1:55433/gate_a_backend_website")
     local_api_token: SecretStr = SecretStr("local-backend-dev-only")
     storage_directory: Path = ROOT / "data" / "backend" / "uploads"
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)

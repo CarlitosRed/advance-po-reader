@@ -33,8 +33,8 @@ def engine():
         pytest.skip("Set PO_BACKEND_TEST_DATABASE_URL to the isolated catalog test database")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or url.database != "gate_a_test_backend_catalog" or url.query):
-        pytest.fail("Catalog tests require loopback gate_a_test_backend_catalog; refusing another database")
+            or url.database != "gate_a_test_backend_website_catalog" or url.query):
+        pytest.fail("Catalog tests require loopback gate_a_test_backend_website_catalog; refusing another database")
     engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config("backend.alembic.ini")
     with engine.begin() as connection:
@@ -88,7 +88,7 @@ def history(session):
 
 def test_backend_head_and_gate_a_seed(engine):
     with engine.connect() as connection:
-        assert MigrationContext.configure(connection).get_current_heads() == ("0003_provider_receipt",)
+        assert MigrationContext.configure(connection).get_current_heads() == ("0004_website_catalog",)
         assert connection.scalar(text("SELECT count(*) FROM tenants WHERE id='00000000-0000-0000-0000-000000000001'")) == 1
 
 

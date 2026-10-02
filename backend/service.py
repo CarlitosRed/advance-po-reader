@@ -284,12 +284,30 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                                                                       Suggestion.row_id == row.row_id))
                 candidate = next((value for value in suggestion.candidates if value["candidate_id"] == str(request.selected_candidate_id)), None) if suggestion else None
                 if candidate is None:
+                    candidate = next((value for event in reversed(events)
+                        if event.row_id == row.row_id and event.action == "propose_candidate"
+                        for value in event.new_value["candidates"]
+                        if value["candidate_id"] == str(request.selected_candidate_id)), None)
+                if candidate is None:
                     raise BackendError("selected_candidate_outside_snapshot", 422)
                 new_value = {"resolution": "approved", "candidate": candidate}
             else:
                 new_value = {"resolution": "no_match"}
             previous = next((event for event in reversed(events) if event.row_id == row.row_id and event.action in {"approve", "no_match"}), None)
             old_value = previous.new_value if previous else {"resolution": "unresolved"}
+        elif request.action == "propose_candidate":
+            from backend.models import CatalogProduct
+            if row.row_kind != "product":
+                raise BackendError("non_product_row_cannot_match", 422)
+            products = session.scalars(select(CatalogProduct).where(
+                CatalogProduct.tenant_id == tenant, CatalogProduct.vendor_id == run.vendor_id,
+                CatalogProduct.id.in_(request.candidate_ids), CatalogProduct.active.is_(True))).all()
+            if len(products) != len(request.candidate_ids):
+                raise BackendError("proposed_candidate_outside_catalog", 422)
+            by_id = {product.id: product for product in products}
+            new_value = {"candidates": [{"candidate_id": str(by_id[id_].id),
+                "sku": by_id[id_].sku, "description": by_id[id_].description,
+                "method": "human_catalog_search"} for id_ in request.candidate_ids]}
         elif request.action == "acknowledge":
             if row.row_kind == "product":
                 raise BackendError("product_requires_approve_or_no_match", 422)

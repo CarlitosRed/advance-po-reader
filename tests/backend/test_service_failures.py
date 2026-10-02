@@ -30,11 +30,11 @@ from gate_a.models import Tenant
 def engine():
     value = os.environ.get("PO_BACKEND_CONTRACT_TEST_DATABASE_URL")
     if not value:
-        pytest.skip("Set PO_BACKEND_CONTRACT_TEST_DATABASE_URL to isolated gate_a_test_backend_contract")
+        pytest.skip("Set PO_BACKEND_CONTRACT_TEST_DATABASE_URL to isolated gate_a_test_backend_website_contract")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or url.database != "gate_a_test_backend_contract" or url.query):
-        pytest.fail("Failure tests require loopback gate_a_test_backend_contract; refusing another DB")
+            or url.database != "gate_a_test_backend_website_contract" or url.query):
+        pytest.fail("Failure tests require loopback gate_a_test_backend_website_contract; refusing another DB")
     result = create_db_engine(url, connect_timeout_seconds=10)
     config = Config("backend.alembic.ini")
     with result.begin() as connection:

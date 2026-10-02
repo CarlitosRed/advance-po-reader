@@ -30,7 +30,7 @@ from gate_a.contracts import ProductDocumentV1
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
 
-EXPECTED_REVISION = "0003_provider_receipt"
+EXPECTED_REVISION = "0004_website_catalog"
 
 
 class CatalogImport(RequestModel):
@@ -106,6 +106,12 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                   description="Local tenant scope via X-Tenant-ID; X-Local-Token protects all private routes. "
                               "All matches require human approval. Live extraction is disabled by default.")
     app.add_middleware(LocalRequestBoundary, settings=configuration)
+    from backend.website import WebsiteSessionBoundary, register_website
+    import secrets
+    app.state.website_cookie = secrets.token_urlsafe(32)
+    app.state.website_csrf = secrets.token_urlsafe(32)
+    app.add_middleware(WebsiteSessionBoundary, settings=configuration,
+        session_token=app.state.website_cookie, csrf_token=app.state.website_csrf)
 
     @app.exception_handler(BackendError)
     async def domain_error(request, error):
@@ -220,6 +226,10 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
         with Session(app.state.engine, expire_on_commit=False) as session:
             tenant = tenant_for(request, session)
             vendor_for(session, tenant, body.vendor_id)
+            from backend.models import CatalogNamespace
+            if session.scalar(select(CatalogNamespace.id).where(CatalogNamespace.tenant_id == tenant,
+                    CatalogNamespace.vendor_id == body.vendor_id, CatalogNamespace.synthetic.is_(False))):
+                raise BackendError("source_catalog_requires_versioned_adapter", 409)
             records = import_products(session, tenant, body.vendor_id, body.products)
             session.commit()
             return {"products": records}
@@ -354,6 +364,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                                     ReviewEvent.run_id == run_id).order_by(ReviewEvent.created_at, ReviewEvent.id)).all()
             return {"events": [serialize(event) for event in events]}
 
+    register_website(app, configuration, private, tenant_for, vendor_for, idempotency)
     default_openapi = app.openapi
 
     def documented_openapi():
@@ -361,6 +372,9 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
         schema.setdefault("components", {}).setdefault("securitySchemes", {})["LocalToken"] = {
             "type": "apiKey", "in": "header", "name": "X-Local-Token",
             "description": "Local development API token; not production tenant authentication."}
+        schema["components"]["securitySchemes"]["LocalBrowserSession"] = {
+            "type": "apiKey", "in": "cookie", "name": "po_local_session",
+            "description": "HttpOnly, SameSite=Strict loopback session. Cookie mutations also require X-Website-CSRF."}
         public = {"/health/live", "/health/ready", "/configuration",
                   "/contracts/product-document/v1/schema", "/contracts/product-document/v1.1/schema",
                   "/contracts/product-document/v1.1/provider-schema"}
@@ -370,12 +384,17 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             for method, operation in operations.items():
                 if method not in {"get", "post", "put", "patch", "delete"}:
                     continue
-                operation["security"] = [{"LocalToken": []}]
+                operation["security"] = [{"LocalToken": []}, {"LocalBrowserSession": []}]
                 parameters = operation.setdefault("parameters", [])
-                if path != "/tenants" and not any(p.get("name") == "X-Tenant-ID" for p in parameters):
+                unscoped = path in {"/tenants", "/website/workspaces", "/website/corpus"} or path.startswith("/website/corpus/")
+                if not unscoped and not any(p.get("name") == "X-Tenant-ID" for p in parameters):
                     parameters.append({"name": "X-Tenant-ID", "in": "header", "required": True,
                                        "schema": {"type": "string", "format": "uuid"},
                                        "description": "Explicit local tenant scope, not an authenticated identity."})
+                if method in {"post", "put", "patch", "delete"}:
+                    parameters.append({"name": "X-Website-CSRF", "in": "header", "required": False,
+                        "schema": {"type": "string"},
+                        "description": "Required for cookie-authenticated browser mutations; not needed with an explicit CLI token."})
                 if method == "post" and path in {"/documents", "/documents/{source_id}/runs"} and not any(p.get("name") == "Idempotency-Key" for p in parameters):
                     parameters.append({"name": "Idempotency-Key", "in": "header", "required": True,
                                        "schema": {"type": "string", "minLength": 1, "maxLength": 120},

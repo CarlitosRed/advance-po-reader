@@ -1,3 +1,5 @@
+> The current website branch extends this backend on port 8014 and database gate_a_backend_website. Use [local-website.md](local-website.md) for current startup and real catalog/corpus integration. The backend-only checkpoint and commands below are preserved context; its original service on 8012 remains independent.
+
 # Local backend preparation
 
 Updated October 2, 2026. The user's direct request expanded the completed Gate A into a local backend slice, with the website and OpenAI key later. This branch implements and tests that slice using fictional synthetic documents. No live provider call, credential creation/import, customer-file transfer, API spend, training, Apple/Qwen inference, AWS resource, website, cart or order action was performed.

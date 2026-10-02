@@ -191,3 +191,41 @@ class ReviewEvent(Identity, Base):
     old_value: Mapped[dict | list | str | None] = mapped_column(JSONB(none_as_null=True))
     new_value: Mapped[dict | list | str | None] = mapped_column(JSONB(none_as_null=True))
     selected_candidate_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+
+
+class CatalogNamespace(Identity, Base):
+    """An immutable source revision assigned explicitly to one local scope."""
+    __tablename__ = "catalog_namespaces"
+    __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "vendor_id"], ["vendors.tenant_id", "vendors.id"], ondelete="RESTRICT"),
+        UniqueConstraint("tenant_id", "vendor_id", name="uq_namespace_vendor"),
+        UniqueConstraint("tenant_id", "vendor_id", "id", name="uq_namespace_scope_id"),
+    )
+    vendor_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    source_catalog_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    source_filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    workbook_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    database_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_sheet: Mapped[str] = mapped_column(String(200), nullable=False)
+    adapter_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    assigned_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class CatalogSourceProduct(Identity, Base):
+    """Literal workbook fields, attributes and details remain separate from search."""
+    __tablename__ = "catalog_source_products"
+    __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "vendor_id", "product_id"],
+            ["catalog_products.tenant_id", "catalog_products.vendor_id", "catalog_products.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "vendor_id", "namespace_id"],
+            ["catalog_namespaces.tenant_id", "catalog_namespaces.vendor_id", "catalog_namespaces.id"], ondelete="RESTRICT"),
+        UniqueConstraint("tenant_id", "vendor_id", "product_id", name="uq_source_product_scope"),
+    )
+    vendor_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    product_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    namespace_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    source_row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    raw_fields: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    attributes: Mapped[list] = mapped_column(JSONB, nullable=False)
+    detail_sections: Mapped[list] = mapped_column(JSONB, nullable=False)

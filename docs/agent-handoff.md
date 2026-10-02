@@ -1,3 +1,13 @@
+# Active handoff: local website and real catalogs
+
+The user authorized this phase in the current chat and asked for a new worktree if useful. This chat continues in the managed local-website-catalogs worktree on codex/local-website-catalogs, starting from backend checkpoint ce1a025. Current approved choices: one local test workspace, three separate manually selected catalogs, and the preserved 33-PDF email archive. The country of WernerCo remains unspecified. Provider key and real extraction tests are deferred until the website is ready.
+
+Own all new writable data, review records and outputs here. Use database gate_a_backend_website and port 8014. Preserve Gate A on 8010 and backend preparation on 8012. The staging database and archive from verified-source-databases are read-only inputs; copy them into this worktree's ignored private source snapshot before integrating. Never import the legacy VLM observations as extraction results or ground truth. Real documents begin without extracted rows.
+
+The local website and real source integration are implemented. See docs/local-website.md for startup, exact behavior and continuation; docs/website-verification.md distinguishes executed local checks from the deferred real provider test. Full suites: 234 backend and 135 Gate A checks passed; final focused website/coordinate rerun: 15 passed. There is no live provider request, private data in Git, training, cart/order write or deployment. Current private runtime/browser receipts are under output/website-verification/. See the preserved handoff below for backend and Gate A evidence.
+
+## Preserved backend handoff
+
 # Active handoff: local backend preparation, October 2, 2026
 
 The user directly expanded Gate A to prepare all local backend APIs/code/commands and synthetic tests; website and key later. This worktree owns codex/local-backend-preparation, based on a cherry-pick of d67616c. Gate A service at 8010 and database gate_a_service remain owned by the original worktree and must not be changed. Backend uses 8012 and separate databases, private data/output only here. No live provider calls, credential import/creation, customer transfer, AWS, Apple/Qwen, training or cart/order actions. See local-backend.md for final behavior, tests and commands.

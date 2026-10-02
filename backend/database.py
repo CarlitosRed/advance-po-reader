@@ -10,8 +10,8 @@ from sqlalchemy.engine import make_url
 
 from backend.config import ROOT, Settings
 
-TEST_DATABASES = ("gate_a_test_backend_api", "gate_a_test_backend_catalog", "gate_a_test_backend_contract",
-                  "gate_a_test_backend_root", "gate_a_test_backend_gate_a")
+TEST_DATABASES = ("gate_a_test_backend_website_api", "gate_a_test_backend_website_catalog", "gate_a_test_backend_website_contract",
+                  "gate_a_test_backend_website_root", "gate_a_test_backend_website_gate_a")
 
 
 def create_database(database_url):
