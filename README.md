@@ -1,5 +1,12 @@
 # Advance PO Reader
 
+Local agent integration is implemented: 11 scoped STDIO MCP tools connect to
+the website, with human source authorization and product approval in the UI.
+The website follows agent-started runs and shares the saved review summary.
+Read [the agent/demo activation guide](docs/local-agent-demo.md). The backend
+API key is still deferred; no live OpenAI request or customer-file transfer has
+been made. Actual STDIO and fictional/mocked workflows are verified.
+
 The active local website is implemented in `web/local-reader/`, served by the FastAPI backend. It connects the three supplied catalog namespaces, private original PDF library, saved uploads/runs, source previews, and evidence-preserving review/audit. Read [the website runbook](docs/local-website.md) and [verification record](docs/website-verification.md). It runs locally without an API key; real extraction is deferred until the server key, current model verification and source-specific customer authorization are supplied.
 
 The user selected one local test workspace with three manually selected catalogs (WernerCo, United Kingdom, Australia), and the original 33-PDF email archive. Product IDs remain separate across catalogs. No country is inferred for WernerCo. This worktree owns port 8014, database gate_a_backend_website, and its private data/output directories. Source changes are on codex/local-website-catalogs. Gate A on 8010 and backend preparation on 8012 remain preserved checkpoints.

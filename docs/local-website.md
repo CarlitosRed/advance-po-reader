@@ -3,6 +3,9 @@
 Implemented October 2, 2026 in the dedicated managed worktree
 `C:\Users\carlo\.codex\worktrees\local-website-catalogs\Advance PO Reader`,
 branch `codex/local-website-catalogs`, based on backend checkpoint `ce1a025`.
+The subsequent agent/demo preparation is implemented; see
+[local-agent-demo.md](local-agent-demo.md) for the 11 scoped tools, source
+authorization handoff, shared review summary, startup recovery and API activation.
 This chat continues the work; a new chat was unnecessary. The user's explicit
 choices are one local test workspace with three separately selected catalogs,
 and the original 33-PDF email archive. Use the existing **Create PDF reader website
@@ -51,6 +54,10 @@ mockup** design as the reference. No country is assigned to WernerCo.
   catalog ordering-unit conversion, availability, pricing or order readiness.
 - Two optional browser tools read local state or search the already selected
   catalog. They cannot approve, train or invoke extraction.
+- The local STDIO agent tools can prepare a library document without processing,
+  run a fictional workflow, or process an existing source-authorized OpenAI run
+  once. The website follows agent-started processing through read-only polling.
+  Human corrections, approvals and review resolution remain in the website.
 
 ## Local boundary and ownership
 
@@ -86,7 +93,7 @@ already prepared. From this worktree:
 Open `http://127.0.0.1:8014/`. Use Ctrl+C in the owning terminal to stop a
 manually launched server. Do not stop another worktree's server or the shared
 native PostgreSQL service. The agent's retained local service and verified PID
-are recorded privately in `output/website-verification/runtime.json`; check
+are recorded privately in `output/agent-ready/runtime.json`; check
 the port owner and launcher path before acting on a saved PID.
 
 Restarting the server expires its in-memory browser session. Reload the
@@ -121,7 +128,8 @@ Source filenames are never used as storage paths.
 
 ## Verification and continuation
 
-See [website-verification.md](website-verification.md) for executed checks and
+See [local-agent-demo.md](local-agent-demo.md) for the current phase and
+[website-verification.md](website-verification.md) for the preceding checks and
 their limits. Use `scripts/test-backend.ps1` for the complete backend and
 preserved Gate A suites on this worktree's separately named synthetic test
 databases. No Node build or hosted Site registration is required for this
@@ -132,8 +140,8 @@ is prepared and tested through injected mocks, with live processing disabled
 by default. Having a key alone does not enable it. Before activation, verify
 the current official model/API/data-control details, configure the key
 server-side, and obtain the relevant customer/source authorization and policy.
-When deliberately enabled, the UI requires affirmative authorization bound
-to the exact source hash before creating a fresh external run. The existing
+The UI can save affirmative authorization bound to the exact source hash
+before processing is enabled, without making a provider attempt. The existing
 CLI live-test command has the same authorization boundary. Active or
 unknown-outcome attempts are not automatically retried by the website.
 

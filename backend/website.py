@@ -10,11 +10,13 @@ import sys
 from urllib.parse import urlsplit
 from uuid import UUID
 
+from alembic.runtime.migration import MigrationContext
 from fastapi import Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.config import ROOT
 from backend.contracts import ExtractionPayload
@@ -158,6 +160,39 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
                     "synthetic": namespace.synthetic, "source_filename": namespace.source_filename,
                     "adapter_version": namespace.adapter_version, "assigned_by": namespace.assigned_by})
             return {"workspaces": list(result.values())}
+
+    @app.get("/website/readiness")
+    def website_readiness(request: Request):
+        """Safe diagnostics remain usable when the database is stopped."""
+        from backend.app import EXPECTED_REVISION
+        private(request)
+        database, catalogs, products, fictional = "unavailable", 0, 0, 0
+        try:
+            with app.state.engine.connect() as connection:
+                database = "ready" if MigrationContext.configure(connection).get_current_heads() == (EXPECTED_REVISION,) else "migration_required"
+            if database == "ready":
+                with Session(app.state.engine) as session:
+                    catalogs = session.scalar(select(func.count()).select_from(CatalogNamespace).where(CatalogNamespace.synthetic.is_(False)))
+                    products = session.scalar(select(func.count()).select_from(CatalogProduct).join(CatalogNamespace,
+                        (CatalogNamespace.tenant_id == CatalogProduct.tenant_id) & (CatalogNamespace.vendor_id == CatalogProduct.vendor_id))
+                        .where(CatalogNamespace.synthetic.is_(False), CatalogProduct.active.is_(True)))
+                    fictional = session.scalar(select(func.count()).select_from(CatalogNamespace).where(CatalogNamespace.synthetic.is_(True)))
+        except SQLAlchemyError:
+            database = "unavailable"
+        key_present = bool(settings.openai_api_key and settings.openai_api_key.get_secret_value().strip())
+        configured = key_present and settings.live_processing_enabled
+        blockers = []
+        if database != "ready": blockers.append("local_database_" + database)
+        if not catalogs: blockers.append("real_catalogs_unavailable")
+        if not key_present: blockers.append("server_api_key_required")
+        elif not settings.live_processing_enabled: blockers.append("server_live_processing_disabled")
+        return {"database": database, "real_catalog_count": catalogs, "real_product_count": products,
+                "test_document_count": len(corpus_index()), "provider_key_present": key_present,
+                "live_processing_enabled": settings.live_processing_enabled, "provider_configured": configured,
+                "ready_for_sample": database == "ready" and fictional > 0,
+                "ready_for_live_demo": not blockers, "blockers": blockers,
+                "source_specific_authorization_required": True, "human_review_required": True,
+                "agent_transport": "local_stdio", "provider_requests_made_by_check": 0}
 
     @app.get("/website/catalog")
     def browse(request: Request, vendor_id: UUID, q: str = Query(default="", max_length=120),

@@ -162,12 +162,54 @@ def test_correction_is_raw_string_and_invalidates_prior_decision(web_client):
         assert web_client.post(url,json=event(row,"acknowledge")).status_code==201
     correction=web_client.post(url,json=event(rows[0],"correct",field_name="quantity",new_value="002.50"))
     assert correction.status_code==201 and correction.json()["new_value"]["value"]=="002.50"
+    before=web_client.get("/runs/"+run["id"]+"/summary").json()
+    assert before["pending_row_ids"]==[rows[0]["row_id"]] and before["can_finish_review"] is False
+    assert len(before["approved_products"])==1
     resolve={"action":"resolve","reviewer":"Fictional QA","reason":"All synthetic rows reviewed"}
     assert web_client.post(url,json=resolve).status_code==409
     assert web_client.post(url,json=event(rows[0],"approve",selected_candidate_id=products[0]["candidate_id"])).status_code==201
     assert web_client.post(url,json=resolve).status_code==201
+    summary=web_client.get("/runs/"+run["id"]+"/summary").json()
+    assert summary["review_state"]=="resolved" and summary["can_finish_review"] is False
+    first=summary["approved_products"][0]
+    assert first["quantity"]=="002.50" and first["original_quantity"]=="2"
+    assert summary["blockers"]==[] and len(summary["excluded_rows"])==2
+    assert web_client.get("/runs/"+run["id"]+"/result").json()==result
+
     assert web_client.get("/runs/"+run["id"]+"/result").json()["extraction"]["rows"][0]["quantity"]["raw_value"]=="2"
     assert web_client.post(url,json=event(rows[0],"correct",field_name="quantity",new_value="3")).status_code==409
+
+
+def test_run_readiness_and_summary_are_tenant_scoped_and_source_authorization_is_separate(web_client):
+    tenant,vendor,products,source,processed,result=scope(web_client)
+    run=web_client.post("/documents/"+source["id"]+"/runs", headers={"Idempotency-Key":uuid4().hex},
+        json={"provider":"openai"}).json()
+    path="/runs/"+run["id"]
+    readiness=web_client.get(path+"/readiness").json()
+    assert readiness["blockers"]==["provider_not_configured","source_authorization_required"]
+    assert readiness["attempt_count"]==0 and readiness["can_process"] is False
+    authorization={"authorized":True,"source_sha256":source["sha256"],"authorized_by":"Fictional policy reviewer",
+        "policy_reference":"Synthetic offline test only","reason":"Verify a saved authorization without processing"}
+    authorized=web_client.post("/documents/"+source["id"]+"/runs",headers={"Idempotency-Key":uuid4().hex},
+        json={"provider":"openai","external_authorization":authorization}).json()
+    saved=web_client.get("/runs/"+authorized["id"]+"/readiness").json()
+    assert saved["source_authorized"] is True and saved["blockers"]==["provider_not_configured"]
+    assert saved["source_sha256"]==source["sha256"] and saved["attempt_count"]==0
+    other=web_client.post("/tenants",json={"name":"Foreign summary "+uuid4().hex}).json()
+    web_client.headers["X-Tenant-ID"]=other["id"]
+    assert web_client.get(path+"/readiness").status_code==404
+    assert web_client.get(path+"/summary").status_code==404
+
+
+def test_website_diagnostics_require_local_session_and_never_include_secrets(web_client):
+    assert web_client.get("/website/readiness").status_code==401
+    web_client.headers["X-Local-Token"]=TOKEN
+    response=web_client.get("/website/readiness")
+    assert response.status_code==200
+    value=response.json()
+    assert value["database"]=="ready" and value["provider_configured"] is False
+    assert value["provider_requests_made_by_check"]==0
+    assert TOKEN not in response.text and "postgresql+psycopg" not in response.text
 
 
 def fictional_sqlite(path):

@@ -1,4 +1,58 @@
-# Active handoff: local website and real catalogs
+# Active handoff: local agent/demo preparation
+
+Continue in this chat and the managed local-website-catalogs worktree on
+`codex/local-website-catalogs`. The user chose both the document workflow and
+scoped Codex tools. The API key remains explicitly deferred; make no live
+provider request or credential import/creation without the next authorized
+activation task. Source/customer privacy authorization is still required for
+the particular document.
+
+Implemented: 11 STDIO MCP tools in `reader_agent/`, an isolated agent runtime,
+source/run readiness, the shared saved human summary, browser authorization
+for an agent, read-only processing polling/cancellation, server activation
+preflight and the additive `0005_review_sequence` migration. Tool preparation
+never grants permission; tool processing checks the exact saved authorization
+and allows one attempt. Human review writes remain in the website. Legacy
+events are unchanged; new events use a serialized sequence rather than the
+clock to establish their order.
+
+The `po_reader` MCP entry is registered and read back as enabled with absolute
+paths, no credentials in configuration, startup timeout 20 and tool timeout
+240. Actual STDIO initialization and tool calls passed. This turn's native
+tool inventory predates registration; reload Codex's configuration later and
+verify native invocation in a refreshed chat. Do not report that step as
+already executed.
+
+Verification: 245 backend checks, 135 Gate A checks and 20 agent checks passed
+without skips. Actual protocol calls read all three real catalog counts and
+the 33-PDF library, and created a fictional workflow without approvals. The
+same request UUID recovered it without a second attempt. Browser QA performed
+explicit simulated approvals/correction/acknowledgements and finished review;
+the agent read back the same saved summary and the preceding saved review.
+An isolated offline OpenAI transport on port 8016 exercised browser
+authorization, agent processing, automatic review transition and website
+processing/cancellation. The owned fixture service was stopped after QA;
+the real website stays on 8014 with processing disabled and no key. Final
+read-back confirmed that cancellation preserved the attempted provider receipt
+without saving an extraction, and cancelling a prepared run made no attempt.
+
+The user successfully restarted the preserved loopback PostgreSQL cluster from
+their terminal after automatic approval review rejected the agent's restart
+command. Readiness was verified on 8010 (`0001_gate_a`), 8012
+(`0003_provider_receipt`) and 8014 (`0005_review_sequence`). Use the current
+private runtime receipt under `output/agent-ready/`; verify ownership before
+acting on any stored PID. Do not touch another branch's database or process.
+
+Read [local-agent-demo.md](local-agent-demo.md) before activation. Private
+catalogs, original filenames/labels, sources, review records, keys, runtime
+paths, screenshots and receipts remain ignored. No accuracy/gold labels,
+realized API cost, training, cart/order, deployment, Apple or Qwen work was
+performed. Website checkpoint `d01b2ca` and backend checkpoint `ce1a025` remain
+the preceding recovery points.
+
+## Preserved website handoff
+
+# Local website and real catalogs
 
 The user authorized this phase in the current chat and asked for a new worktree if useful. This chat continues in the managed local-website-catalogs worktree on codex/local-website-catalogs, starting from backend checkpoint ce1a025. Current approved choices: one local test workspace, three separate manually selected catalogs, and the preserved 33-PDF email archive. The country of WernerCo remains unspecified. Provider key and real extraction tests are deferred until the website is ready.
 

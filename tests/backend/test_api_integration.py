@@ -25,7 +25,7 @@ from sqlalchemy.engine import make_url
 from backend.app import create_app
 from backend.config import Settings
 from backend.providers import OpenAIProvider
-from backend.synthetic import generate_fixture
+from backend.synthetic import fixture_payload, generate_fixture
 
 ROOT = Path(__file__).resolve().parents[2]
 TOKEN = "test-token-long-enough"
@@ -310,6 +310,39 @@ def test_mock_provider_still_requires_affirmative_source_specific_authorization(
         authorization.update(authorized=False, source_sha256=source["sha256"])
         assert create_run(client, source, provider="openai", fixture=None, authorization=authorization).status_code == 422
     assert calls == []
+
+
+def test_authorized_openai_workflow_with_mocked_response_and_shared_human_summary(api_engine,api_settings):
+    calls=[]
+    payload=fixture_payload().model_dump(mode="json")
+    def transport(request):
+        calls.append(request)
+        assert request.url=="https://api.openai.com/v1/responses"
+        return httpx.Response(200,headers={"x-request-id":"req_offline_demo"},json={
+            "id":"resp_offline_demo","status":"completed","model":"offline-test-model",
+            "usage":{"input_tokens":100,"output_tokens":200},
+            "output":[{"type":"message","content":[{"type":"output_text","text":json.dumps(payload)}]}]})
+    provider=OpenAIProvider(api_key="fake-offline-only-key",enabled=True,transport=httpx.MockTransport(transport))
+    settings=api_settings.model_copy(update={"live_processing_enabled":True,"openai_api_key":SecretStr("fake-offline-only-key")})
+    with TestClient(create_app(settings,engine=api_engine,provider=provider),base_url="http://127.0.0.1:8014",
+                    headers={"X-Local-Token":TOKEN}) as client:
+        _,vendor,_=scope(client,"offline-authorized-demo")
+        source=accepted(upload(client,vendor))
+        authorization={"authorized":True,"source_sha256":source["sha256"],"authorized_by":"Fictional offline QA",
+            "policy_reference":"Synthetic mocked provider only","reason":"Validate complete adapter wiring without an external request"}
+        run=accepted(create_run(client,source,provider="openai",fixture=None,authorization=authorization))
+        path=f"/runs/{run['id']}"
+        readiness=accepted(client.get(path+"/readiness"))
+        assert readiness["can_process"] is True and readiness["attempt_count"]==0
+        completed=process(client,run)
+        assert completed["state"]=="completed" and completed["review_state"]=="not_started"
+        value=result(client,run)
+        assert value["extraction"]==payload and len(value["attempts"])==1
+        assert value["attempts"][0]["request_id"]=="req_offline_demo"
+        summary=accepted(client.get(path+"/summary"))
+        assert summary["approved_products"]==[] and len(summary["pending_row_ids"])==4
+        assert not accepted(client.get(path+"/readiness"))["can_process"]
+        assert process(client,run)["state"]=="completed" and len(calls)==1
 
 
 @pytest.mark.parametrize("behavior,attempt_state", [("refusal", "refused"), ("timeout", "unknown_outcome"), ("invalid", "invalid_output")])

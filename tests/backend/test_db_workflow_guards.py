@@ -1,7 +1,7 @@
 """Committed local workflow boundaries; all sources and scopes are synthetic."""
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timezone
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 from threading import Barrier
@@ -157,7 +157,7 @@ def test_concurrent_same_key_creates_one_run_and_conflicting_retry_fails(workflo
         assert conflict.value.code == "idempotency_payload_conflict"
 
 
-def test_review_timestamp_follows_actual_serialized_insertion_not_transaction_start(workflow_engine, setup):
+def test_review_sequence_follows_actual_serialized_insertion_not_transaction_start(workflow_engine, setup):
     settings, tenant, source_id, run_id = setup
     with Session(workflow_engine, expire_on_commit=False) as session:
         run = process_run(session, tenant, run_id, settings)
@@ -172,8 +172,29 @@ def test_review_timestamp_follows_actual_serialized_insertion_not_transaction_st
             later.commit()
         second = review_run(early, tenant, run_id, ReviewRequest(**base, new_value="005"))
         early.commit()
-        assert second.created_at.astimezone(timezone.utc) >= first.created_at.astimezone(timezone.utc)
+        assert second.event_sequence == first.event_sequence + 1
     with Session(workflow_engine) as session:
         values = list(session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant,
-            ReviewEvent.run_id == run_id).order_by(ReviewEvent.created_at, ReviewEvent.id)))
+            ReviewEvent.run_id == run_id).order_by(*ReviewEvent.audit_order())))
         assert [event.new_value["value"] for event in values] == ["004", "005"]
+
+
+def test_review_clock_regression_does_not_reorder_corrections(workflow_engine, setup, monkeypatch):
+    import backend.service as service
+    settings, tenant, source_id, run_id = setup
+    with Session(workflow_engine, expire_on_commit=False) as session:
+        run = process_run(session, tenant, run_id, settings)
+        row = run.result["rows"][0]
+    base = dict(action="correct", row_id=row["row_id"], reviewer="Fictional clock QA",
+        reason="Synthetic clock-regression test", evidence_reference=row["evidence"], field_name="quantity")
+    for timestamp, value in [(datetime(2026,10,2,tzinfo=timezone.utc),"002"),
+                              (datetime(2025,10,2,tzinfo=timezone.utc),"003")]:
+        monkeypatch.setattr(service,"now",lambda: timestamp)
+        with Session(workflow_engine,expire_on_commit=False) as session:
+            saved=review_run(session,tenant,run_id,ReviewRequest(**base,new_value=value))
+            session.commit()
+            if value=="003": assert saved.old_value["value"]=="002"
+    with Session(workflow_engine) as session:
+        events=list(session.scalars(select(ReviewEvent).where(ReviewEvent.run_id==run_id).order_by(*ReviewEvent.audit_order())))
+        assert [event.new_value["value"] for event in events]==["002","003"]
+        assert events[0].created_at>events[1].created_at

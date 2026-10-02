@@ -1,13 +1,14 @@
 """Later, explicit source-authorized live test against the loopback server.
 
 Nothing runs on import. Example (after the server is securely configured and
-enabled): ``python -m backend.live_test --base-url http://127.0.0.1:8012
+enabled): ``python -m backend.live_test --base-url http://127.0.0.1:8014
 --source-path <local-source> --tenant-id <uuid> --vendor-id <uuid>
 --authorized-by <name> --policy-reference <applicable-policy> --reason <reason>
 --source-sha256 <exact-sha256> --authorize-external-processing``.
 
-The token comes only from PO_BACKEND_LOCAL_API_TOKEN; no provider key is read or
-imported here. Hash-bound authorization and server enablement are both required.
+Only loopback connection fields are selected from the server's private .env.backend
+or environment; no provider credential is accepted by this client. Hash-bound
+authorization and server enablement are both required.
 The command processes once, never retries an unknown remote outcome, and saves
 private unreviewed evidence without claiming model performance or gold labels.
 """
@@ -17,7 +18,6 @@ from __future__ import annotations
 import argparse
 from hashlib import sha256
 import json
-import os
 from pathlib import Path
 import re
 from uuid import UUID, uuid4
@@ -25,6 +25,7 @@ from uuid import UUID, uuid4
 import httpx
 
 from backend.demo import local_base_url
+from reader_agent.connection import ConnectionSettings
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_LOCAL_SOURCE_BYTES = 20 * 1024 * 1024
@@ -85,9 +86,10 @@ def run_live_test(
     destination = (ROOT / output).resolve()
     if not destination.is_relative_to((ROOT / "output").resolve()):
         raise ValueError("live test reports must stay inside this worktree's ignored output directory")
-    token = os.environ.get("PO_BACKEND_LOCAL_API_TOKEN")
-    if not token or len(token) < 16:
-        raise ValueError("configure PO_BACKEND_LOCAL_API_TOKEN for the local server; no token or key is imported by this command")
+    connection = ConnectionSettings(_env_file=ROOT / ".env.backend")
+    if "local_api_token" not in connection.model_fields_set:
+        raise ValueError("configure PO_BACKEND_LOCAL_API_TOKEN in .env.backend or the environment for the local server")
+    token = connection.local_api_token.get_secret_value()
     # Read only after all source-specific authorization arguments are validated.
     try:
         with Path(source_path).open("rb") as source:
@@ -144,7 +146,7 @@ def run_live_test(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8012")
+    parser.add_argument("--base-url", default=ConnectionSettings().base_url)
     parser.add_argument("--source-path", required=True)
     parser.add_argument("--tenant-id", required=True)
     parser.add_argument("--vendor-id", required=True)

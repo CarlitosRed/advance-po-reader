@@ -2,6 +2,18 @@
 
 # Project agent instructions
 
+The latest direct user choice also authorizes both the local document workflow
+and scoped Codex tools. This preparation is implemented in `reader_agent/` and
+the website; see [local agent/demo activation](docs/local-agent-demo.md).
+Agents may prepare runs and process an existing source-authorized run once;
+human authorization, corrections, approvals and review resolution stay in the
+website. Keep live provider/key work deferred until the user supplies and
+authorizes secure server configuration. Do not claim native invocation from a
+refreshed Codex chat or live model accuracy: actual STDIO and offline mocked
+workflows are verified, with 245 backend, 135 Gate A and 20 agent checks passed.
+Preserve website checkpoint `d01b2ca`. The owned database is now at
+`0005_review_sequence`; preserve legacy audit rows and their ordering.
+
 Read `PROJECT_GOAL.md` before changing project context or source. The October 2, 2026 project goal replaces the previous Qwen/self-hosted-first direction. The original self-hosted framework, measurements, and all three newly reviewed source documents are preserved under `docs/research/`; the goal and research notes distinguish adopted decisions from proposed instructions embedded in those source files. Follow [the local logic rules](docs/local-logic-rules-2026-10-02.md) for the observation contract, run/review states, purchase-order-only scope, and review-only matching.
 
 The latest direct user instruction on October 2, 2026 authorizes the local website and real catalog integration after the completed backend preparation. Use the existing mockup, one local test workspace, three manually selected catalogs, and the confirmed original 33-PDF batch. Use fictional fixtures for extraction/review tests; authorized originals may be validated, stored and previewed locally without extraction. The OpenAI key and real extraction tests come later. No live provider requests, credential import/creation, external customer-file transfer, API spend, AWS, Apple/Qwen inference, training or cart/order writes are authorized now. Preserve Gate A checkpoint d67616c and its service/database, plus backend checkpoint ce1a025 on port 8012. See docs/local-website.md for this branch and runtime.

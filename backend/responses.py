@@ -120,6 +120,7 @@ class ReviewResponse(ResponseModel):
     new_value: Any | None
     selected_candidate_id: UUID | None
     created_at: datetime
+    event_sequence: int | None
 
 
 class ReviewsResponse(ResponseModel):
@@ -152,3 +153,46 @@ class CatalogResponse(ResponseModel):
 
 class ImportedResponse(ResponseModel):
     products: list[CandidateResponse]
+
+
+class RunReadinessResponse(ResponseModel):
+    run_id: UUID
+    vendor_id: UUID
+    provider: Literal["openai", "synthetic"]
+    source_sha256: str
+    source_authorized: bool
+    provider_configured: bool
+    attempt_count: int
+    can_process: bool
+    blockers: list[str]
+
+
+class ApprovedProductResponse(ResponseModel):
+    row_id: str
+    candidate: CandidateResponse
+    quantity: str | None
+    unit: str | None
+    original_quantity: str | None
+    original_unit: str | None
+    reviewer: str
+    reason: str
+    evidence: list[EvidenceReference]
+
+
+class ExcludedRowResponse(ResponseModel):
+    row_id: str
+    row_kind: str
+    decision: str
+
+
+class ReviewSummaryResponse(ResponseModel):
+    run_id: UUID
+    state: str
+    review_state: str
+    approved_products: list[ApprovedProductResponse]
+    pending_row_ids: list[str]
+    excluded_rows: list[ExcludedRowResponse]
+    review_event_count: int
+    blockers: list[str]
+    can_finish_review: bool
+    source_observations_unchanged: bool

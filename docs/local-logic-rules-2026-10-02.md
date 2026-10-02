@@ -52,6 +52,20 @@ Apple Vision/Foundation Models is explicitly out of Gate A and the current local
 
 Implement only the local FastAPI health/configuration foundation, local PostgreSQL/Alembic baseline, and the first versioned contract boundary. It must start without OpenAI credentials or external services. Add focused tests for configuration, liveness/readiness, database/migration behavior, and contract state validation. Use synthetic test fixtures only. No upload endpoint, supplied PDF processing, extractor, catalog, matcher, review UI, cart, provider request, AWS, Apple, Qwen inference, or training belongs in Gate A.
 
-## Active local backend preparation
+## Preserved local backend preparation checkpoint
 
 Authorized October 2, 2026: extraction schema freeze, catalog/aliases, private validated upload, immutable sources and reprocessing runs, disabled live provider adapter, bounded review-only suggestions, correction/audit APIs, reproducible synthetic demo and tests. No key work or provider request now. Each later external attempt requires affirmative source-specific privacy authorization; key presence alone is insufficient. Website/UI, AWS, Apple, Qwen, training and cart/order actions remain excluded.
+
+## Current local website and agent preparation
+
+The later direct user request authorizes the local website, three manually
+selected real catalogs, original 33-PDF batch and both the document workflow
+and scoped Codex tools. Keep originals local and unprocessed until applicable
+source-specific authorization and later server key activation. Agents may
+prepare a run without authorizing it, process the exact authorized source once,
+and read saved outcomes. They cannot approve/correct/resolve human decisions.
+The website and agent share the saved review summary and resolution blockers.
+New review events use a per-run sequence under the existing lock so clock
+changes cannot reorder approvals and corrections; legacy rows remain unchanged.
+See [local-agent-demo.md](local-agent-demo.md). All external calls/key work,
+training, AWS, Apple/Qwen and cart/order work remain deferred in this phase.

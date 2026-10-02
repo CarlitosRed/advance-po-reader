@@ -181,8 +181,11 @@ class ReviewEvent(Identity, Base):
         ForeignKeyConstraint(["tenant_id", "run_id"], ["processing_runs.tenant_id", "processing_runs.id"], ondelete="RESTRICT"),
         CheckConstraint("length(trim(reviewer)) > 0 AND length(trim(reason)) > 0", name="ck_reviews_attribution"),
         Index("ix_reviews_tenant_run", "tenant_id", "run_id", "created_at"),
+        UniqueConstraint("tenant_id", "run_id", "event_sequence", name="uq_reviews_run_sequence"),
+        CheckConstraint("event_sequence IS NULL OR event_sequence > 0", name="ck_reviews_positive_sequence"),
     )
     run_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    event_sequence: Mapped[int | None] = mapped_column(BigInteger)
     row_id: Mapped[str | None] = mapped_column(String(120))
     action: Mapped[str] = mapped_column(String(80), nullable=False)
     reviewer: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -191,6 +194,12 @@ class ReviewEvent(Identity, Base):
     old_value: Mapped[dict | list | str | None] = mapped_column(JSONB(none_as_null=True))
     new_value: Mapped[dict | list | str | None] = mapped_column(JSONB(none_as_null=True))
     selected_candidate_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+
+    @classmethod
+    def audit_order(cls):
+        # Preserve the established ordering of legacy NULL records, followed by
+        # the serialized sequence of new records regardless of clock changes.
+        return cls.event_sequence.asc().nullsfirst(), cls.created_at, cls.id
 
 
 class CatalogNamespace(Identity, Base):

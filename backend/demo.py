@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -18,6 +17,7 @@ import httpx
 
 from backend.evaluation import EvaluationCase, ExpectedDocument, evaluate_cases
 from backend.synthetic import generate_fixture
+from reader_agent.connection import ConnectionSettings
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,7 +73,7 @@ def run_demo(base_url: str, report_directory: Path) -> dict:
     demo_id = uuid4().hex
     source_directory = ROOT / "data" / "demo-agent" / demo_id
     source_directory.mkdir(parents=True, exist_ok=False)
-    token = os.environ.get("PO_BACKEND_LOCAL_API_TOKEN", "local-backend-dev-only")
+    token = ConnectionSettings(_env_file=ROOT / ".env.backend").local_api_token.get_secret_value()
     cases: list[EvaluationCase] = []
     artifacts = {"demo_id": demo_id, "base_url": base_url, "kind": "synthetic_workflow",
                  "checks": [], "sources": [], "runs": []}
@@ -212,7 +212,7 @@ def run_demo(base_url: str, report_directory: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8012")
+    parser.add_argument("--base-url", default=ConnectionSettings().base_url)
     parser.add_argument("--output", default="output/backend-demo")
     args = parser.parse_args()
     try:

@@ -25,12 +25,13 @@ from backend.service import (serialize, lock_key, fingerprint, source_for, run_f
 from backend.uploads import digest, validate_file, write_source
 from backend.responses import (ErrorResponse, TenantResponse, VendorResponse, SourceResponse,
                                RunResponse, RunsResponse, ResultResponse, SuggestionsResponse,
-                               ReviewResponse, ReviewsResponse, CatalogResponse, ImportedResponse)
+                               ReviewResponse, ReviewsResponse, CatalogResponse, ImportedResponse,
+                               RunReadinessResponse, ReviewSummaryResponse)
 from gate_a.contracts import ProductDocumentV1
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
 
-EXPECTED_REVISION = "0004_website_catalog"
+EXPECTED_REVISION = "0005_review_sequence"
 
 
 class CatalogImport(RequestModel):
@@ -186,7 +187,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                 "supported_document_type": "purchase_order", "review_only": True,
                 "live_processing_enabled": configuration.live_processing_enabled,
                 "provider_configured": bool(configuration.live_processing_enabled and configuration.openai_api_key
-                                             and configuration.openai_api_key.get_secret_value()),
+                                             and configuration.openai_api_key.get_secret_value().strip()),
                 "source_specific_authorization_required": True,
                 "limits": {"upload_bytes": configuration.max_upload_bytes, "pages": configuration.max_pages,
                            "image_dimension": configuration.max_image_dimension, "image_pixels": configuration.max_image_pixels}}
@@ -317,6 +318,40 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             run = process_run(session, tenant_for(request, session), run_id, configuration, provider)
             return serialize(run, ["id", "source_document_id", "state", "review_state", "outcome_code", "created_at", "finished_at"])
 
+    @app.get("/runs/{run_id}/readiness", response_model=RunReadinessResponse)
+    def run_readiness(run_id: UUID, request: Request):
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            run = run_for(session, tenant, run_id)
+            source = source_for(session, tenant, run.source_document_id)
+            attempts = session.scalars(select(ProviderAttempt).where(
+                ProviderAttempt.tenant_id == tenant, ProviderAttempt.run_id == run_id)).all()
+            configured = bool(configuration.live_processing_enabled and configuration.openai_api_key
+                              and configuration.openai_api_key.get_secret_value().strip())
+            auth = (run.external_authorization or {}).get("external_processing", {})
+            authorized = auth.get("authorized") is True and auth.get("source_sha256") == source.sha256
+            blockers = []
+            if run.state != "created": blockers.append("run_already_started_or_terminal")
+            if attempts: blockers.append("provider_attempt_already_recorded")
+            if any(a.state == "unknown_outcome" for a in attempts): blockers.append("unknown_outcome_no_retry")
+            if run.provider == "openai" and not configured: blockers.append("provider_not_configured")
+            if run.provider == "openai" and not authorized: blockers.append("source_authorization_required")
+            return {"run_id": run.id, "vendor_id": run.vendor_id, "provider": run.provider,
+                    "source_sha256": source.sha256, "source_authorized": authorized,
+                    "provider_configured": configured, "attempt_count": len(attempts),
+                    "can_process": not blockers, "blockers": blockers}
+
+    @app.get("/runs/{run_id}/summary", response_model=ReviewSummaryResponse)
+    def run_summary(run_id: UUID, request: Request):
+        from backend.review_summary import reviewed_summary
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            run = run_for(session, tenant, run_id)
+            events = session.scalars(select(ReviewEvent).where(
+                ReviewEvent.tenant_id == tenant, ReviewEvent.run_id == run_id)
+                .order_by(*ReviewEvent.audit_order())).all()
+            return reviewed_summary(run, [serialize(event) for event in events])
+
     @app.post("/runs/{run_id}/cancel", response_model=RunResponse)
     def cancel(run_id: UUID, request: Request):
         with Session(app.state.engine, expire_on_commit=False) as session:
@@ -361,7 +396,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             tenant = tenant_for(request, session)
             run_for(session, tenant, run_id)
             events = session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant,
-                                    ReviewEvent.run_id == run_id).order_by(ReviewEvent.created_at, ReviewEvent.id)).all()
+                                    ReviewEvent.run_id == run_id).order_by(*ReviewEvent.audit_order())).all()
             return {"events": [serialize(event) for event in events]}
 
     register_website(app, configuration, private, tenant_for, vendor_for, idempotency)
@@ -386,7 +421,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                     continue
                 operation["security"] = [{"LocalToken": []}, {"LocalBrowserSession": []}]
                 parameters = operation.setdefault("parameters", [])
-                unscoped = path in {"/tenants", "/website/workspaces", "/website/corpus"} or path.startswith("/website/corpus/")
+                unscoped = path in {"/tenants", "/website/workspaces", "/website/readiness", "/website/corpus"} or path.startswith("/website/corpus/")
                 if not unscoped and not any(p.get("name") == "X-Tenant-ID" for p in parameters):
                     parameters.append({"name": "X-Tenant-ID", "in": "header", "required": True,
                                        "schema": {"type": "string", "format": "uuid"},

@@ -98,7 +98,7 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
         run.finished_at = now()
         session.commit()
         return run
-    configured = settings.live_processing_enabled and settings.openai_api_key is not None and bool(settings.openai_api_key.get_secret_value())
+    configured = settings.live_processing_enabled and settings.openai_api_key is not None and bool(settings.openai_api_key.get_secret_value().strip())
     authorization = (run.external_authorization or {}).get("external_processing")
     if run.provider == "openai" and not configured and provider_override is None:
         advance(run, "failed")
@@ -224,24 +224,14 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
         raise BackendError("resolved_review_is_immutable_create_new_run", 409)
     payload = ExtractionPayload.model_validate(run.result)
     events = session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant, ReviewEvent.run_id == run_id)
-                             .order_by(ReviewEvent.created_at, ReviewEvent.id)).all()
+                             .order_by(*ReviewEvent.audit_order())).all()
     old_value = None
     new_value = None
     if request.action == "resolve":
-        latest = {event.row_id: event.action for event in events if event.row_id is not None}
-        resolved = {row_id for row_id, action in latest.items() if action in {"approve", "no_match", "acknowledge"}}
-        required = {row.row_id for row in payload.rows}
-        if not payload.rows or not required.issubset(resolved):
-            raise BackendError("unresolved_rows_remain", 409)
-        failed_pages = [page for page in payload.pages if page.state == "failed"]
-        if failed_pages:
-            raise BackendError("failed_pages_require_new_processing_run", 409)
-        acknowledged_pages = {reference["page_number"] for event in events if event.action == "acknowledge_page"
-                              for reference in event.evidence_reference}
-        if any(page.state == "partial" and page.page_number not in acknowledged_pages for page in payload.pages):
-            raise BackendError("partial_pages_require_explicit_acknowledgement", 409)
-        if payload.warnings and not any(event.action == "acknowledge_document" for event in events):
-            raise BackendError("document_warnings_require_explicit_acknowledgement", 409)
+        from backend.review_summary import resolution_blockers
+        blockers = resolution_blockers(payload, [serialize(event) for event in events])
+        if blockers:
+            raise BackendError(blockers[0], 409)
         old_value, new_value = {"review_state": run.review_state}, {"review_state": "resolved"}
         run.review_state = "resolved"
     elif request.action in {"acknowledge_page", "acknowledge_document"}:
@@ -332,7 +322,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
     event = ReviewEvent(tenant_id=tenant, run_id=run_id, row_id=request.row_id, action=request.action,
                         reviewer=request.reviewer, reason=request.reason, evidence_reference=request.evidence_reference,
                         old_value=old_value, new_value=new_value, selected_candidate_id=request.selected_candidate_id,
-                        created_at=now())
+                        created_at=now(), event_sequence=max((e.event_sequence or 0 for e in events), default=0) + 1)
     session.add(event)
     session.flush()
     return event

@@ -2,6 +2,16 @@
 
 # Document AI Commerce project goal
 
+The subsequent direct user choice authorizes both the local document workflow
+and scoped Codex tools, with the server API key deferred. That local connection
+is implemented and verified through the actual STDIO protocol, generated
+fixtures and an injected OpenAI transport. Website source authorization stays
+human and hash-bound; agent tools cannot approve or resolve products. The
+website and agent use the same saved review summary. See
+[local-agent-demo.md](docs/local-agent-demo.md) for activation and measured
+verification scope. No live provider request, credential setup, real extraction
+quality or native invocation in a refreshed Codex chat is claimed.
+
 Updated October 2, 2026 after review of the API runbook, OpenAI/Apple implementation blueprint, work project handoff, and a logic-only readiness review. The long-term direction remains an OpenAI-first web/backend workflow followed by an Apple milestone. The latest direct user instruction authorizes the **local website and real catalog integration after backend preparation**, using the existing mockup and confirmed original 33-PDF email archive. The user selected one local test workspace with three separately selected catalog namespaces. The website runs without a provider key; real extraction tests follow later source-specific authorization, current model verification and server-side key setup. Use fictional fixtures for extraction/review tests, and the originals for authorized local format/storage/preview checks. Make no live provider calls, API credential work, spend or external file transfer in this phase. The detailed logic rules are in [local logic rules](docs/local-logic-rules-2026-10-02.md).
 
 Build a phone-first document-to-commerce workflow that accepts purchase-order photos and PDFs, extracts literal line evidence, retrieves candidates from a tenant-scoped catalog, and presents candidate-bound suggestions for human approval. Route ambiguity and no-match outcomes to review. Preserve a complete audit trail; do not write to a cart or place orders in the local phase. The first model-backed milestone remains a server-side OpenAI API behind a provider interface after local validation. After the shared backend contract and matching logic pass evaluation, consider an Apple Vision/Foundation Models provider in a separate Milestone 2. Consider Qwen or other self-hosted inference only after measured quality, privacy, cost, or control needs justify it. Do not train or fine-tune during Milestones 1 or 2.

@@ -1,5 +1,10 @@
 # Local website verification — October 2, 2026
 
+This records website checkpoint `d01b2ca`. The later agent/demo phase and
+`0005_review_sequence` migration are documented in
+[local-agent-demo.md](local-agent-demo.md), including 245 backend, 135 Gate A
+and 20 agent checks, actual STDIO verification and offline browser handoff.
+
 This worktree extends the verified backend; these results describe local
 implementation behavior and do not measure model extraction accuracy.
 

@@ -5,7 +5,7 @@
   <meta name="description" content="Local purchase-order upload, catalog search and evidence-based product review.">
   <title>Purchase Order Reader · SmarterCommerce</title>
   <link rel="icon" href="/web-assets/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/web-assets/styles.css"><script src="/web-assets/app.js" defer></script>
+  <link rel="stylesheet" href="/web-assets/styles.css"><script src="/web-assets/workflow.js" defer></script><script src="/web-assets/app.js" defer></script>
 </head>
 <body>
   <a href="#main" class="skip-link">Skip to content</a>
@@ -15,6 +15,7 @@
   </div></header>
   <main id="main" class="shell">
     <nav class="main-nav" aria-label="Workspace"><button data-view="upload" aria-current="page">Upload &amp; review</button><button data-view="library">Document library <span id="library-count"></span></button><button data-view="catalog">Catalogs</button></nav>
+    <div id="demo-readiness" class="readiness-panel" aria-live="polite" hidden></div>
     <div id="notice" class="notice" role="status" hidden></div><div id="error" class="error" role="alert" hidden></div>
     <div id="view"><section class="intro"><p class="eyebrow">PURCHASE ORDER IMPORT</p><h1>Start with your purchase order.</h1><p>Select a catalog, add a document, and review the products against the source.</p></section><div class="panel"><p>Opening your local workspace…</p></div></div>
   </main>
