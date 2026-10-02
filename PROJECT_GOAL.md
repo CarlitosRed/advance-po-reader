@@ -2,7 +2,7 @@
 
 Updated October 2, 2026 after review of the API runbook, OpenAI/Apple implementation blueprint, work project handoff, and a logic-only readiness review. The long-term direction remains an OpenAI-first web/backend workflow followed by an Apple milestone. The active development scope is now explicitly **local Gate A only**: establish the service, configuration, database/migration base, and a versioned contract boundary. Do not expand this workstream into document ingestion or model processing. The detailed logic rules are in [local logic rules](docs/local-logic-rules-2026-10-02.md).
 
-Build a phone-first document-to-commerce workflow that accepts purchase-order photos and PDFs, extracts literal line evidence, retrieves candidates from a business-specific catalog, resolves only supported matches, and sends ambiguity to human review. Preserve a complete audit trail. The first implementation milestone uses a server-side OpenAI API through a provider interface. After the shared backend contract and matching logic pass evaluation, add an Apple Vision and Foundation Models extraction provider that emits the same contract. Consider Qwen or other self-hosted inference only after measured quality, privacy, cost, or control needs justify it. Do not train or fine-tune during Milestones 1 or 2.
+Build a phone-first document-to-commerce workflow that accepts purchase-order photos and PDFs, extracts literal line evidence, retrieves candidates from a tenant-scoped catalog, and presents candidate-bound suggestions for human approval. Route ambiguity and no-match outcomes to review. Preserve a complete audit trail; do not write to a cart or place orders in the local phase. The first model-backed milestone remains a server-side OpenAI API behind a provider interface after local validation. After the shared backend contract and matching logic pass evaluation, consider an Apple Vision/Foundation Models provider in a separate Milestone 2. Consider Qwen or other self-hosted inference only after measured quality, privacy, cost, or control needs justify it. Do not train or fine-tune during Milestones 1 or 2.
 
 ## Research sources and instruction precedence
 
@@ -71,7 +71,7 @@ The next implementation task is Gate A only in a separate local worktree: create
 
 ## Completion order
 
-1. Local Gate A, then freeze schemas/configuration with contract tests.
+1. Local Gate A: health/configuration, database/migration base, and the versioned contract envelope/state semantics; finalize the full extraction payload at its later ingestion/provider gate.
 2. Catalog and aliases with tenant-scoped exact and trigram retrieval.
 3. Validated local image/PDF upload and immutable raw evidence.
 4. Server-side OpenAI structured extraction, handling failures and recording real usage.
