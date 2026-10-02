@@ -1,18 +1,18 @@
 # Evaluating the vision reader
 
-The current framework-aligned cascade, explicit quantity parsing and first 4B/8B results are documented in [self-hosted infrastructure](self-hosted-infrastructure.md) and [first results](framework-first-results.md). [PROJECT_GOAL.md](../PROJECT_GOAL.md) is authoritative; training is deferred. The original failed thinking-model run below remains historical evidence.
+This document describes the private-PDF and Qwen comparison harness. The October 2 roadmap in [PROJECT_GOAL.md](../PROJECT_GOAL.md) calls for a future OpenAI-first measured baseline and then an Apple provider comparison on the same independently reviewed set. Existing Qwen runs are historical comparison results, not results for the current API-first plan. Keep every source label private, freeze/ version gold sets, and retain partial failures in denominators. Training remains deferred.
 
 `benchmark_vision.py` measures extraction against independently reviewed source labels. It reads PDF members directly from a ZIP in memory, inventories every document, groups duplicates, and optionally runs the existing native reader or the vision reader. Its reports are shadow results: it never calls the cart service.
 
-The supplied `Full Data Set.zip` contains 33 PDFs and 45 pages. `output/vision-gold-representative.json` has manually transcribed expectations for **two PDFs and 14 product rows**, after reviewing all three rendered source pages. These cover a digital truck-equipment order and Kurent's two-page safety-products order, including customer versus vendor identifier labels. They do not establish accuracy on the other 31 PDFs or on handwriting. Catalog product IDs remain null because the website catalog is unavailable.
+The private source archive contains 33 PDFs and 45 pages. `output/vision-gold-representative.json` has manually transcribed expectations for **two PDFs and 14 product rows**, after reviewing all three rendered source pages. The two layouts include distinct customer-item and vendor-item labels. They do not establish accuracy on the other 31 PDFs or on handwriting. Catalog product IDs remain null because the website catalog is unavailable. Document names, PO numbers, row-level identifiers and complete labels remain in private local files and are not reproduced here.
 
 ## Run an inventory and native comparison
 
 From this project directory in PowerShell:
 
 ```powershell
-.\.venv\Scripts\python.exe benchmark_vision.py --mode inventory --zip 'C:\Users\carlo\Downloads\Full Data Set.zip'
-.\.venv\Scripts\python.exe benchmark_vision.py --mode native --zip 'C:\Users\carlo\Downloads\Full Data Set.zip' --label-file output/vision-gold-representative.json
+.\.venv\Scripts\python.exe benchmark_vision.py --mode inventory --zip 'PATH_TO_AUTHORIZED_PRIVATE_ARCHIVE.zip'
+.\.venv\Scripts\python.exe benchmark_vision.py --mode native --zip 'PATH_TO_AUTHORIZED_PRIVATE_ARCHIVE.zip' --label-file output/vision-gold-representative.json
 ```
 
 Inventory and native modes import no model providers and send no API requests. The inventory uses both PDF text readers and word positions, because a weak `pdfplumber.extract_text()` result can coexist with usable words or `pypdf` text. Full-page RGB renders at PDFium scale 0.75 supply duplicate fingerprints. Page fingerprints describe exact pixels at that resolution, not general semantic similarity.
@@ -41,8 +41,8 @@ The installed `qwen3-vl:4b` model was run against `http://127.0.0.1:11435` with 
 
 | Source | Pages attempted | Document time | Exact source IDs | Exact ID/quantity/UOM rows | Exact PO |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Kurent PO 015446 | 2 | 416.234 s | 0/8 | 0/8 | 0/1 |
-| Truck Equipment PO 101016 | 1 | 216.219 s | 0/6 | 0/6 | 0/1 |
+| Multi-page supplier form | 2 | 416.234 s | 0/8 | 0/8 | 0/1 |
+| Single-page supplier form | 1 | 216.219 s | 0/6 | 0/6 | 0/1 |
 | Total | 3 | 632.453 s | 0/14 | 0/14 | 0/2 |
 
 The measured document processing time was about 10 minutes 32 seconds, excluding ZIP inventory. Page generation durations reported by Ollama were 213.870, 201.564, and 216.100 seconds. Prompt token counts were 3,979, 3,648, and 4,344, and each output consumed 8,192 tokens. The report records these failed calls and zero recovered rows rather than treating them as missing evaluation cases.
@@ -59,8 +59,8 @@ Document labels are keyed by exact lowercase PDF SHA-256, so a filename change c
 {
   "schema_version": 1,
   "documents": [{
-    "filename": "sample.pdf",
-    "archive_entry": "Full Data Set/sample.pdf",
+    "filename": "synthetic-example.pdf",
+    "archive_entry": "authorized-archive/synthetic-example.pdf",
     "sha256": "EXACT_64_CHARACTER_LOWERCASE_SHA256",
     "review_status": "visually_verified",
     "evidence": {
@@ -89,7 +89,7 @@ Document labels are keyed by exact lowercase PDF SHA-256, so a filename change c
 
 Supported source identifier roles are `vendor_product_code`, `manufacturer_part_number`, `customer_item_number`, and `unknown`. Keep all visible identifiers on each product row, including distinct fields containing the same string. Use `unknown` when a printed label and context do not establish its role. Do not infer a unit from a quantity or convert packs to eaches. A null `lines` means unverified; an empty list means all pages were independently reviewed and contain zero product rows.
 
-For Kurent, the quantity column prints amounts joined to `ea`; the gold separates the readable numeric amount from the printed unit and uses `EA` for case-insensitive UOM comparison. Page 2 contains totals for eight lines and a quantity due of 158, with no additional product rows. `OUR NUMBER` establishes the customer item role; `VEND-PART#` is populated only for H232005 and R410020LE. The truck-equipment form labels its code column `Part Number`; the gold uses `unknown` for the identifier role because it does not explicitly distinguish vendor code from manufacturer part number.
+In one multi-page layout, the quantity column joins the amount and unit; the reviewed labels keep the raw observation and record the normalized unit separately. The continuation page contains line totals but no additional product rows. Its printed labels establish customer-item roles separately from vendor-part roles. Another form labels its identifier column only as `Part Number`, so the reviewed role remains `unknown` rather than guessing vendor code versus manufacturer part number.
 
 ## Interpreting a report
 

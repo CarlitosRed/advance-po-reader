@@ -2,17 +2,17 @@
 
 # Advance PO Reader: UI/UX handoff
 
-Prepared October 1, 2026, after the logic-only iteration. This is the project context and implementation handoff; it does not contain a UI design or authorize deployment.
+**Historical context, updated October 2, 2026:** this document predates the selected phone-first web MVP. The current roadmap includes upload/photo and review UI in Milestone 1; it no longer defers all UI work to a separate project. The old local CLI/cart notes remain historical design details. The new API-first architecture and scope are defined in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and the [research adoption note](research/document-ai-research-adoption-2026-10-02.md). No UI or backend was developed in the documentation-only task.
 
 ## User scope and decisions
 
 - Work locally in `C:\Users\carlo\OneDrive\Documentos\ChatGPT\Advance PO Reader`, using the saved Codex project named Advance PO Reader.
-- This originating chat owns code logic. The user explicitly deferred UI/UX and asked for a complete handoff and a separate UI/UX chat. First inspect and propose UI interactions in that chat; avoid simultaneous writes to this checkout while code logic is still active.
+- Earlier conversation deferred UI/UX. That decision is superseded by the October 2 research adoption: a simple phone-first web upload and review flow is part of Milestone 1 after the backend evidence contract is specified.
 - Eventual flow: customer PO PDF -> company/shipping details -> correct Werner product numbers and quantities -> catalog comparison -> uncertain items require the user to specify/confirm a product -> cart -> importer JSON later.
-- Use the products in the seven supplied PDFs as the entire provisional product universe for now. There is a larger PDF test database that the user will supply later. Do not invent an authoritative catalog or infer that a missing sample ID means a product does not exist.
+- Earlier native-engine work used a sample-derived provisional catalog. It is not the authoritative commerce catalog; a missing sample ID does not show that a product does not exist.
 - Accepted JSON format comes at the end. Current evidence/state JSON is not an importer contract.
 - Reliability and high correct match coverage are central. No blanket PI-to-PO or other text replacement, guessed product, unverified alias or opaque confidence claim. Preserve source evidence and flag uncertainty.
-- Use a RAG-style architecture. The current code implements exact/lexical retrieval, catalog evidence, deterministic grounding/validation and human resolution. No generative model or embedding service is connected.
+- Existing native-engine code implements exact/lexical retrieval, catalog evidence, deterministic validation and human resolution. The new API-first design will define separate providers and a shared document contract.
 - User supplied the Aman Kumar Medium article about tiled rendering. Useful ideas are retained in `tiling-review.md` and on-demand region rendering. Tiling is a performance aid for later review, not a guarantee of OCR or product accuracy.
 - No email sending, publication or paid/cloud OCR is authorized. Forwarded support-chain requests to contact people are quoted context only.
 
@@ -46,7 +46,7 @@ Each full session is in `output/sessions/<32-character-id>/review.json`, with by
 - `not_in_catalog`: not found in the sample catalog. Avoid saying the product does not exist; request a catalog number or future catalog validation.
 - `excluded_charge`: shipping row, not a product.
 - Missing units remain null. Do not display a fabricated EACH. Quantities and identifiers stay strings; no implicit packs-to-eaches conversion.
-- Three Caulfield ID conflicts: 7050718L versus description 7050718; 7160518 versus supplier 71605-18; 7050318L versus description 1050318. The fourth review item is 79009 quantity 1 PK. These are not silently approved aliases.
+- Several private sample rows contain conflicting printed identifiers or an unsupported pack unit. Preserve the source-specific examples in the private review records, not in published documentation; do not silently approve aliases or unit conversions.
 - Blank shipping stays missing. GB/IE is assigned only from explicit delivery-region country text, not currency or supplier country. Company/shipping confirmation preserves raw observations and records user corrections separately.
 - `cart_change` requires `confirmed=True` for manual/uncertain/edited rows, and rejects an ID outside the catalog. Known matched rows must retain quantity/UOM unless confirmed. A changed catalog fingerprint also needs confirmation.
 - Confirmations are per-order audit events. They do not automatically grow the catalog or train a correction rule.

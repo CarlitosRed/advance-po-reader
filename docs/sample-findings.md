@@ -1,5 +1,7 @@
 # Sample findings (publication copy)
 
+> **Historical private-corpus assessment:** These findings describe the earlier local PDF and self-hosted evaluation work only. They are not OpenAI or Apple results and do not establish production accuracy. The source PDFs, private row-level labels and full findings remain outside Git; see [the project goal](../PROJECT_GOAL.md) for the current roadmap and evaluation rules.
+
 Seven original PDFs / eight pages were independently inspected. All have native text layers; image headers can still contain omitted fields. Originals, contact details, private row labels, email provenance and full findings remain in the local publication backup and ignored data/output directories.
 
 Observed failure modes include supplier versus delivery address confusion, blank delivery sections, filenames differing from printed order numbers, image-only phone text, whitespace changes in identifiers and contact strings, international address conventions, and currency differing from shipping country. Preserve every raw observation and assign address roles only with evidence.

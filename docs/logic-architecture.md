@@ -1,6 +1,6 @@
 # Grounded purchase-order logic
 
-The current scope is code logic: read customer PDFs/images, extract business fields and requested products, compare against catalog records, expose uncertainty, and stage verified choices in an internal cart. The vision engine is now the CLI default, with local Ollama or an optional configured OpenAI provider. This document records the earlier native engine. UI/UX belongs in another chat; the website catalog and importer/cart schema are not yet supplied.
+**Historical native-engine design.** The current project goal is now the October 2 OpenAI-first API/web milestone followed by Apple on-device extraction. The CLI and native PDF engine below are preserved comparison and evidence tools; they are not the planned commerce API or ProductDocument v1 boundary. A later implementation can reuse validated source-evidence behavior behind the versioned contract. The actual tenant catalog and cart/importer schema remain unprovided. See [research adoption decisions](research/document-ai-research-adoption-2026-10-02.md).
 
 See [Vision extraction and catalog comparison](vision-catalog-design.md) for the implemented extraction/comparison contracts, examples, cart eligibility rules, and evaluation requirements, and [Evaluating the vision reader](vision-evaluation.md) for independent gold labels and corpus measurements.
 

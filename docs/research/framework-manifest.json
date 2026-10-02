@@ -3,5 +3,6 @@
   "retained_file": "self_hosted_document_ai_recommendation_2026.docx",
   "sha256": "13d14cd28e741bcbd647cf6d0ab5da44bc30710ff476c040eaa467cae0f05233",
   "adopted_date": "2026-10-01",
-  "source_claims_require_validation": true
+  "source_claims_require_validation": true,
+  "current_status": "Retained historical research. Its Qwen-first sequence is superseded by the October 2 OpenAI-first and Apple follow-up goal. The source DOCX bytes remain unchanged."
 }

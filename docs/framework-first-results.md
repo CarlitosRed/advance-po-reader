@@ -1,6 +1,6 @@
 # First framework-aligned inference results
 
-Completed October 1, 2026. The updated [project goal](../PROJECT_GOAL.md) adopts the attached research framework while deferring all training and fine-tuning. This is a working pretrained prototype with measured extraction failures, not an approved automatic ordering system.
+**Historical comparison, completed October 1, 2026.** The roadmap changed October 2 to the OpenAI-first API and later Apple milestones in [PROJECT_GOAL.md](../PROJECT_GOAL.md). The measurements below record the existing Qwen prototype only. They do not measure the new provider path or authorize automatic ordering. Training remains deferred. The older self-hosted research is preserved under `docs/research/`; adoption decisions are in [the current research note](research/document-ai-research-adoption-2026-10-02.md).
 
 ## Implemented and verified
 
@@ -39,8 +39,8 @@ This is deterministic parsing of visible characters, not a guessed unit or pack 
 ## Candidate and adjudication service checks
 
 - Real Qwen embedding calls returned **1,024-dimensional vectors** and completed catalog/query retrieval in **7.984 s** including the initial local model load. Candidate IDs and exact bindings remained intact.
-- The pinned CPU reranker returned genuine logit scores, ranking `31334000` first for the Easiway ladder query. Initial download/load/scoring took **148.422 s**; a warm six-candidate call took **3.156 s**. These are service checks against the provisional catalog, not production match accuracy.
-- gpt-oss-20b returned validated structured JSON for a real line from the original Selco PDF and selected supplied catalog ID `31334000` with a compatible description. Its first measured call included queueing/loading behind the visual run, so its 192.234 s elapsed duration is not steady-state inference latency.
+- The pinned CPU reranker returned genuine logit scores and ranked one provisional candidate first for a product-description query. Initial download/load/scoring took **148.422 s**; a warm six-candidate call took **3.156 s**. These are service checks against the provisional catalog, not production match accuracy.
+- gpt-oss-20b returned validated structured JSON for a real, locally retained sample line and selected a supplied provisional candidate with a compatible description. Its first measured call included queueing/loading behind the visual run, so its 192.234 s elapsed duration is not steady-state inference latency. The source line and catalog ID are intentionally omitted from this publication copy.
 - A warm reranker → gpt-oss → deterministic-validation check completed in **9.453 s**. The application returned `review_needed` because the directly supplied native line lacked the vision path's required source-validation evidence. No cart service or external order operation was called.
 
 Exact matches can skip adjudication only under narrow source/identifier/full-description/unit checks. Embeddings and reranker scores are suggestions until calibrated. Unavailable stages are explicit. The current catalog has 18 sample-derived products and remains provisional.

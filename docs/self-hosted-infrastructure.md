@@ -1,6 +1,6 @@
 # Self-hosted inference and evaluation infrastructure
 
-The current working goal is [PROJECT_GOAL.md](../PROJECT_GOAL.md). The October 1, 2026 research framework is retained unchanged under `docs/research/`, with its file hash in `framework-manifest.json`. This phase performs pretrained inference and evaluation on supplied PDFs. No training, fine-tuning or automatic promotion of predictions to labels is implemented.
+**Historical comparison status, October 2, 2026:** the user-supplied API-first runbook and Apple blueprint now govern the roadmap in [PROJECT_GOAL.md](../PROJECT_GOAL.md). This guide records the existing pretrained Qwen prototype, its local services, and prior deployment research; it is not the Milestone 1 target. Keep training deferred. The October 1 framework DOCX and checksum remain unchanged for research history; its Qwen-first sequence is superseded. See [first results](framework-first-results.md) and [research adoption decisions](research/document-ai-research-adoption-2026-10-02.md).
 
 ## Model roles
 
@@ -50,7 +50,7 @@ Use the existing project virtual environment:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup-model-stack.ps1
 & .\.venv\Scripts\python.exe model_stack.py
-& .\.venv\Scripts\python.exe reader.py analyze data/originals/PO1298947.pdf --summary
+& .\.venv\Scripts\python.exe reader.py analyze 'PATH_TO_AUTHORIZED_TEST_PDF.pdf' --summary
 ```
 
 The cascade configuration is `config/model-stack.json`. CLI `--model`, `--adjudicator-model`, `--base-url`, `--timeout`, `--no-semantic` and `--no-reranker` override the corresponding run choices. `--pipeline single --model qwen3-vl:4b-instruct` runs the earlier comparison baseline. OpenAI remains an optional, explicitly selected provider with an API key; the framework workflow defaults to local inference.

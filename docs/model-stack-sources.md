@@ -1,5 +1,7 @@
 # Verified model deployment sources
 
+**Roadmap status updated October 2, 2026:** these are sources for the preserved Qwen/self-hosted comparison prototype. The current plan is OpenAI-first, then Apple on-device, with Qwen/self-hosting deferred until the first two milestones are measured. These references do not establish the live availability or quality of a future provider. Recheck current sources if Qwen work is later authorized.
+
 Checked October 1, 2026 against official model cards, vendor documentation and PyPI metadata. Research benchmark results are external claims; these references do not establish accuracy on this project's PDFs. Current installed/loaded/verified status belongs in the run's readiness record.
 
 | Component | Verified deployment details | Primary source |
@@ -33,10 +35,10 @@ Invoke-RestMethod http://127.0.0.1:11436/health
 ```json
 {
   "model": "Qwen/Qwen3-Reranker-0.6B",
-  "query": "Werner 6 tread fibreglass step ladder",
+  "query": "latex gloves, medium, box of 100",
   "documents": [
-    {"id": "7160618", "text": "Werner 6 Tread Fibreglass Step Ladder"},
-    {"id": "7140818", "text": "Werner MasterTrade 8 Tread Stepladder"}
+    {"id": "SYNTH-010", "text": "Natural latex examination gloves, medium, 100 per box"},
+    {"id": "SYNTH-011", "text": "Nitrile examination gloves, medium, 100 per box"}
   ],
   "top_n": 2
 }

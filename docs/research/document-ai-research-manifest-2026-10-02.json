@@ -1,0 +1,35 @@
+{
+  "review_date": "2026-10-02",
+  "review_scope": "Complete paragraphs, tables, and embedded figures in all three supplied DOCX files. Embedded blueprint architecture figures were inspected. The input files were not edited. No source API, cloud, or model calls were made.",
+  "rendering_note": "The bundled DOCX renderer could not rasterize the source documents on this Windows host because LibreOffice soffice.exe is not installed. Text and tables were extracted with the bundled Python runtime; all three embedded blueprint figures were separately viewed.",
+  "sources": [
+    {
+      "filename": "document_ai_first_deployment_api_runbook_2026.docx",
+      "bytes": 56050,
+      "sha256": "d1c70df7fec44dd8f373011b10f081edbd0761d43557297b856644ff5cd93c6b",
+      "paragraphs": 177,
+      "tables": 21,
+      "embedded_images": 0,
+      "searchable_copy": "document_ai_first_deployment_api_runbook_2026.md"
+    },
+    {
+      "filename": "document_ai_implementation_blueprint_openai_apple_2026 2.docx",
+      "bytes": 302900,
+      "sha256": "6c5ca510d012e21c818188ffdd528989e6e99209ebbe7928d0eb05ea83ffbbeb",
+      "paragraphs": 245,
+      "tables": 29,
+      "embedded_images": 3,
+      "searchable_copy": "document_ai_implementation_blueprint_openai_apple_2026.md"
+    },
+    {
+      "filename": "document_ai_work_project_handoff_2026.docx",
+      "bytes": 49356,
+      "sha256": "c5ae02f928de643b39fe7f72ff99263ec27897fb5e2a4f432b7485174c07f300",
+      "paragraphs": 144,
+      "tables": 12,
+      "embedded_images": 0,
+      "searchable_copy": "document_ai_work_project_handoff_2026.md"
+    }
+  ],
+  "embedded_instruction_handling": "Architecture and gate recommendations were assessed as user-supplied research. Their pasted commands and instructions were not treated as independent authorization to develop, call paid APIs, transfer private documents, provision cloud services, or train."
+}

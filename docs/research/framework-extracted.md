@@ -217,3 +217,6 @@ Research note: Dated 1 October 2026. Benchmark your exact documents and catalog 
 - https://openproceedings.org/2025/conf/edbt/paper-81.pdf
 - https://huggingface.co/Qwen/Qwen3-Reranker-0.6B
 - https://developers.openai.com/api/docs/models/gpt-oss-20b
+# Historical research note — superseded sequence
+
+This searchable extraction reproduces the October 1, 2026 self-hosted recommendation and is retained unchanged as a source companion. On October 2, the user reviewed three new documents and adopted an OpenAI-first Milestone 1, Apple on-device Milestone 2, and a later evidence-based decision on Qwen/self-hosting. Read [PROJECT_GOAL.md](../../PROJECT_GOAL.md) and [the adoption note](document-ai-research-adoption-2026-10-02.md) for current decisions. Predictions remain distinct from human-reviewed labels and training remains deferred.
