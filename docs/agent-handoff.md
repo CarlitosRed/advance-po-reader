@@ -10,7 +10,7 @@ The original local backend commit and web history contain private sample/provena
 
 ## Measured state and limits
 
-- Local prior verification: 138 tests passed in the original workspace on October 2. Read the latest test output before carrying this count forward.
+- Publication verification on October 2: all 138 tests passed in both the original workspace and the clean worktree with private fixtures. The source-only checkout ran 101 tests with 9 explicit skips; private-PDF class skips represent additional unavailable cases. GitHub's Windows CI passed on the published baseline. Read the latest test output before carrying these results forward.
 - Runtime previously verified on Ryzen 7 5800X, 32 GB RAM and Radeon RX 6700 XT 12 GB. Project-local Ollama uses loopback port 11435 and Vulkan; the CPU cross-encoder service uses port 11436. Service availability must be checked live, especially after restart.
 - Qwen3-VL-8B-Instruct, 4B comparison baseline, Qwen3-Embedding-0.6B, Qwen3-Reranker-0.6B and gpt-oss-20b have prior actual stage measurements. See docs/framework-first-results.md and config/model-digests.json. PaddleOCR-VL-1.6 is awaiting a supported runtime and independent PDF test.
 - The private corpus inventory contains seven initial PDFs / eight pages and a retained ZIP with 33 PDFs / 45 pages. Inventory live contents before reporting counts. Keep duplicated pages and layout families together when proposing splits.
@@ -30,6 +30,10 @@ Worktrees improve edit isolation and preserve committed context; they do not inc
 A fresh clone can install Python dependencies with setup.ps1 and run `python -m unittest discover -s tests -v`. Private-PDF integration checks explicitly skip without local fixtures; a skipped suite does not establish real-PDF correctness. Mock provider tests do not call live models.
 
 On this machine, use `initialize-worktree.ps1 -PrimaryWorkspace <original-workspace>` from the worktree. It copies only the small original PDFs, provisional catalog and private regression fixtures into ignored data/. It records the existing primary Python executable under ignored output/worktree-runtime.json. Each worktree has independent writable outputs. Then use `run-worktree-checks.ps1` to run tests through that interpreter with the worktree as the current directory. This reuses packages while importing the worktree source. It does not start inference or train.
+
+Use `run-worktree-models.ps1` to start/reuse the existing primary Ollama and reranker services without duplicating their weights. The reranker is lazy and loads on the first scoring request. Check `model_stack.py` through the recorded interpreter for current service availability; starting a service is not a fresh model-quality evaluation.
+
+Repository: https://github.com/CarlitosRed/advance-po-reader (private). Main stores the clean baseline; the attached worktree uses codex/po-reader-development with its own upstream. A local pre-push hook rejects the preserved private legacy history and tracked runtime/data folders. Fresh clones should enable the versioned hook with `git config core.hooksPath .githooks`.
 
 For corpus work, explicitly supply the original retained ZIP path to the dataset builder or copy it into that worktree's ignored data/corpora/. Copy only reviewed labels needed for the task and use a new output directory. Do not share output/ wholesale or propagate draft labels into approved releases.
 

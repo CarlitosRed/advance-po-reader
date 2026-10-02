@@ -14,7 +14,7 @@ PaddleOCR-VL-1.6 is **pending** its full supported parser runtime and an indepen
 
 The supplied ZIP contains **33 PDFs and 45 pages**, with eight repeated rendered-page occurrences grouped for future split assignment. An unchanged private copy is retained in `data/corpora/full-data-set.zip`, SHA-256 `b45ca9c36171c7d8d410f2d6ff428b5006100f27a8fa894671ee637367d55e21`. The seven earlier PDFs remain unchanged in `data/originals/`; all seven hashes/sizes passed verification.
 
-Independent development labels cover **two PDFs, three pages and 14 product rows**: Kurent PO 015446 and Truck Equipment PO 101016. All three rendered source pages were checked again against those labels. The other 31 ZIP documents remain unverified. There are no independent authoritative website-catalog labels, so website match accuracy and candidate recall cannot be claimed.
+Independent development labels cover **two PDFs, three pages and 14 product rows**. Original document identities and source-specific labels are retained in the private evaluation files. All three rendered source pages were checked again against those labels. The other 31 ZIP documents remain unverified. There are no independent authoritative website-catalog labels, so website match accuracy and candidate recall cannot be claimed.
 
 ## Visual extraction measurements
 
