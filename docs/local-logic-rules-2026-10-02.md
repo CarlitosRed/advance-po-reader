@@ -1,6 +1,6 @@
 # Local logic rules and Gate A boundary
 
-Updated October 2, 2026 from the high-level logic review. This document resolves the first four tightening rules for local development and explicitly defers the Apple privacy promise to Milestone 2. `PROJECT_GOAL.md` remains the project objective; `AGENTS.md` governs implementation behavior. The active next workstream is Gate A only.
+Updated October 2, 2026 from the high-level logic review. This document resolves the first four tightening rules for local development and explicitly defers the Apple privacy promise to Milestone 2. `PROJECT_GOAL.md` remains the project objective; `AGENTS.md` governs implementation behavior. The latest direct user instruction expands the completed Gate A to local backend preparation, with the key and website later. Historical Gate A limits below describe that checkpoint; they do not override this new authorization. The observation, tenancy, run and review rules remain mandatory.
 
 ## 1. Preserve field observations and contract states
 
@@ -46,6 +46,10 @@ The sample-derived 18-product catalog is a test fixture, not an authoritative me
 
 Apple Vision/Foundation Models is explicitly out of Gate A and the current local implementation scope. Do not resolve the earlier “local-only” promise now. At Milestone 2, decide whether it means the source image remains on-device, extracted text also remains on-device, or the entire matching/review path works offline. Reassess any data sent to a backend under the applicable privacy policy and verify current Apple platform capabilities then.
 
-## Current Gate A scope
+## Historical Gate A scope (completed checkpoint)
 
 Implement only the local FastAPI health/configuration foundation, local PostgreSQL/Alembic baseline, and the first versioned contract boundary. It must start without OpenAI credentials or external services. Add focused tests for configuration, liveness/readiness, database/migration behavior, and contract state validation. Use synthetic test fixtures only. No upload endpoint, supplied PDF processing, extractor, catalog, matcher, review UI, cart, provider request, AWS, Apple, Qwen inference, or training belongs in Gate A.
+
+## Active local backend preparation
+
+Authorized October 2, 2026: extraction schema freeze, catalog/aliases, private validated upload, immutable sources and reprocessing runs, disabled live provider adapter, bounded review-only suggestions, correction/audit APIs, reproducible synthetic demo and tests. No key work or provider request now. Each later external attempt requires affirmative source-specific privacy authorization; key presence alone is insufficient. Website/UI, AWS, Apple, Qwen, training and cart/order actions remain excluded.

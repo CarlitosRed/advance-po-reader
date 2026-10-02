@@ -1,8 +1,16 @@
+# Active handoff: local backend preparation, October 2, 2026
+
+The user directly expanded Gate A to prepare all local backend APIs/code/commands and synthetic tests; website and key later. This worktree owns codex/local-backend-preparation, based on a cherry-pick of d67616c. Gate A service at 8010 and database gate_a_service remain owned by the original worktree and must not be changed. Backend uses 8012 and separate databases, private data/output only here. No live provider calls, credential import/creation, customer transfer, AWS, Apple/Qwen, training or cart/order actions. See local-backend.md for final behavior, tests and commands.
+
+The local backend is implemented, with extraction payload 1.1 (Gate A envelope 1.0 unchanged), isolated migration head `0003_provider_receipt`, source/run/attempt history, bounded review-only suggestions and correction/audit APIs. Final local checks: 221 backend tests and 135 preserved Gate A tests passed; legacy tests reported 101 with 9 private-fixture skips. The live synthetic PDF/PNG demo on 8012 passed and the original service on 8010 remains ready. Inspect docs/backend-verification.md and ignored output/backend-verification/runtime.json before relying on saved runtime state. Website and real source-authorized OpenAI verification are the remaining next phase. The adjacent staging databases were inspected read-only and have 0 approved training examples and 0 tenant assignments; no private data was copied or predictions promoted.
+
+## Preserved Gate A handoff
+
 # Agent handoff — October 2, 2026
 
 Read `PROJECT_GOAL.md` and `AGENTS.md` before work. The three new research sources agree on OpenAI-first Milestone 1, Apple extraction Milestone 2, and Qwen/self-hosted inference only after measured need. The prior October 1 Qwen-first framework is retained as historical comparison evidence. Full sources and searchable copies are under `docs/research/`; `document-ai-research-adoption-2026-10-02.md` explains their adoption and conflicts.
 
-The latest user request adopts four logic-tightening rules and selects **local Gate A only**. The bounded foundation is now implemented in the isolated Gate A worktree; its [setup/verification guide](gate-a.md) reports the actual behavior and runtime evidence. This workstream stops at Gate A and does not authorize later gates.
+The historical Gate A-stage user request adopted four logic-tightening rules and selected **local Gate A only**. That bounded foundation was implemented in the isolated Gate A worktree; its [setup/verification guide](gate-a.md) reports the actual behavior and runtime evidence. That workstream stopped at Gate A; the subsequent direct authorization at the top of this handoff governs the separate backend branch.
 
 ## Direction to continue from
 

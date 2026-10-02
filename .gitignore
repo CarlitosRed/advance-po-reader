@@ -1,4 +1,5 @@
 .venv/
+.venv-backend/
 __pycache__/
 data/
 output/
@@ -6,6 +7,7 @@ tmp/
 .env
 .env.*
 !.env.example
+!.env.backend.example
 .pytest_cache/
 .mypy_cache/
 node_modules/
