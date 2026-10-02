@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: gate_a
+      POSTGRES_PASSWORD: gate_a_local
+      POSTGRES_DB: gate_a
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      # A bind directory under this worktree avoids shared writable named volumes.
+      - type: bind
+        source: ./data/gate-a/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gate_a -d gate_a"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
