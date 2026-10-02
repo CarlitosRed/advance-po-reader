@@ -1,0 +1,15 @@
+#!/bin/sh
+# The preserved legacy root includes private source details and must stay local.
+legacy=93a1b5c7fa1dd769db9bc60ec51205749c6faf5b
+while read local_ref local_sha remote_ref remote_sha; do
+    case "$local_sha" in 0000000000000000000000000000000000000000) continue ;; esac
+    if git merge-base --is-ancestor "$legacy" "$local_sha" 2>/dev/null; then
+        echo "Push refused: legacy private history must stay local. Use a branch descended from clean main." >&2
+        exit 1
+    fi
+    if git ls-tree -r --name-only "$local_sha" | grep -E '^(data|output|tmp|\.venv)/|\.(gguf|safetensors|sqlite3|pt|pth)$' >/dev/null; then
+        echo "Push refused: private/runtime files are tracked in the proposed revision." >&2
+        exit 1
+    fi
+done
+exit 0

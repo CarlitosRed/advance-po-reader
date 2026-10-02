@@ -1,0 +1,5 @@
+# Optional isolated runtime. Install torch from the official CPU index first;
+# setup-reranker.ps1 handles that. Main PDF-reader dependencies stay unchanged.
+torch==2.11.0+cpu
+sentence-transformers==5.4.1
+transformers==5.4.0

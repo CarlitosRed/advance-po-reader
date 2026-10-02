@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+data/
+output/
+tmp/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.mypy_cache/
+node_modules/
+*.sqlite3
+*.sqlite3-*
+*.gguf
+*.safetensors
+*.pt
+*.pth

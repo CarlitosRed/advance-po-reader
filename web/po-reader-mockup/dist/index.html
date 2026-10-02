@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#153a60">
+  <meta name="description" content="Upload a purchase order, review uncertain products against the source document, and prepare your cart. Interactive SmarterCommerce prototype.">
+  <title>Purchase Order Reader · SmarterCommerce</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23153a60'/%3E%3Cpath d='M10 7h9l4 4v14H10z' fill='none' stroke='white' stroke-width='2'/%3E%3Cpath d='M14 16h5m-5 4h5' stroke='%23ff823d' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand-lockup"><div class="werner-logo"><img src="assets/werner.jpg" alt="Werner" width="250" height="250"></div><span class="brand-divider"></span><span class="app-name">Purchase Order Reader</span></div>
+      <div class="header-actions"><span class="prototype-tag">Interactive prototype</span><button class="cart-button" id="header-cart" disabled><span data-icon="shopping-cart"></span><span>Cart</span><span class="cart-count" id="cart-count">0</span></button></div>
+    </div>
+  </header>
+  <main id="main-content" class="main-shell">
+    <nav class="steps" aria-label="Order import progress">
+      <button class="step active" id="step-upload" aria-current="step"><span class="step-number">1</span><span>Upload document</span></button>
+      <span class="step-line" aria-hidden="true"></span>
+      <button class="step" id="step-review" disabled><span class="step-number">2</span><span>Review products</span></button>
+      <span class="step-line" aria-hidden="true"></span>
+      <button class="step" id="step-cart" disabled><span class="step-number">3</span><span>Your cart</span></button>
+    </nav>
+    <div id="view">
+      <section class="page-intro"><p class="eyebrow">PURCHASE ORDER IMPORT</p><h1 tabindex="-1">Start with your purchase order.</h1><p>Upload your document. Review the products. Build your cart.</p></section>
+      <div class="upload-layout">
+        <section class="panel upload-panel" aria-labelledby="upload-title">
+          <div class="panel-heading"><h2 id="upload-title">Upload a document</h2><span class="small-tag">Step 1 of 3</span></div>
+          <div class="dropzone" id="dropzone">
+            <div class="upload-symbol"><span data-icon="upload-cloud"></span></div>
+            <h3>Drop your purchase order here</h3>
+            <p>A PDF, a scan, or a photo of your order.</p>
+            <button class="button primary" id="browse-file"><span data-icon="folder-open"></span>Choose a file</button>
+            <p class="file-hint">PDF, JPG, PNG or WebP · up to 25 MB</p>
+            <input id="file-input" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" hidden>
+          </div>
+          <p class="inline-error" id="upload-error" role="alert" hidden></p>
+          <div class="privacy-note"><span data-icon="shield-check"></span><p>Your file stays on your device in this prototype.</p></div>
+          <div class="sample-divider"><span>Or explore the workflow</span></div>
+          <button class="sample-order" id="sample-order"><span class="sample-file-icon" data-icon="file-text"></span><span class="sample-order-copy"><strong>Try a sample purchase order</strong><span>Includes a SKU mismatch and a non-product line</span></span><span class="small-tag">DEMO</span></button>
+        </section>
+        <aside class="panel flow-panel" aria-labelledby="next-title">
+          <div class="flow-heading"><span class="mini-icon" data-icon="scan-line"></span><h2 id="next-title">A little less manual entry.</h2></div>
+          <div class="flow-item"><span class="flow-count">01</span><div><h3>We read your document</h3><p>Product descriptions, numbers, and quantities are picked up together.</p></div></div>
+          <div class="flow-item"><span class="flow-count">02</span><div><h3>You check anything unclear</h3><p>See the original snippet, choose a product, or dismiss a line.</p></div></div>
+          <div class="flow-item"><span class="flow-count">03</span><div><h3>Your cart is ready to review</h3><p>Matched and confirmed products stay separate from unresolved items.</p></div></div>
+          <div class="flow-callout"><span data-icon="user-check"></span><p>You have the final say on every uncertain product.</p></div>
+        </aside>
+      </div>
+      <div class="prototype-note"><span data-icon="info"></span><span>Explore with sample results. Live document reading will be connected next.</span></div>
+    </div>
+  </main>
+  <footer class="site-footer"><span>Purchase orders, with fewer steps.</span><div class="powered-by"><span>Powered by</span><img src="assets/smartercommerce.png" alt="SmarterCommerce" width="291" height="60"></div></footer>
+  <div class="toast" id="status-message" role="status" aria-live="polite" aria-atomic="true"></div>
+  <dialog id="document-dialog" aria-labelledby="document-dialog-title"><div class="dialog-heading"><h2 id="document-dialog-title">Document preview</h2><button class="icon-button" id="close-document" aria-label="Close document preview"><span data-icon="x"></span></button></div><div id="document-preview"></div></dialog>
+</body>
+</html>
