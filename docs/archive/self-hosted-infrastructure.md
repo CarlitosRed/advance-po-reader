@@ -1,6 +1,6 @@
 # Self-hosted inference and evaluation infrastructure
 
-**Historical comparison status, October 2, 2026:** the user-supplied API-first runbook and Apple blueprint now govern the roadmap in [PROJECT_GOAL.md](../PROJECT_GOAL.md). This guide records the existing pretrained Qwen prototype, its local services, and prior deployment research; it is not the Milestone 1 target. Keep training deferred. The October 1 framework DOCX and checksum remain unchanged for research history; its Qwen-first sequence is superseded. See [first results](framework-first-results.md) and [research adoption decisions](research/document-ai-research-adoption-2026-10-02.md).
+**Historical comparison status:** this guide records the removed pretrained Qwen prototype and prior deployment research. Its commands no longer apply. The current product goal is in [PROJECT_GOAL.md](../../PROJECT_GOAL.md); local-model inference and training are outside the adopted implementation plan. The original framework DOCX remains under `docs/research/` as source evidence. See [first results](framework-first-results.md) and [research adoption decisions](../research/document-ai-research-adoption-2026-10-02.md).
 
 ## Model roles
 

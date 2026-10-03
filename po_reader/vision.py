@@ -223,8 +223,6 @@ def _line(observed, page, index):
 def analyze_vision(raw, filename, catalog, provider):
     pages, images, source_type, warnings = _prepare(raw)
     usage_start = len(getattr(provider, "usage", []))
-    if hasattr(provider, "refresh_model_identities"):
-        provider.refresh_model_identities()
     records, lines, failures = [], [], []
     image_hashes = [hashlib.sha256(image).hexdigest() for image in images]
     counts = Counter(image_hashes)
@@ -287,12 +285,9 @@ def analyze_vision(raw, filename, catalog, provider):
     extraction["rendering"] = dict(requested_pdf_dpi=216, max_pixels=7_900_000,
                                    page_settings=[dict(page=page["page"], **page.get("rendering", {})) for page in pages],
                                    limitation="Large pages are rendered below the target DPI to stay within the pixel budget; image inputs retain supplied resolution.")
-    if hasattr(provider, "metadata"):
-        extraction["cascade"] = provider.metadata
-        extraction["cascade"]["stage_counts"] = provider.stage_counts(usage_start)
     return dict(filename=filename, sha256=hashlib.sha256(raw).hexdigest(), source_type=source_type,
                 catalog_authority="sample_catalog",
-                architecture_version="pretrained_visual_text_cascade_v1" if hasattr(provider, "metadata") else "vision_catalog_v1",
+                architecture_version="openai_vision_v1",
                 profile="vision",
                 status="partial" if failures else "extracted", pages=pages, company=company, shipping=shipping,
                 order_number=order, lines=lines, warnings=warnings,

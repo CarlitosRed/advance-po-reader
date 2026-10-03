@@ -16,7 +16,7 @@ Open the Site to upload or drop a PDF/photo, or choose **Try a sample purchase o
 
 ## Prototype boundaries
 
-There is no live extraction in this website yet. Uploading a new document leads to clearly labeled **sample review results**, alongside a separate preview of the user's file. Example rows and snippets are never presented as extracted from the upload. The website does not call local Ollama, the reader CLI, an external AI API, a real store catalog, or a store cart. There are no prices, customer details, checkout, training, or order submission. Browser refresh clears the in-memory session and decisions.
+There is no live extraction in this website yet. Uploading a new document leads to clearly labeled **sample review results**, alongside a separate preview of the user's file. Example rows and snippets are never presented as extracted from the upload. The website does not call the reader CLI, an external AI API, a real store catalog, or a store cart. There are no prices, customer details, checkout, training, or order submission. Browser refresh clears the in-memory session and decisions.
 
 `dist/assets/catalog.json` contains only sample IDs/names. It excludes PDF provenance, emails, addresses and source customer documents. Ordering-unit controls in the mockup are example choices; production support and conversions require the real catalog contract.
 
