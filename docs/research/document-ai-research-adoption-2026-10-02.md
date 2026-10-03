@@ -60,3 +60,7 @@ After a high-level scenario review, the user selected local Gate A only for the 
 5. **Apple deferral:** make no Milestone 2 decision now about whether local-only means on-device images, on-device extracted text, or a fully offline flow. Revisit it when Milestone 2 is explicitly started.
 
 The next workstream may implement only the local FastAPI health/configuration foundation, PostgreSQL/Alembic baseline, and first versioned contract boundary. It must start without credentials and use synthetic fixtures. It does not upload or process private PDFs, call a provider, build catalog matching/review/cart behavior, deploy to AWS, implement Apple, or train. See `docs/local-logic-rules-2026-10-02.md` for exact state meanings and scope.
+
+## October 3 implementation decision
+
+The user selected the OpenAI API only for model-backed implementation and directed removal of local-model and training code. T-002 removes Ollama/Qwen/gpt-oss, local semantic retrieval and reranking, model setup/readiness scripts, and VLM dataset preparation/review code. Historical guides and reports are retained under `docs/archive/`, and the original self-hosted research DOCX remains here as source evidence. The archived source material is historical and does not authorize restoring the removed code. Gate A remains a separate local-only workstream and makes no provider request.

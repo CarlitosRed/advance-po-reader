@@ -36,19 +36,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("catalog")
-    analyze = commands.add_parser("analyze")
+    analyze = commands.add_parser("analyze", help="Analyze PDFs with the native text engine (vision analysis is unavailable)", description="Use the local native PDF text engine only. Vision analysis is unavailable; image-only PDFs need OCR and are not analyzed.")
     analyze.add_argument("input", type=Path)
     analyze.add_argument("--summary", action="store_true", help="Print only the key fields and match states")
     analyze.add_argument("--render", action="store_true", help="Also save page images; off by default")
-    analyze.add_argument("--engine", choices=["vision", "native"], default="vision", help="Vision is the primary reader; native runs the earlier layout parser")
-    analyze.add_argument("--provider", choices=["ollama", "openai"], default="ollama")
-    analyze.add_argument("--pipeline", choices=["cascade", "single"], default="cascade", help="Local cascade separates extraction and text adjudication")
-    analyze.add_argument("--model", help="Extractor; local cascade defaults to qwen3-vl:8b-instruct")
-    analyze.add_argument("--adjudicator-model", help="Text model for ambiguous candidates; default gpt-oss:20b")
-    analyze.add_argument("--no-semantic", action="store_true", help="Skip optional embedding service")
-    analyze.add_argument("--no-reranker", action="store_true", help="Skip optional cross-encoder service")
-    analyze.add_argument("--base-url", help="Local Ollama URL, default http://127.0.0.1:11435")
-    analyze.add_argument("--timeout", type=float, help="Seconds allowed per model request")
     analyze.add_argument("--limit", type=int, help="Process at most this many input documents")
     show = commands.add_parser("show")
     show.add_argument("session_id")
@@ -72,35 +63,22 @@ def main():
     if args.command == "catalog":
         result = dict(authority="sample_catalog", products=list(load_catalog().values()))
     elif args.command == "analyze":
-        provider = None
         if args.limit is not None and args.limit < 1:
             parser.error("--limit must be positive")
-        if args.engine == "vision":
-            from po_reader.model_provider import build_provider
-            try:
-                if args.provider == "ollama" and args.pipeline == "cascade":
-                    from po_reader.infrastructure import build_stack
-                    provider = build_stack(extractor_model=args.model, adjudicator_model=args.adjudicator_model,
-                                           base_url=args.base_url, timeout=args.timeout,
-                                           semantic=not args.no_semantic, reranker=not args.no_reranker)
-                else:
-                    provider = build_provider(args.provider, args.model, args.base_url, args.timeout)
-            except ValueError as error:
-                parser.error(str(error))
         result = []
-        for filename, raw in input_documents(args.input, images=provider is not None):
+        for filename, raw in input_documents(args.input, images=True):
             if args.limit is not None and len(result) >= args.limit:
                 break
             logging.info("Reading %s", filename)
             try:
-                doc = create(raw, filename, render=args.render, provider=provider)
+                doc = create(raw, filename, render=args.render)
             except Exception as error:
                 result.append(dict(filename=filename,status="failed",error=str(error)))
                 continue
             if args.summary:
                 doc = {key:doc[key] for key in ("session_id", "filename", "status", "profile", "company", "shipping", "order_number", "lines", "warnings", "extraction") if key in doc}
                 if "extraction" in doc:
-                    doc["extraction"] = {key:doc["extraction"][key] for key in ("provider", "model", "failures", "usage", "cascade") if key in doc["extraction"]}
+                    doc["extraction"] = {key:doc["extraction"][key] for key in ("provider", "model", "failures", "usage") if key in doc["extraction"]}
                 doc["lines"] = [{key:line[key] for key in ("line_id", "vendor_id", "customer_id", "supplier_id", "identifiers", "description", "quantity", "uom", "kind", "match", "source_validation") if key in line} for line in doc["lines"]]
             result.append(doc)
         if not result:

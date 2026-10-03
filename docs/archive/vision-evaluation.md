@@ -1,6 +1,6 @@
 # Evaluating the vision reader
 
-This document describes the private-PDF and Qwen comparison harness. The October 2 roadmap in [PROJECT_GOAL.md](../PROJECT_GOAL.md) calls for a future OpenAI-first measured baseline and then an Apple provider comparison on the same independently reviewed set. Existing Qwen runs are historical comparison results, not results for the current API-first plan. Keep every source label private, freeze/ version gold sets, and retain partial failures in denominators. Training remains deferred.
+This document describes the private-PDF and Qwen comparison harness. The October 2 roadmap in [PROJECT_GOAL.md](../../PROJECT_GOAL.md) called for a future OpenAI-first measured baseline and then an Apple provider comparison on the same independently reviewed set. Existing Qwen runs are historical comparison results, not results for the current API-only implementation plan. Keep every source label private, freeze/version gold sets, and retain partial failures in denominators. Training is out of scope.
 
 `benchmark_vision.py` measures extraction against independently reviewed source labels. It reads PDF members directly from a ZIP in memory, inventories every document, groups duplicates, and optionally runs the existing native reader or the vision reader. Its reports are shadow results: it never calls the cart service.
 

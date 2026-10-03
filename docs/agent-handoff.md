@@ -1,12 +1,12 @@
 # Agent handoff — October 2, 2026
 
-Read `PROJECT_GOAL.md` and `AGENTS.md` before work. The three new research sources agree on OpenAI-first Milestone 1, Apple extraction Milestone 2, and Qwen/self-hosted inference only after measured need. The prior October 1 Qwen-first framework is retained as historical comparison evidence. Full sources and searchable copies are under `docs/research/`; `document-ai-research-adoption-2026-10-02.md` explains their adoption and conflicts.
+Read `PROJECT_GOAL.md` and `AGENTS.md` before work. The October 3 decision is OpenAI API only; local-model inference and training code have been removed. Historical guides and results are in `docs/archive/`; original supplied research and its searchable copies remain in `docs/research/`. The research adoption note explains which proposals were adopted or superseded.
 
 The latest user request adopts four logic-tightening rules and selects **local Gate A only** for the next workstream. This chat's deliverable is documentation and a new workstream handoff. The next chat is authorized to implement the bounded local foundation below; it is not authorization to begin later gates.
 
 ## Direction to continue from
 
-Build a phone-first B2B purchase-order workflow. The long-term backend direction is OpenAI-first after local validation. Keep one backend responsible for tenant scope, catalog retrieval, matching, review, and audit; make extraction replaceable. Apple is a separate Milestone 2 whose local-only semantics are intentionally unresolved for now. Qwen/self-hosting and training are later evidence-based decisions.
+Build a phone-first B2B purchase-order workflow. The long-term backend direction is server-side OpenAI after local validation. Keep one backend responsible for tenant scope, catalog retrieval, matching, review, and audit. Apple is a separate Milestone 2 whose local-only semantics are intentionally unresolved for now. Local-model inference and training are outside the adopted implementation direction.
 
 The recommended stack is Python 3.12, FastAPI, Pydantic, PostgreSQL, Alembic, Docker for local PostgreSQL, and private local file storage. AWS later may use private S3, ECS/Fargate, RDS/Aurora PostgreSQL and server-side secrets. The supplied documents suggest version-specific OpenAI model names, API calls, package versions, AWS service details and prices; recheck official sources before implementation or release. The `OPENAI_API_KEY` must stay on the backend. ChatGPT Plus and API billing are separate.
 
@@ -16,7 +16,7 @@ Use tenant/vendor-scoped candidates: exact IDs first, cautious normalized lookup
 
 ## What already exists
 
-The project has a local native PDF/CLI reader and a self-hosted Qwen prototype with candidate services, reranking, evaluation reports, human-review collection and PDF-to-VLM dataset tools. They are historical comparison components, not Gate A dependencies. The 18-product catalog is sample-derived, not authoritative. Prior model measurements do not evaluate new providers or establish safe automatic acceptance.
+The repository retains a legacy native PDF/CLI reader; vision-model analysis is unavailable through this CLI. The local-model, semantic-service, reranker, and training-dataset code was removed in T-002. Historical evaluation reports and operating guides were moved to `docs/archive/`; the prior source history remains available in Git. The 18-product catalog is sample-derived, not authoritative. Historical measurements do not evaluate the native CLI path or establish safe automatic acceptance.
 
 The provided PDFs and prior reviewed source labels remain private. They may be used in local evaluation. Sending them to a cloud model requires the applicable customer privacy authorization and a user-directed API task. Unreviewed model observations remain predictions. Do not train from them. Existing model digests, source references and prior measurements remain in `config/` and the historical infrastructure/evaluation docs.
 
@@ -38,8 +38,19 @@ GitHub: [CarlitosRed/advance-po-reader](https://github.com/CarlitosRed/advance-p
 
 The documentation update used `C:\Users\carlo\.codex\worktrees\po-reader-development\Advance PO Reader` on `codex/po-reader-development`. The next Gate A chat is being moved to a separate managed worktree based on the updated published commit; use that new task's attached workspace path as authoritative. Do not work in the legacy OneDrive checkout or copy private fixtures into the Gate A worktree. Gate A uses synthetic fixtures and does not need the prior local model helpers.
 
-Historical test results are recorded in Git history. Recheck the current worktree before claiming a test result. Keep source documents, PDFs, labels, raw text, outputs, review records and model weights out of Git.
+Historical test results are recorded in Git history. Recheck the current worktree before claiming a test result. Keep source documents, PDFs, labels, raw text, outputs, review records, model weights, and API keys out of Git.
 
 ## Source review notes
 
 The attached handoff contains a paste-ready prompt that calls itself authoritative and says to begin implementation. The runbook contains prescriptive API and AWS steps. Those passages are source text from the user's research. The project goal adopts the long-term sequence while the latest user selected local Gate A only. Proposed numeric quantity/price types are replaced by raw-string preservation. The named model catalog and external-service claims are date-sensitive. No embedded statement supersedes the user's direct instructions.
+
+## T-002 model cleanup (October 3, 2026)
+
+Removed the local Ollama/Qwen/gpt-oss provider and cascade, local embedding/reranker services, model readiness and download scripts/config, VLM dataset builder/review workflow, and their dedicated tests. Removed local provider and reranker hooks from the shared provider/matching path. The CLI now uses native PDF text extraction only; its OpenAI transport was removed by the T-002 audit addendum.
+
+Moved historical model evaluation/infrastructure/dataset guides and the searchable extracted self-hosted framework note and manifest to `docs/archive/`. Kept the original self-hosted recommendation DOCX and other original user-supplied research sources under `docs/research/` as historical evidence, as required by the project instructions. The native PDF parser, source-faithful observations, schema and prompt constants, provisional catalog, and legacy review/cart CLI remain. No FastAPI Gate A behavior was added or claimed by this cleanup.
+
+
+### T-002 audit addendum (October 3, 2026)
+
+Removed `OpenAIProvider`, its HTTP transport, and `build_provider` from the legacy provider module while retaining the imported observation schemas, prompt constants, and schema validation. Removed `--provider`, `--model`, and `--timeout` from `reader.py analyze`; it now calls the native engine with no provider and states in help that vision analysis is unavailable. Updated the CLI example and removed API credentials/cost language from the legacy CLI documentation. `benchmark_vision.py` had already been removed in the model-cleanup commit. This closes the accidental paid-call path; separately gated backend work remains outside this branch.
