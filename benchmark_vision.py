@@ -336,7 +336,7 @@ class ProgressProvider:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--zip", dest="zip_path", type=Path, default=Path(r"C:\Users\carlo\Downloads\Full Data Set.zip"))
+    parser.add_argument("--zip", dest="zip_path", type=Path, default=Path("data") / "Full Data Set.zip")
     parser.add_argument("--mode", choices=("inventory", "native", "vision"), default="inventory")
     parser.add_argument("--provider", choices=("openai", "ollama"), default="ollama")
     parser.add_argument("--pipeline", choices=("single", "cascade"), default="single")

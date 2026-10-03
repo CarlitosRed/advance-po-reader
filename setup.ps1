@@ -1,4 +1,4 @@
-param([string]$PythonPath = 'C:\Users\carlo\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe')
+param([string]$PythonPath = 'python.exe')
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 if (-not (Test-Path '.venv/Scripts/python.exe')) {

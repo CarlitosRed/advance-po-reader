@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import subprocess
+import shutil
 
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
@@ -12,7 +13,7 @@ from pypdf import PdfReader
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "dist" / "assets"
 SEED = ROOT.parent.parent / "data" / "catalog-seed.json"
-POPLER = Path(r"C:\Users\carlo\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\poppler\Library\bin\pdftoppm.exe")
+POPLER = Path(shutil.which("pdftoppm") or "pdftoppm")
 catalog = [{"id": p["id"], "name": p["name"]} for p in json.loads(SEED.read_text(encoding="utf-8"))["products"]]
 (ASSETS / "catalog.json").write_text(json.dumps(catalog, indent=2), encoding="utf-8")
 

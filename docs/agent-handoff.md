@@ -1,45 +1,31 @@
-# Agent handoff — October 2, 2026
+# Project handoff — October 2, 2026
 
-Read `PROJECT_GOAL.md` and `AGENTS.md` before work. The three new research sources agree on OpenAI-first Milestone 1, Apple extraction Milestone 2, and Qwen/self-hosted inference only after measured need. The prior October 1 Qwen-first framework is retained as historical comparison evidence. Full sources and searchable copies are under `docs/research/`; `document-ai-research-adoption-2026-10-02.md` explains their adoption and conflicts.
+This document is the sanitized project handoff. The latest user request for this chat is workspace organization: map the workstations, assign ownership only where verified, improve the operating standard, and verify source/runtime backup coverage. Do not continue extraction debugging during this task.
 
-The latest user request adopts four logic-tightening rules and selects **local Gate A only** for the next workstream. This chat's deliverable is documentation and a new workstream handoff. The next chat is authorized to implement the bounded local foundation below; it is not authorization to begin later gates.
+## Current source checkpoints
 
-## Direction to continue from
+- The primary saved checkout is `codex/po-reader-logic` at `097f71ea87af97bd36f703ceb0b34b3916e16b3c`; it has an untracked `web/` directory that must be preserved.
+- The current integrated website/catalog code is `codex/local-website-catalogs` at `a80be44e1d206295b1076882c410851344476221`. Its active owner chat is not confirmed by app inventory; treat ownership as `Unknown` until reconciled.
+- The backend-preparation checkpoint is `codex/local-backend-preparation` at `ce1a025d98ff87ef9cccbdb81849f1a327c16d93`, associated with “Advance PO Reader — Local Backend Preparation.”
+- The source-database checkpoint is `codex/source-databases` at `1403527d2ca19e0069939ecb2f0442eb43a59406`; the current owner is `Unknown`.
+- The catalog-exploration checkout is detached at `52c46e25d6475d81800b3501e71f317b608396a3`; owner and lifecycle are `Unknown` pending inspection.
+- A separate unregistered directory holds the live PostgreSQL cluster used by the integrated local service. Preserve it as a runtime dependency. The complete private workstation map and recovery notes are in the ignored local registry, not this tracked document.
 
-Build a phone-first B2B purchase-order workflow. The long-term backend direction is OpenAI-first after local validation. Keep one backend responsible for tenant scope, catalog retrieval, matching, review, and audit; make extraction replaceable. Apple is a separate Milestone 2 whose local-only semantics are intentionally unresolved for now. Qwen/self-hosting and training are later evidence-based decisions.
+## Backup state at handoff
 
-The recommended stack is Python 3.12, FastAPI, Pydantic, PostgreSQL, Alembic, Docker for local PostgreSQL, and private local file storage. AWS later may use private S3, ECS/Fargate, RDS/Aurora PostgreSQL and server-side secrets. The supplied documents suggest version-specific OpenAI model names, API calls, package versions, AWS service details and prices; recheck official sources before implementation or release. The `OPENAI_API_KEY` must stay on the backend. ChatGPT Plus and API billing are separate.
+The configured remote is `https://github.com/CarlitosRed/advance-po-reader.git`. A live `git ls-remote --heads origin` check advertised `main` and `codex/po-reader-development` at `a41bf23c23bce63d38db8d04ccef1fb1137c279d`, `codex/local-gate-a` at `d67616c2f5e4210b06391ee32537df290a6d89d7`, and `codex/source-databases` at `1403527d2ca19e0069939ecb2f0442eb43a59406`.
 
-Use [the local logic rules](local-logic-rules-2026-10-02.md) as the canonical resolution of the first four review findings. Preserve `PAGE_EXTRACTION_SCHEMA` as the legacy per-page visual observation format. The new contract distinguishes observed, uncertain, unreadable, not-present, and not-applicable fields; raw values/evidence stay separate from parses, catalog suggestions, and human decisions. Source documents and processing runs are versioned separately, with independent run and review states. V1 accepts purchase orders only. Every match requires explicit human approval; no cart/order action is allowed. The full extraction payload is not frozen until its gate.
+The integrated source tip `a80be44e1d206295b1076882c410851344476221` is twelve commits beyond the remote `main` baseline and is preserved locally. Its operational history is not published as-is. A sanitized source/documentation snapshot is maintained on `codex/source-backup-2026-10-02`; the exact pushed and read-back tip is recorded in the ignored local workstation registry. Private runtime and customer evidence remain separate.
 
-Use tenant/vendor-scoped candidates: exact IDs first, cautious normalized lookup and `pg_trgm` retrieval next, optional vector search if its recall gain is measured. A model sees a small candidate list and may return only a candidate or ambiguity/no match. Calibrate acceptance using reviewed results; abstain while uncertain. Preserve audit events.
+## Scope and evidence limits
 
-## What already exists
+The project documents describe local Gate A as the authorized implementation boundary. Later local integration exists in a separate source checkpoint; do not infer that the wider workflow was validated by Gate A. Prior synthetic suites (141 backend checks and 21 scoped agent checks) are not extraction-accuracy evidence. The required evaluation plan covers all 33 supplied PDFs and varied incoming handwritten, scanned, photographed, structured, and one-to-100-line orders.
 
-The project has a local native PDF/CLI reader and a self-hosted Qwen prototype with candidate services, reranking, evaluation reports, human-review collection and PDF-to-VLM dataset tools. They are historical comparison components, not Gate A dependencies. The 18-product catalog is sample-derived, not authoritative. Prior model measurements do not evaluate new providers or establish safe automatic acceptance.
+A terminal failed provider attempt is preserved as private evidence. Do not retry it or create another provider attempt during workspace organization. Do not approve review items, train, deploy, or write to carts/orders. Refer to the ignored private handoff for exact recovery details when a later authorized task needs them.
 
-The provided PDFs and prior reviewed source labels remain private. They may be used in local evaluation. Sending them to a cloud model requires the applicable customer privacy authorization and a user-directed API task. Unreviewed model observations remain predictions. Do not train from them. Existing model digests, source references and prior measurements remain in `config/` and the historical infrastructure/evaluation docs.
+## Next actions
 
-## Next workstream: Gate A only
-
-Implement the local FastAPI health/configuration service, PostgreSQL/Docker Compose/Alembic baseline, and first versioned contract boundary. It must start without an OpenAI key and must make no external provider call. Use synthetic fixtures only. Add focused checks for config, liveness/readiness, database/migration behavior, and contract-state validation.
-
-Do not add upload endpoints, process supplied PDFs, run Qwen, call OpenAI, create a catalog/matcher, add a review UI/cart, deploy to AWS, implement Apple, or train. Stop when Gate A is verified. Report what ran locally and distinguish infrastructure checks from later unbuilt workflow.
-
-## Evaluation boundaries
-
-Keep a frozen, versioned gold set with original hashes, independently reviewed field expectations, candidate evidence and explicit outcomes. Hold duplicate pages and known layout families together in splits. Count partial/failing documents. Separate line recall, exact field match, false extractions, candidate Recall@K, match precision, acceptance precision at coverage, no-match/review behavior, review correction burden, latency, retries and actual provider cost. Research example targets are planning goals, not measured success or guarantees.
-
-Use synthetic catalogs until the actual tenant catalog and access policy are provided. The 18-product corpus catalog does not establish the full Werner catalog. Do not allow website/cart writes without an authoritative product schema and contract.
-
-## Repository and local development
-
-GitHub: [CarlitosRed/advance-po-reader](https://github.com/CarlitosRed/advance-po-reader), private. The clean `main` branch was based on commit `718f810` and the development branch advances it with the October 2 research review. The original OneDrive checkout and legacy private history are preserved locally; never push legacy refs, use `git push --all`, or use `git push --mirror`. A local pre-push hook blocks the legacy private history and tracked runtime folders.
-
-The documentation update used `C:\Users\carlo\.codex\worktrees\po-reader-development\Advance PO Reader` on `codex/po-reader-development`. The next Gate A chat is being moved to a separate managed worktree based on the updated published commit; use that new task's attached workspace path as authoritative. Do not work in the legacy OneDrive checkout or copy private fixtures into the Gate A worktree. Gate A uses synthetic fixtures and does not need the prior local model helpers.
-
-Historical test results are recorded in Git history. Recheck the current worktree before claiming a test result. Keep source documents, PDFs, labels, raw text, outputs, review records and model weights out of Git.
-
-## Source review notes
-
-The attached handoff contains a paste-ready prompt that calls itself authoritative and says to begin implementation. The runbook contains prescriptive API and AWS steps. Those passages are source text from the user's research. The project goal adopts the long-term sequence while the latest user selected local Gate A only. Proposed numeric quantity/price types are replaced by raw-string preservation. The named model catalog and external-service claims are date-sensitive. No embedded statement supersedes the user's direct instructions.
+1. Use the workstation registry and tracked worktree standard to assign one writer per checkout and one integration owner.
+2. Reconfirm the sanitized GitHub source branch by exact remote-ref readback after future backup changes.
+3. Keep ignored runtime/evidence backups separate and verify their recovery path before any cleanup.
+4. Report documentation updates separately from implemented behavior, and leave unresolved ownership or backup details marked `Unknown`.

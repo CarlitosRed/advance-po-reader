@@ -1,0 +1,402 @@
+"""Same-origin local website. Browser sessions never receive provider/API keys."""
+import hmac
+from http.cookies import SimpleCookie
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from urllib.parse import urlsplit
+from uuid import UUID
+
+from alembic.runtime.migration import MigrationContext
+from fastapi import Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+
+from backend.config import ROOT
+from backend.contracts import ExtractionPayload
+from backend.errors import BackendError
+from backend.models import (CatalogNamespace, CatalogProduct, CatalogPool, CatalogPoolMember,
+                            CatalogSourceProduct, SourceDocument, Vendor)
+from backend.pools import default_pool, pool_members
+from backend.service import run_for, serialize, source_for
+from backend.synthetic import generate_fixture
+from backend.uploads import digest, read_source
+from gate_a.models import Tenant
+
+COOKIE = "po_local_session"
+CORPUS = ROOT / "data" / "website" / "corpus"
+WEB = ROOT / "web" / "local-reader"
+
+
+class WebsiteSessionBoundary:
+    """Translate an HttpOnly local browser session into the existing API boundary.
+
+    Cookie mutations also require an unpredictable, in-memory CSRF header.
+    Explicit CLI tokens retain the previous API behavior. No production identity
+    or customer account authentication is implied by a local browser session.
+    """
+    def __init__(self, app, settings, session_token, csrf_token):
+        self.app, self.settings = app, settings
+        self.session_token, self.csrf_token = session_token, csrf_token
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers", []))
+        cookies = SimpleCookie()
+        try:
+            cookies.load(headers.get(b"cookie", b"").decode("latin1"))
+            supplied = cookies[COOKIE].value if COOKIE in cookies else ""
+        except Exception:
+            supplied = ""
+        cookie_ok = hmac.compare_digest(supplied.encode(), self.session_token.encode())
+        if cookie_ok and b"x-local-token" not in headers:
+            host = headers.get(b"host", b"").decode("latin1")
+            expected = f"{scope.get('scheme', 'http')}://{host}".encode()
+            origin = headers.get(b"origin")
+            if headers.get(b"sec-fetch-site") == b"cross-site" or (origin is not None and origin != expected):
+                return await JSONResponse({"error": "cross_origin_session_denied"}, 403)(scope, receive, send)
+            if scope["method"] not in {"GET", "HEAD", "OPTIONS"}:
+                csrf = headers.get(b"x-website-csrf", b"")
+                if not hmac.compare_digest(csrf, self.csrf_token.encode()):
+                    return await JSONResponse({"error": "website_csrf_required"}, 403)(scope, receive, send)
+            scope = dict(scope)
+            scope["headers"] = [*scope["headers"], (b"x-local-token",
+                self.settings.local_api_token.get_secret_value().encode())]
+
+        async def protected_send(message):
+            if message["type"] == "http.response.start":
+                message = dict(message)
+                message["headers"] = [*message.get("headers", []),
+                    (b"cache-control", b"no-store"),
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"referrer-policy", b"no-referrer")]
+            await send(message)
+        return await self.app(scope, receive, protected_send)
+
+
+def corpus_index():
+    try:
+        index = json.loads((CORPUS / "manifest.json").read_text(encoding="utf-8"))
+        return index["documents"]
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+def corpus_source(source_hash):
+    if not re.fullmatch("[a-f0-9]{64}", source_hash):
+        raise BackendError("corpus_document_not_found", 404)
+    record = next((item for item in corpus_index() if item["sha256"] == source_hash), None)
+    if record is None:
+        raise BackendError("corpus_document_not_found", 404)
+    path = CORPUS / (source_hash + ".pdf")
+    if path.is_symlink() or not path.resolve().is_relative_to(CORPUS.resolve()):
+        raise BackendError("invalid_storage_reference", 503)
+    try:
+        data = path.read_bytes()
+    except OSError:
+        raise BackendError("source_storage_unavailable", 503) from None
+    if digest(data) != source_hash:
+        raise BackendError("source_integrity_failed", 409)
+    return data, record
+
+
+def preview(data, media_type, page, bbox=None):
+    try:
+        result = subprocess.run([sys.executable, "-m", "backend.preview_worker", media_type, str(page),
+            json.dumps(bbox)], input=data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+    except (OSError, subprocess.TimeoutExpired):
+        raise BackendError("preview_unavailable", 422) from None
+    if result.returncode or not result.stdout.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise BackendError("preview_unavailable", 422)
+    return Response(result.stdout, media_type="image/png")
+
+
+def register_website(app, settings, private, tenant_for, vendor_for, idempotency):
+    @app.get("/", include_in_schema=False)
+    def home(request: Request):
+        host = urlsplit("http://" + request.headers.get("host", "")).hostname
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            raise BackendError("loopback_host_required", 403)
+        response = FileResponse(WEB / "index.html", media_type="text/html")
+        origin = request.headers.get("origin")
+        if request.headers.get("sec-fetch-site") != "cross-site" and (not origin or origin == str(request.base_url).rstrip("/")):
+            response.set_cookie(COOKIE, app.state.website_cookie, httponly=True,
+                samesite="strict", max_age=28800, path="/")
+        response.headers["Content-Security-Policy"] = ("default-src 'self'; script-src 'self'; "
+            "style-src 'self'; img-src 'self' blob: data:; connect-src 'self'; "
+            "frame-src 'none'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'")
+        return response
+
+    app.mount("/web-assets", StaticFiles(directory=WEB), name="local-website-assets")
+
+    @app.get("/website/session", include_in_schema=False)
+    def session_info(request: Request):
+        # Only browser cookie grants the CSRF value; a token-only CLI cannot
+        # accidentally expose its token through frontend configuration.
+        if not hmac.compare_digest(request.cookies.get(COOKIE, "").encode(), app.state.website_cookie.encode()):
+            raise BackendError("website_session_required", 401)
+        private(request)
+        return {"csrf": app.state.website_csrf, "review_only": True}
+
+    @app.get("/website/workspaces")
+    def workspaces(request: Request):
+        private(request)
+        with Session(app.state.engine) as session:
+            rows = session.execute(select(Tenant, Vendor, CatalogNamespace).join(Vendor, Vendor.tenant_id == Tenant.id)
+                .join(CatalogNamespace, (CatalogNamespace.tenant_id == Tenant.id) & (CatalogNamespace.vendor_id == Vendor.id))
+                .order_by(Tenant.name, CatalogNamespace.synthetic, Vendor.name)).all()
+            result = {}
+            for tenant, vendor, namespace in rows:
+                scope = result.setdefault(str(tenant.id), {"id": str(tenant.id), "name": tenant.name, "catalogs": []})
+                count = session.scalar(select(func.count()).select_from(CatalogProduct).where(
+                    CatalogProduct.tenant_id == tenant.id, CatalogProduct.vendor_id == vendor.id))
+                scope["catalogs"].append({"id": str(vendor.id), "name": vendor.name, "product_count": count,
+                    "synthetic": namespace.synthetic, "source_filename": namespace.source_filename,
+                    "adapter_version": namespace.adapter_version, "assigned_by": namespace.assigned_by})
+            for tenant_id, scope in ((UUID(item["id"]), item) for item in result.values()):
+                pools = session.scalars(select(CatalogPool).where(CatalogPool.tenant_id == tenant_id)
+                                        .order_by(CatalogPool.name)).all()
+                scope["catalog_pools"] = []
+                for pool in pools:
+                    members = pool_members(session, tenant_id, pool.id)
+                    count = session.scalar(select(func.count()).select_from(CatalogProduct).join(CatalogSourceProduct,
+                        (CatalogSourceProduct.tenant_id == CatalogProduct.tenant_id) &
+                        (CatalogSourceProduct.vendor_id == CatalogProduct.vendor_id) &
+                        (CatalogSourceProduct.product_id == CatalogProduct.id)).join(CatalogPoolMember,
+                        (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                        (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                        (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                            CatalogPoolMember.tenant_id == tenant_id, CatalogPoolMember.pool_id == pool.id,
+                            CatalogProduct.active.is_(True)))
+                    scope["catalog_pools"].append({"id": str(pool.id), "name": pool.name,
+                        "product_count": count, "member_count": len(members), "is_default": pool.is_default,
+                        "synthetic": False})
+            return {"workspaces": list(result.values())}
+
+    @app.get("/website/readiness")
+    def website_readiness(request: Request):
+        """Safe diagnostics remain usable when the database is stopped."""
+        from backend.app import EXPECTED_REVISION
+        private(request)
+        database, catalogs, products, fictional = "unavailable", 0, 0, 0
+        try:
+            with app.state.engine.connect() as connection:
+                database = "ready" if MigrationContext.configure(connection).get_current_heads() == (EXPECTED_REVISION,) else "migration_required"
+            if database == "ready":
+                with Session(app.state.engine) as session:
+                    catalogs = session.scalar(select(func.count()).select_from(CatalogNamespace).where(CatalogNamespace.synthetic.is_(False)))
+                    products = session.scalar(select(func.count()).select_from(CatalogProduct).join(CatalogNamespace,
+                        (CatalogNamespace.tenant_id == CatalogProduct.tenant_id) & (CatalogNamespace.vendor_id == CatalogProduct.vendor_id))
+                        .where(CatalogNamespace.synthetic.is_(False), CatalogProduct.active.is_(True)))
+                    fictional = session.scalar(select(func.count()).select_from(CatalogNamespace).where(CatalogNamespace.synthetic.is_(True)))
+        except SQLAlchemyError:
+            database = "unavailable"
+        key_present = bool(settings.openai_api_key and settings.openai_api_key.get_secret_value().strip())
+        configured = key_present and settings.live_processing_enabled
+        blockers = []
+        if database != "ready": blockers.append("local_database_" + database)
+        if not catalogs: blockers.append("real_catalogs_unavailable")
+        if not key_present: blockers.append("server_api_key_required")
+        elif not settings.live_processing_enabled: blockers.append("server_live_processing_disabled")
+        return {"database": database, "real_catalog_count": catalogs, "real_product_count": products,
+                "test_document_count": len(corpus_index()), "provider_key_present": key_present,
+                "live_processing_enabled": settings.live_processing_enabled, "provider_configured": configured,
+                "ready_for_sample": database == "ready" and fictional > 0,
+                "ready_for_live_demo": not blockers, "blockers": blockers,
+                "source_specific_authorization_required": True, "human_review_required": True,
+                "agent_transport": "local_stdio", "provider_requests_made_by_check": 0}
+
+    @app.get("/website/catalog")
+    def browse(request: Request, vendor_id: UUID | None = None, pool_id: UUID | None = None,
+               q: str = Query(default="", max_length=120),
+               offset: int = Query(default=0, ge=0), limit: int = Query(default=30, ge=1, le=50)):
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            if vendor_id is not None and pool_id is not None:
+                raise BackendError("choose_one_catalog_scope", 422)
+            if vendor_id is None and pool_id is None:
+                pool = default_pool(session, tenant)
+                if pool is None:
+                    raise BackendError("default_catalog_pool_setup_required", 409)
+                pool_id = pool.id
+            conditions = [CatalogProduct.tenant_id == tenant, CatalogProduct.active.is_(True)]
+            if pool_id is not None:
+                members = pool_members(session, tenant, pool_id)
+                if not members:
+                    raise BackendError("catalog_pool_empty", 409)
+                conditions.extend([CatalogProduct.id.in_(select(CatalogSourceProduct.product_id).join(CatalogPoolMember,
+                    (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                    (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                    (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                        CatalogPoolMember.tenant_id == tenant, CatalogPoolMember.pool_id == pool_id,
+                        CatalogSourceProduct.tenant_id == tenant))])
+            else:
+                vendor_for(session, tenant, vendor_id)
+                conditions.append(CatalogProduct.vendor_id == vendor_id)
+            if q.strip():
+                conditions.append(or_(CatalogProduct.sku.icontains(q.strip(), autoescape=True),
+                    CatalogProduct.description.icontains(q.strip(), autoescape=True)))
+            total = session.scalar(select(func.count()).select_from(CatalogProduct).where(*conditions))
+            records = session.scalars(select(CatalogProduct).where(*conditions)
+                .order_by(CatalogProduct.sku, CatalogProduct.id).offset(offset).limit(limit)).all()
+            products = []
+            for product in records:
+                entry = serialize(product, ["id", "sku", "description"])
+                if pool_id is not None:
+                    source = session.scalar(select(CatalogSourceProduct).join(CatalogPoolMember,
+                        (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                        (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                        (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                            CatalogSourceProduct.tenant_id == tenant, CatalogSourceProduct.vendor_id == product.vendor_id,
+                            CatalogSourceProduct.product_id == product.id, CatalogPoolMember.pool_id == pool_id))
+                    if source is None:
+                        continue
+                    namespace = session.get(CatalogNamespace, source.namespace_id)
+                    vendor = session.get(Vendor, product.vendor_id)
+                    entry.update({"origin_vendor_id": str(product.vendor_id), "origin_vendor": vendor.name,
+                                  "namespace_id": str(source.namespace_id),
+                                  "origin_catalog": namespace.source_catalog_id})
+                products.append(entry)
+            return {"products": products,
+                "total": total, "offset": offset, "next_offset": offset + limit if offset + limit < total else None}
+
+    @app.get("/website/catalog/{product_id}")
+    def detail(product_id: UUID, request: Request, vendor_id: UUID | None = None, pool_id: UUID | None = None):
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            if vendor_id is not None and pool_id is not None:
+                raise BackendError("choose_one_catalog_scope", 422)
+            if vendor_id is None and pool_id is None:
+                pool = default_pool(session, tenant)
+                if pool is None:
+                    raise BackendError("default_catalog_pool_setup_required", 409)
+                pool_id = pool.id
+            product_conditions = [CatalogProduct.tenant_id == tenant, CatalogProduct.id == product_id]
+            if pool_id is not None:
+                members = pool_members(session, tenant, pool_id)
+                product_conditions.append(CatalogProduct.id.in_(select(CatalogSourceProduct.product_id).join(CatalogPoolMember,
+                    (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                    (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                    (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                        CatalogPoolMember.tenant_id == tenant, CatalogPoolMember.pool_id == pool_id)))
+            else:
+                vendor_for(session, tenant, vendor_id)
+                product_conditions.append(CatalogProduct.vendor_id == vendor_id)
+            product = session.scalar(select(CatalogProduct).where(*product_conditions))
+            if product is None:
+                raise BackendError("catalog_product_not_found", 404)
+            source = session.scalar(select(CatalogSourceProduct).where(CatalogSourceProduct.tenant_id == tenant,
+                CatalogSourceProduct.vendor_id == product.vendor_id, CatalogSourceProduct.product_id == product_id))
+            namespace = session.get(CatalogNamespace, source.namespace_id) if source else None
+            vendor = session.get(Vendor, product.vendor_id)
+            return {"product": serialize(product, ["id", "sku", "description"]),
+                "source": ({**serialize(source, ["source_row_number", "raw_fields", "attributes", "detail_sections"]),
+                            "origin_vendor_id": str(product.vendor_id), "origin_vendor": vendor.name,
+                            "namespace_id": str(source.namespace_id), "origin_catalog": namespace.source_catalog_id}
+                           if source else None)}
+
+    @app.get("/website/corpus")
+    def library(request: Request):
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            pool = default_pool(session, tenant)
+            summary = None
+            if pool is not None:
+                members = pool_members(session, tenant, pool.id)
+                count = session.scalar(select(func.count()).select_from(CatalogProduct).join(CatalogSourceProduct,
+                    (CatalogSourceProduct.tenant_id == CatalogProduct.tenant_id) &
+                    (CatalogSourceProduct.vendor_id == CatalogProduct.vendor_id) &
+                    (CatalogSourceProduct.product_id == CatalogProduct.id)).join(CatalogPoolMember,
+                    (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                    (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                    (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                        CatalogPoolMember.tenant_id == tenant, CatalogPoolMember.pool_id == pool.id,
+                        CatalogProduct.active.is_(True)))
+                summary = {"id": str(pool.id), "name": pool.name, "product_count": count,
+                           "member_count": len(members)}
+            return {"documents": corpus_index(), "extraction_status": "not_processed",
+                "default_catalog_pool": summary, "catalog_selection_required": summary is None,
+                "setup_requirement": "Configure a tenant default catalog pool before starting a new document" if summary is None else None}
+
+    @app.get("/website/corpus/{source_hash}/content")
+    def corpus_content(source_hash: str, request: Request):
+        private(request)
+        data, record = corpus_source(source_hash)
+        return Response(data, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="purchase-order.pdf"'})
+
+    @app.get("/website/corpus/{source_hash}/pages/{page_number}")
+    def corpus_page(source_hash: str, page_number: int, request: Request):
+        private(request)
+        data, record = corpus_source(source_hash)
+        if not 1 <= page_number <= record["page_count"]:
+            raise BackendError("page_outside_document", 422)
+        return preview(data, "application/pdf", page_number)
+
+    @app.get("/website/demo-document", include_in_schema=False)
+    def fictional_document(request: Request):
+        private(request)
+        return Response(generate_fixture(), media_type="application/pdf")
+
+    @app.get("/documents")
+    def document_list(request: Request, vendor_id: UUID | None = None, pool_id: UUID | None = None,
+                      limit: int = Query(default=50, ge=1, le=100)):
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            if vendor_id is not None and pool_id is not None:
+                raise BackendError("choose_one_catalog_scope", 422)
+            if vendor_id is None and pool_id is None:
+                pool = default_pool(session, tenant)
+                if pool is None:
+                    raise BackendError("default_catalog_pool_setup_required", 409)
+                pool_id = pool.id
+            conditions = [SourceDocument.tenant_id == tenant]
+            if pool_id is not None:
+                pool_members(session, tenant, pool_id)
+                conditions.append(SourceDocument.catalog_pool_id == pool_id)
+            else:
+                vendor_for(session, tenant, vendor_id)
+                conditions.append(SourceDocument.vendor_id == vendor_id)
+            return {"documents": [serialize(s) for s in session.scalars(select(SourceDocument).where(*conditions)
+                .order_by(SourceDocument.created_at.desc(), SourceDocument.id).limit(limit))]}
+
+    @app.get("/documents/{source_id}/content")
+    def original(source_id: UUID, request: Request):
+        with Session(app.state.engine) as session:
+            source = source_for(session, tenant_for(request, session), source_id)
+            data = read_source(settings.storage_directory, source.storage_reference, source.sha256)
+            return Response(data, media_type=source.media_type, headers={"Content-Disposition": 'attachment; filename="source-document"'})
+
+    @app.get("/documents/{source_id}/pages/{page_number}")
+    def source_page(source_id: UUID, page_number: int, request: Request):
+        with Session(app.state.engine) as session:
+            source = source_for(session, tenant_for(request, session), source_id)
+            if not 1 <= page_number <= source.page_count:
+                raise BackendError("page_outside_document", 422)
+            return preview(read_source(settings.storage_directory, source.storage_reference, source.sha256),
+                source.media_type, page_number)
+
+    @app.get("/runs/{run_id}/rows/{row_id:path}/preview")
+    def row_preview(run_id: UUID, row_id: str, request: Request):
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            run = run_for(session, tenant, run_id)
+            if not run.result:
+                raise BackendError("run_has_no_result", 409)
+            payload = ExtractionPayload.model_validate(run.result)
+            row = next((r for r in payload.rows if r.row_id == row_id), None)
+            if not row or not row.evidence:
+                raise BackendError("row_evidence_unavailable", 404)
+            reference = row.evidence[0]
+            page = next(p for p in payload.pages if p.page_number == reference.page_number)
+            region = next((r for r in page.regions if r.region_reference == reference.region_reference), None)
+            source = source_for(session, tenant, run.source_document_id)
+            return preview(read_source(settings.storage_directory, source.storage_reference, source.sha256),
+                source.media_type, reference.page_number, region.bbox.model_dump() if region else None)

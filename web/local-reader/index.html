@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Local purchase-order upload, catalog search and evidence-based product review.">
+  <title>Purchase Order Reader · SmarterCommerce</title>
+  <link rel="icon" href="/web-assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/web-assets/styles.css"><script src="/web-assets/workflow.js" defer></script><script src="/web-assets/app.js" defer></script>
+</head>
+<body>
+  <a href="#main" class="skip-link">Skip to content</a>
+  <header class="site-header"><div class="header-inner">
+    <a class="brand" href="/" aria-label="Purchase Order Reader home"><span class="werner-logo"><img src="/web-assets/assets/werner.jpg" alt="Werner" width="116" height="116"></span><span class="brand-divider"></span><span>Purchase Order Reader</span></a>
+    <span class="local-tag"><span class="status-dot"></span> Local workspace</span>
+  </div></header>
+  <main id="main" class="shell">
+    <nav class="main-nav" aria-label="Workspace"><button data-view="upload" aria-current="page">Upload &amp; review</button><button data-view="library">Document library <span id="library-count"></span></button><button data-view="catalog">Catalogs</button></nav>
+    <div id="demo-readiness" class="readiness-panel" aria-live="polite" hidden></div>
+    <div id="notice" class="notice" role="status" hidden></div><div id="error" class="error" role="alert" hidden></div>
+    <div id="view"><section class="intro"><p class="eyebrow">PURCHASE ORDER IMPORT</p><h1>Start with your purchase order.</h1><p>Select a catalog, add a document, and review the products against the source.</p></section><div class="panel"><p>Opening your local workspace…</p></div></div>
+  </main>
+  <footer class="footer"><span>Source evidence. Human decisions.</span><div>Powered by <img src="/web-assets/assets/smartercommerce.png" alt="SmarterCommerce" width="194" height="40"></div></footer>
+  <dialog id="detail-dialog" aria-labelledby="dialog-title"><div class="dialog-top"><h2 id="dialog-title">Product details</h2><button id="close-dialog" class="button secondary">Close</button></div><div id="dialog-content"></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
