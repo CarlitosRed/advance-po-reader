@@ -16,7 +16,7 @@ Use tenant/vendor-scoped candidates: exact IDs first, cautious normalized lookup
 
 ## What already exists
 
-The repository retains a legacy native PDF/CLI reader with an OpenAI-only vision provider. The local-model, semantic-service, reranker, and training-dataset code was removed in T-002. Historical evaluation reports and operating guides were moved to `docs/archive/`; the prior source history remains available in Git. The 18-product catalog is sample-derived, not authoritative. Historical measurements do not evaluate the current OpenAI API path or establish safe automatic acceptance.
+The repository retains a legacy native PDF/CLI reader; vision-model analysis is unavailable through this CLI. The local-model, semantic-service, reranker, and training-dataset code was removed in T-002. Historical evaluation reports and operating guides were moved to `docs/archive/`; the prior source history remains available in Git. The 18-product catalog is sample-derived, not authoritative. Historical measurements do not evaluate the native CLI path or establish safe automatic acceptance.
 
 The provided PDFs and prior reviewed source labels remain private. They may be used in local evaluation. Sending them to a cloud model requires the applicable customer privacy authorization and a user-directed API task. Unreviewed model observations remain predictions. Do not train from them. Existing model digests, source references and prior measurements remain in `config/` and the historical infrastructure/evaluation docs.
 
@@ -46,6 +46,11 @@ The attached handoff contains a paste-ready prompt that calls itself authoritati
 
 ## T-002 model cleanup (October 3, 2026)
 
-Removed the local Ollama/Qwen/gpt-oss provider and cascade, local embedding/reranker services, model readiness and download scripts/config, VLM dataset builder/review workflow, and their dedicated tests. Removed local provider and reranker hooks from the shared provider/matching path. The CLI now selects OpenAI only.
+Removed the local Ollama/Qwen/gpt-oss provider and cascade, local embedding/reranker services, model readiness and download scripts/config, VLM dataset builder/review workflow, and their dedicated tests. Removed local provider and reranker hooks from the shared provider/matching path. The CLI now uses native PDF text extraction only; its OpenAI transport was removed by the T-002 audit addendum.
 
-Moved historical model evaluation/infrastructure/dataset guides and the searchable extracted self-hosted framework note and manifest to `docs/archive/`. Kept the original self-hosted recommendation DOCX and other original user-supplied research sources under `docs/research/` as historical evidence, as required by the project instructions. The native PDF parser, OpenAI provider, source-faithful observations, provisional catalog, and legacy review/cart CLI remain. No FastAPI Gate A behavior was added or claimed by this cleanup.
+Moved historical model evaluation/infrastructure/dataset guides and the searchable extracted self-hosted framework note and manifest to `docs/archive/`. Kept the original self-hosted recommendation DOCX and other original user-supplied research sources under `docs/research/` as historical evidence, as required by the project instructions. The native PDF parser, source-faithful observations, schema and prompt constants, provisional catalog, and legacy review/cart CLI remain. No FastAPI Gate A behavior was added or claimed by this cleanup.
+
+
+### T-002 audit addendum (October 3, 2026)
+
+Removed `OpenAIProvider`, its HTTP transport, and `build_provider` from the legacy provider module while retaining the imported observation schemas, prompt constants, and schema validation. Removed `--provider`, `--model`, and `--timeout` from `reader.py analyze`; it now calls the native engine with no provider and states in help that vision analysis is unavailable. Updated the CLI example and removed API credentials/cost language from the legacy CLI documentation. `benchmark_vision.py` had already been removed in the model-cleanup commit. This closes the accidental paid-call path; separately gated backend work remains outside this branch.

@@ -2,7 +2,6 @@
 import argparse
 import json
 import logging
-import os
 import zipfile
 from pathlib import Path
 
@@ -37,14 +36,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("catalog")
-    analyze = commands.add_parser("analyze")
+    analyze = commands.add_parser("analyze", help="Analyze PDFs with the native text engine (vision analysis is unavailable)", description="Use the local native PDF text engine only. Vision analysis is unavailable; image-only PDFs need OCR and are not analyzed.")
     analyze.add_argument("input", type=Path)
     analyze.add_argument("--summary", action="store_true", help="Print only the key fields and match states")
     analyze.add_argument("--render", action="store_true", help="Also save page images; off by default")
-    analyze.add_argument("--provider", choices=["openai"], default="openai")
-    analyze.add_argument("--model", default=os.environ.get("PO_READER_MODEL"),
-                         help="OpenAI vision model available to your API project (or PO_READER_MODEL)")
-    analyze.add_argument("--timeout", type=float, help="Seconds allowed per model request")
     analyze.add_argument("--limit", type=int, help="Process at most this many input documents")
     show = commands.add_parser("show")
     show.add_argument("session_id")
@@ -68,21 +63,15 @@ def main():
     if args.command == "catalog":
         result = dict(authority="sample_catalog", products=list(load_catalog().values()))
     elif args.command == "analyze":
-        provider = None
         if args.limit is not None and args.limit < 1:
             parser.error("--limit must be positive")
-        from po_reader.model_provider import build_provider
-        try:
-            provider = build_provider(args.provider, args.model, timeout=args.timeout)
-        except ValueError as error:
-            parser.error(str(error))
         result = []
         for filename, raw in input_documents(args.input, images=True):
             if args.limit is not None and len(result) >= args.limit:
                 break
             logging.info("Reading %s", filename)
             try:
-                doc = create(raw, filename, render=args.render, provider=provider)
+                doc = create(raw, filename, render=args.render)
             except Exception as error:
                 result.append(dict(filename=filename,status="failed",error=str(error)))
                 continue

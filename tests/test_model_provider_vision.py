@@ -1,8 +1,6 @@
-import base64
 import copy
 import io
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,10 +12,7 @@ from pypdf import PdfReader, PdfWriter, Transformation
 from po_reader import service
 from po_reader.catalog import ROOT, load_catalog
 from po_reader.engine import read_pages
-from po_reader.model_provider import (
-    COMPARISON_SCHEMA, PAGE_EXTRACTION_SCHEMA, OpenAIProvider,
-    ProviderError, build_provider, validate_schema,
-)
+from po_reader.model_provider import COMPARISON_SCHEMA, PAGE_EXTRACTION_SCHEMA, ProviderError, validate_schema
 from po_reader.rendering import RegionRenderer
 from po_reader.vision import _contains, _line, analyze_vision, parse_observed_quantity
 
@@ -75,74 +70,22 @@ class MockVisionProvider:
                     attribute_conflicts=[], reason="Compatible product description.")
 
 
-def completed_response(value):
-    return dict(status="completed", output=[dict(type="message", content=[dict(type="output_text", text=json.dumps(value))])])
+class SchemaValidationTests(unittest.TestCase):
+    def test_schema_accepts_valid_page_and_comparison(self):
+        validate_schema(extracted_page(), PAGE_EXTRACTION_SCHEMA)
+        validate_schema(dict(selected_product_id=None, description_relationship="insufficient_information",
+                             attribute_conflicts=[], reason="Not enough evidence."), COMPARISON_SCHEMA)
 
-
-class ProviderContractTests(unittest.TestCase):
-    def setUp(self):
-        self.provider = OpenAIProvider("mock-vision", api_key="test-key")
-        self.comparison = dict(selected_product_id="0076-76", description_relationship="compatible",
-                               attribute_conflicts=[], reason="Observed identifier and compatible name.")
-
-    def test_openai_without_api_key_fails_before_http(self):
-        with patch.dict(os.environ, {}, clear=True), patch("po_reader.model_provider._request_json") as request:
-            with self.assertRaisesRegex(ProviderError, "OPENAI_API_KEY"):
-                OpenAIProvider("mock-vision")
-            request.assert_not_called()
-
-    def test_factory_accepts_only_openai(self):
-        with self.assertRaisesRegex(ProviderError, "Only the OpenAI API provider"):
-            build_provider("unsupported", "mock-model")
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}):
-            self.assertIsInstance(build_provider("openai", "mock-vision"), OpenAIProvider)
-
-    def test_structured_request_preserves_codes_and_sends_page_image(self):
-        record = extracted_page([observed_line(identifiers=[dict(
-            raw_value="0076-76", printed_label="Product Code", role="vendor_product_code", status="observed")], uom_raw=None)])
-        with patch("po_reader.model_provider._request_json", return_value=completed_response(record)) as request:
-            result = self.provider.extract_page(b"page-png", 1, "native observation")
-        self.assertEqual(result["lines"][0]["identifiers"][0]["raw_value"], "0076-76")
-        self.assertIsNone(result["lines"][0]["uom_raw"])
-        payload = request.call_args.args[1]
-        self.assertFalse(payload["store"])
-        self.assertTrue(payload["text"]["format"]["strict"])
-        image = payload["input"][1]["content"][1]["image_url"]
-        self.assertEqual(base64.b64decode(image.split(",", 1)[1]), b"page-png")
-
-    def test_refusal_incomplete_and_missing_output_raise_provider_error(self):
-        responses = [dict(status="incomplete", output=[]),
-                     dict(status="completed", output=[dict(content=[dict(type="refusal", refusal="declined")])]),
-                     dict(status="completed", output=[])]
-        for response in responses:
-            with self.subTest(response=response), patch("po_reader.model_provider._request_json", return_value=response):
-                with self.assertRaises(ProviderError):
-                    self.provider.compare({}, [])
-
-    def test_invalid_json_schema_enum_and_extra_fields_fail_closed(self):
-        values = [dict(self.comparison, attribute_conflicts="none"),
-                  dict(self.comparison, description_relationship="probably"),
-                  dict(self.comparison, confidence=0.99),
-                  {key: value for key, value in self.comparison.items() if key != "selected_product_id"}]
-        for value in values:
-            with self.subTest(value=value), patch("po_reader.model_provider._request_json", return_value=completed_response(value)):
-                with self.assertRaises(ProviderError):
-                    self.provider.compare({}, [])
-        response = completed_response(self.comparison)
-        response["output"][0]["content"][0]["text"] = '{"selected_product_id":'
-        with patch("po_reader.model_provider._request_json", return_value=response):
-            with self.assertRaises(ProviderError):
-                self.provider.compare({}, [])
-
-    def test_malformed_response_envelopes_raise_provider_error(self):
-        for output in (None, {}, [None], [dict(content=None)], [dict(content=[None])]):
-            with self.subTest(output=output), patch("po_reader.model_provider._request_json", return_value=dict(status="completed", output=output)):
-                with self.assertRaises(ProviderError):
-                    self.provider.compare({}, [])
-
-
-
-
+    def test_schema_rejects_invalid_types_enums_and_extra_fields(self):
+        invalid = [
+            (dict(selected_product_id="x", description_relationship="probably", attribute_conflicts=[], reason="r"), COMPARISON_SCHEMA),
+            (dict(selected_product_id="x", description_relationship="compatible", attribute_conflicts="none", reason="r"), COMPARISON_SCHEMA),
+            (dict(selected_product_id="x", description_relationship="compatible", attribute_conflicts=[], reason="r", confidence=0.99), COMPARISON_SCHEMA),
+            ({"selected_product_id": "x"}, COMPARISON_SCHEMA),
+        ]
+        for value, schema in invalid:
+            with self.subTest(value=value), self.assertRaises(ProviderError):
+                validate_schema(value, schema)
 
 
 class ObservedQuantityTests(unittest.TestCase):
