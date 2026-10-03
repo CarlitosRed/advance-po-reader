@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from backend.config import Settings
-from backend.database import create_db_engine
+from gate_a.database import create_db_engine
 from backend.models import CatalogPoolMember, CatalogNamespace, CatalogProduct, Vendor
 from backend.pools import configure_pool
 from sqlalchemy import func, select
