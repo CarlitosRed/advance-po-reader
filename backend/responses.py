@@ -92,6 +92,7 @@ class CandidateResponse(ResponseModel):
     score: str | None = None
     origin_vendor_id: UUID | None = None
     namespace_id: UUID | None = None
+    origin: Literal["import", "review"] = "import"
 
 
 class SuggestionResponse(ResponseModel):
@@ -149,6 +150,8 @@ class ProductResponse(ResponseModel):
     description: str
     normalized_sku: str
     active: bool
+    origin: Literal["import", "review"]
+    review_pool_id: UUID | None
     aliases: list[AliasResponse]
     created_at: datetime
 

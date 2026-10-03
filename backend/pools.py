@@ -1,11 +1,11 @@
 """Explicit tenant-local catalog pool configuration and scope resolution."""
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.errors import BackendError
-from backend.models import CatalogNamespace, CatalogPool, CatalogPoolMember, CatalogSourceProduct
+from backend.models import CatalogProduct, CatalogNamespace, CatalogPool, CatalogPoolMember, CatalogSourceProduct
 
 
 def default_pool(session: Session, tenant_id: UUID) -> CatalogPool | None:
@@ -35,10 +35,38 @@ def pool_vendor_ids(session: Session, tenant_id: UUID, pool_id: UUID) -> list[UU
     return sorted({member.vendor_id for member in members}, key=str)
 
 
+def pool_product_scope(tenant_id: UUID, pool_id: UUID):
+    """Imported namespace rows or marked review entries bound to this pool."""
+    imported = select(CatalogSourceProduct.product_id).join(CatalogPoolMember,
+        (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+        (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+        (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+            CatalogPoolMember.tenant_id == tenant_id, CatalogPoolMember.pool_id == pool_id,
+            CatalogSourceProduct.tenant_id == tenant_id)
+    member_vendors = select(CatalogPoolMember.vendor_id).where(
+        CatalogPoolMember.tenant_id == tenant_id, CatalogPoolMember.pool_id == pool_id)
+    return or_(CatalogProduct.id.in_(imported), and_(CatalogProduct.origin == "review",
+        CatalogProduct.review_pool_id == pool_id, CatalogProduct.vendor_id.in_(member_vendors)))
+
+
+def pool_product_count(session: Session, tenant_id: UUID, pool_id: UUID):
+    return session.scalar(select(func.count()).select_from(CatalogProduct).where(
+        CatalogProduct.tenant_id == tenant_id, CatalogProduct.active.is_(True),
+        pool_product_scope(tenant_id, pool_id)))
+
+
 def validate_pool_candidate(session: Session, tenant_id: UUID, pool_id: UUID | None,
                             vendor_id: UUID, product_id: UUID) -> bool:
     if pool_id is None:
         return False
+    reviewed = session.scalar(select(CatalogProduct.id).join(CatalogPoolMember,
+        (CatalogPoolMember.tenant_id == CatalogProduct.tenant_id) &
+        (CatalogPoolMember.vendor_id == CatalogProduct.vendor_id)).where(
+            CatalogProduct.tenant_id == tenant_id, CatalogProduct.id == product_id,
+            CatalogProduct.vendor_id == vendor_id, CatalogProduct.origin == "review",
+            CatalogProduct.review_pool_id == pool_id, CatalogPoolMember.pool_id == pool_id).limit(1))
+    if reviewed:
+        return True
     return bool(session.scalar(select(CatalogSourceProduct.id).join(CatalogPoolMember,
         (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
         (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &

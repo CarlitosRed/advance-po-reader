@@ -12,7 +12,7 @@ def run(payload, **extra):
 
 
 def decisions(payload):
-    return [{"row_id": row.row_id, "action": "approve" if row.row_kind == "product" else "acknowledge",
+    return [{"row_id": row.row_id, "action": "approve" if row.row_kind == "product" else "not_a_product",
         "reviewer": "Fictional QA", "reason": "Fictional source checked", "evidence_reference": [],
         "new_value": {"candidate": {"candidate_id": str(uuid4()), "sku": "FICTIONAL", "description": "Fixture", "method": "exact"}}}
         for row in payload.rows]

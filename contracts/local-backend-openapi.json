@@ -375,6 +375,15 @@
             ],
             "title": "Namespace Id"
           },
+          "origin": {
+            "default": "import",
+            "enum": [
+              "import",
+              "review"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
           "origin_vendor_id": {
             "anyOf": [
               {
@@ -1053,6 +1062,26 @@
             "title": "Normalized Sku",
             "type": "string"
           },
+          "origin": {
+            "enum": [
+              "import",
+              "review"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "review_pool_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Pool Id"
+          },
           "sku": {
             "title": "Sku",
             "type": "string"
@@ -1076,6 +1105,8 @@
           "description",
           "normalized_sku",
           "active",
+          "origin",
+          "review_pool_id",
           "aliases",
           "created_at"
         ],
@@ -1153,7 +1184,11 @@
               "resolve",
               "acknowledge_page",
               "acknowledge_document",
-              "propose_candidate"
+              "propose_candidate",
+              "this_is_product",
+              "new_product",
+              "not_a_product",
+              "not_product"
             ],
             "title": "Action",
             "type": "string"
@@ -1174,6 +1209,31 @@
               }
             ],
             "title": "Candidate Ids"
+          },
+          "catalog_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Id"
+          },
+          "decision_key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Key"
           },
           "evidence_reference": {
             "items": {
@@ -1230,6 +1290,16 @@
             ],
             "title": "New Value"
           },
+          "product": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reason": {
             "maxLength": 500,
             "minLength": 1,
@@ -1265,6 +1335,18 @@
               }
             ],
             "title": "Selected Candidate Id"
+          },
+          "vendor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
           }
         },
         "required": [

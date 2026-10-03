@@ -143,7 +143,6 @@ def test_goal_6_unknown_line_is_in_uncertain_tier(desk):
     assert tier(rows["line-2"]) == "uncertain"
 
 
-@gap("backend/service.py:review_run rejects propose_candidate for row_kind unknown with non_product_row_cannot_match")
 def test_goal_6_unknown_line_accepts_answer_product_x(desk):
     rows, result = unknown(desk)
     candidate = desk.products[0]["candidate_id"]
@@ -158,7 +157,6 @@ def test_goal_6_unknown_line_accepts_answer_product_x(desk):
                for r in summary["approved_products"])
 
 
-@gap("catalog/import can add products, but backend/service.py cannot bind that new product to an unknown source row")
 def test_goal_6_unknown_line_accepts_new_product_added_to_catalog(desk):
     rows, result = unknown(desk)
     new = ok(desk.client.post("/catalog/import", json={"vendor_id": desk.vendor["id"], "products": [
@@ -176,9 +174,13 @@ def test_goal_6_unknown_line_accepts_new_product_added_to_catalog(desk):
                for r in summary["approved_products"])
 
 
-def test_goal_6_unknown_line_can_be_acknowledged_and_excluded_without_approval(desk):
+def test_goal_6_acknowledgement_needs_explicit_exclusion_answer(desk):
     rows, result = unknown(desk)
     ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json=review_body(rows[1], "acknowledge")))
+    summary = ok(desk.client.get(f"/runs/{result.run['id']}/summary"))
+    assert "line-2" in summary["pending_row_ids"]
+    assert not summary["can_finish_review"]
+    ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json=review_body(rows[1], "not_a_product")))
     summary = ok(desk.client.get(f"/runs/{result.run['id']}/summary"))
     assert "line-2" not in summary["pending_row_ids"]
     assert summary["approved_products"] == []
@@ -187,7 +189,6 @@ def test_goal_6_unknown_line_can_be_acknowledged_and_excluded_without_approval(d
     assert original["row_kind"] == "unknown", "original extraction must remain immutable"
 
 
-@gap("backend/api_models.py:ReviewRequest has no explicit not_product decision; acknowledge only records generic classification review")
 def test_goal_6_unknown_line_accepts_explicit_not_a_product_answer(desk):
     rows, result = unknown(desk)
     response = desk.client.post(f"/runs/{result.run['id']}/reviews",

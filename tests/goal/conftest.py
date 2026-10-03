@@ -299,11 +299,11 @@ def source_bytes(rows, media_type="application/pdf", *, code_column=True):
     return output.getvalue()
 
 
-def process(desk, rows, *, observed=None, media_type="application/pdf", code_column=True):
+def process(desk, rows, *, observed=None, media_type="application/pdf", code_column=True, use_default_pool=False):
     data = source_bytes(rows, media_type, code_column=code_column)
     desk.provider.set_payload(payload(deepcopy(rows) if observed is None else observed))
     source = ok(desk.client.post("/documents", headers={"Idempotency-Key": uuid4().hex},
-        data={"vendor_id": desk.vendor["id"]}, files={"file": ("synthetic", data, media_type)}))
+        data={} if use_default_pool else {"vendor_id": desk.vendor["id"]}, files={"file": ("synthetic", data, media_type)}))
     run = ok(desk.client.post(f"/documents/{source['id']}/runs", headers={"Idempotency-Key": uuid4().hex},
                              json={"provider": "synthetic"}))
     run = ok(desk.client.post(f"/runs/{run['id']}/process"))

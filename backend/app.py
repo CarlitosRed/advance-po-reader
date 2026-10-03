@@ -32,7 +32,7 @@ from gate_a.contracts import ProductDocumentV1
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
 
-EXPECTED_REVISION = "0008_catalog_pools"
+EXPECTED_REVISION = "0009_review_answers"
 
 
 class CatalogImport(RequestModel):
@@ -339,7 +339,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
     def process(run_id: UUID, request: Request):
         with Session(app.state.engine, expire_on_commit=False) as session:
             run = process_run(session, tenant_for(request, session), run_id, configuration, provider)
-            return serialize(run, ["id", "source_document_id", "state", "review_state", "outcome_code", "created_at", "finished_at"])
+            return serialize(run, ["id", "source_document_id", "vendor_id", "catalog_pool_id", "provider", "state", "review_state", "outcome_code", "created_at", "finished_at"])
 
     @app.get("/runs/{run_id}/readiness", response_model=RunReadinessResponse)
     def run_readiness(run_id: UUID, request: Request):
@@ -373,7 +373,9 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             events = session.scalars(select(ReviewEvent).where(
                 ReviewEvent.tenant_id == tenant, ReviewEvent.run_id == run_id)
                 .order_by(*ReviewEvent.audit_order())).all()
-            return reviewed_summary(run, [serialize(event) for event in events])
+            from backend.tiers import review_suggestions
+            tiers = {value["row_id"]: value["tier"] for value in review_suggestions(session, tenant, run)}
+            return reviewed_summary(run, [serialize(event) for event in events], tiers)
 
     @app.post("/runs/{run_id}/cancel", response_model=RunResponse)
     def cancel(run_id: UUID, request: Request):
