@@ -108,6 +108,11 @@ class ExtractedRow(Immutable):
     def row_semantics(self) -> ExtractedRow:
         if not self.row_id.strip() or not self.evidence:
             raise ValueError("rows require a nonblank row_id and source evidence")
+        row_refs = {(ref.page_number, ref.region_reference) for ref in self.evidence}
+        for name in ("quantity", "unit"):
+            if any((ref.page_number, ref.region_reference) not in row_refs
+                   for ref in getattr(self, name).evidence):
+                raise ValueError(f"{name} evidence must belong to the same row and page")
         if self.uncertainty is not None and not self.uncertainty.strip():
             raise ValueError("uncertainty must contain text or be null")
         if self.item_group_id is not None and not self.item_group_id.strip():

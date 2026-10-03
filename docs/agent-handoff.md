@@ -46,3 +46,33 @@ provider settings and customer evidence are unchanged. The scorecard documents
 missing confidence tiers, unknown-row decisions, source grounding and product
 line completeness; none of those features is fixed or approved by this task.
 The PR targets `codex/worktree-standards`, not `main`.
+
+## T-009 PR A — October 3, 2026
+
+`Codex · goal gaps` reused the assigned `goal-tests` desk and PR #7 after
+Claudio's four-condition go. Implemented items 1, 2 and 5 in one commit per
+item: deterministic Certain/Probable/Uncertain review tiers; existing-product,
+new-product and not-a-product answers; and same-row/page quantity/unit
+evidence validation. Certain remains pending until an explicit approval.
+New products are created and bound atomically with retry protection,
+`origin=review`, and tenant/vendor/pool scoping. Staff-facing catalog and
+review controls show that origin. Original observations remain immutable;
+corrections require fresh approval. Generic acknowledgment cannot finish an
+Uncertain row. Bounded conflict checks also veto Certain for alternate,
+unreadable or contradictory labeled readings without changing F7 retrieval.
+
+The final goal suite measures **49 passed, 2 strict xfail, 0 blocked, 0 failed**.
+Additional affected checks: 68 extraction contract, 27 catalog/database and
+7 review-summary checks pass under `pytest.backend.ini` with offline guards.
+The goal suite includes a clean upgrade/downgrade/upgrade of migration 0009
+on a separate throwaway database and a headless browser driving the real
+controls against the fixed-provider test API. The database and uploads are
+test-owned; no existing runtime is migrated or restarted. See the updated
+[scorecard](goal-scorecard-2026-10-03.md) and [test guide](goal-acceptance-tests.md).
+
+PR B's independent completeness, source grounding and F7/F8 repairs are only
+planned. Goals 7 and 8 retain their reasoned xfails. No real-document accuracy,
+production validation, provider activation, customer-file use, or deployment
+is claimed. A remains review-gated: merge requires `Approved at <commit>`
+matching its current head and passing tests. B implementation waits for A's
+merge and its own plan go.

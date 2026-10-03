@@ -59,7 +59,7 @@ area; copying the requested project-notes report is a delivery step.
 - Source PDFs, PNGs and JPGs are generated from fictional text in memory. The
   real decoder, upload, persistence, matching, snippet and review routes run.
   Only the configuration/storage root is redirected to private pytest scratch;
-  application matching, review and validation logic is unchanged.
+  the harness runs actual matching, review and validation logic.
 - Every expected failure is strict and restricted to `AssertionError`. Helper
   HTTP/provider errors use `pytest.fail`, so they cannot be hidden as product
   xfails. Missing PostgreSQL binaries are blocked skips; startup/migration
@@ -77,3 +77,30 @@ cart, order, training, external provider or production database actions.
 The base branch is preserved. The feature commit and PR provide the source
 recovery point; the disposable runtime contains no customer evidence and is
 not a backup artifact. No service or shared checkout is modified by the suite.
+
+## T-009 PR A regression checks
+
+PR A updates tiers, three explicit line answers, marked/scoped review-created
+catalog entries, and same-row quantity/unit validation. The original T-007
+edit scope and measurement above describe its baseline; the current scorecard
+records A's implementation. Source grounding, independent completeness and
+F7/F8 remain for PR B. Missing optional browser tooling counts as blocked.
+
+The browser regression uses the installed Node/Playwright runtime and a
+headless browser in a fresh temporary profile. It reaches only a test-owned
+loopback bridge to the fixed-provider API. Startup corpus enumeration is
+disabled; it opens the generated fictional run directly and exercises all
+three answers, explicit approval, and the disabled/enabled Finish button.
+It never connects to an existing application service or opens customer files.
+
+```powershell
+$env:GOAL_POSTGRES_BIN = '<PostgreSQL binary directory>'
+$env:GOAL_NODE_BIN = '<Node executable with Playwright available>'
+$env:GOAL_BROWSER_BIN = '<headless-capable browser executable>'
+.\.venv-goal\Scripts\python.exe -m pytest -m goal -q --goal-scorecard docs\goal-scorecard-2026-10-03.md
+```
+
+The new migration adds `origin` and `review_pool_id` and extends immutable
+binding snapshots. Its tested downgrade restores the previous guard and schema
+on an empty throwaway database. Downgrade refuses when review-created products
+or new answer events exist, so it cannot silently discard their evidence.

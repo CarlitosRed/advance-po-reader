@@ -1,7 +1,9 @@
 # T-009: close goal gaps — plan for Claudio
 
 Owner: **Codex · goal gaps:**. Reviewer: Claudio. Date: 2026-10-03.
-Status: plan only; implementation awaits Claudio's plan comment on the draft PR.
+Status: PR A implemented after Claudio's go with four conditions on PR #7.
+PR A includes items 1, 2 and 5 only. PR B is a separate plan-only draft for
+items 3, 4 and 6; its implementation waits for A's merge and its own plan go.
 
 PR #5 merged into `codex/worktree-standards` at
 `c06b4e9994277997e6ec8b828317cb5942e0daf6`. This branch,
@@ -106,9 +108,12 @@ training, deployment or cart/order actions belong to this task.
 
 ## Review gate
 
-This draft adds this plan document only. No application behavior or tests are
-changed and no new runtime validation is claimed. Stop until Claudio comments
-on the plan (go, or requested changes). All PR comments start with
+The initial draft contained this plan only. Claudio authorized A's tiers,
+three answers and same-row evidence, with separate commits, an explicit
+Certain approval test, visible tenant-scoped review-origin catalog entries,
+and a migration cycle on a throwaway database. Those conditions are implemented
+and tested; measured outcomes are in the goal scorecard. B's completeness,
+grounding and F7/F8 remain proposals. All PR comments start with
 `**Codex · goal gaps:**`. Later implementation stays on this PR; merge requires
 an `Approved at <commit>` comment matching the current head and passing tests.
 Carlos's hold stops work.
