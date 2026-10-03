@@ -39,6 +39,14 @@ using any saved process ID. Never automatically repeat this successful run.
 
 ## Catalog lookup issue delegated for a fix
 
+Separate development branches are implementing catalog description-hint
+retrieval and versioned continuation handling. These changes do not rewrite
+this saved run or its review events. Once the branches are integrated, a human
+must start a new run to use ProductDocument 1.2. Typed freight, totals and
+notes will stay visible as document details; an explicitly supported
+description continuation will join its product card while preserving its own
+source region. Unlinked unknown rows remain review blockers.
+
 The source described a product using a catalog-like code embedded in its
 description, while the dedicated item/manufacturer identifier fields were
 blank. Existing exact lookup therefore had no eligible identifier. The

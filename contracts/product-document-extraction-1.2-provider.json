@@ -1,0 +1,417 @@
+{
+  "$defs": {
+    "BoundingBox": {
+      "additionalProperties": false,
+      "description": "Normalized top-left coordinates relative to the whole source page.",
+      "properties": {
+        "x0": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "y0": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "x1": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        "y1": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "x0",
+        "y0",
+        "x1",
+        "y1"
+      ],
+      "type": "object"
+    },
+    "EvidenceReference": {
+      "additionalProperties": false,
+      "description": "One-based source page and an opaque region reference, not source text.\n\nThe region geometry/coordinate system belongs to the later extraction\ncontract. No file path or content is resolved by this primitive.",
+      "properties": {
+        "page_number": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "region_reference": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_number",
+        "region_reference"
+      ],
+      "type": "object"
+    },
+    "ExtractedRow": {
+      "additionalProperties": false,
+      "properties": {
+        "row_id": {
+          "maxLength": 120,
+          "type": "string"
+        },
+        "row_kind": {
+          "$ref": "#/$defs/RowKind"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceReference"
+          },
+          "type": "array"
+        },
+        "identifiers": {
+          "items": {
+            "$ref": "#/$defs/IdentifierObservation"
+          },
+          "type": "array"
+        },
+        "description": {
+          "$ref": "#/$defs/FieldObservation"
+        },
+        "quantity": {
+          "$ref": "#/$defs/FieldObservation"
+        },
+        "unit": {
+          "$ref": "#/$defs/FieldObservation"
+        },
+        "unit_price": {
+          "$ref": "#/$defs/FieldObservation"
+        },
+        "line_total": {
+          "$ref": "#/$defs/FieldObservation"
+        },
+        "uncertainty": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item_group_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "row_role": {
+          "anyOf": [
+            {
+              "enum": [
+                "product_item",
+                "continuation",
+                "document_detail",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "continuation_of": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "row_id",
+        "row_kind",
+        "evidence",
+        "identifiers",
+        "description",
+        "quantity",
+        "unit",
+        "unit_price",
+        "line_total",
+        "uncertainty",
+        "item_group_id",
+        "row_role",
+        "continuation_of"
+      ],
+      "type": "object"
+    },
+    "FieldObservation": {
+      "additionalProperties": false,
+      "description": "The same five Gate A states, now preserving a printed field label.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ObservationState"
+        },
+        "raw_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceReference"
+          },
+          "type": "array"
+        },
+        "alternative_readings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "raw_value",
+        "evidence",
+        "alternative_readings",
+        "source_label"
+      ],
+      "type": "object"
+    },
+    "IdentifierObservation": {
+      "additionalProperties": false,
+      "description": "Gate A identifier provenance with explicit collection keys in v1.1.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ObservationState"
+        },
+        "raw_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/EvidenceReference"
+          },
+          "type": "array"
+        },
+        "alternative_readings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "raw_value",
+        "evidence",
+        "alternative_readings",
+        "source_label",
+        "source_role"
+      ],
+      "type": "object"
+    },
+    "ObservationState": {
+      "enum": [
+        "observed",
+        "uncertain",
+        "unreadable",
+        "not_present",
+        "not_applicable"
+      ],
+      "type": "string"
+    },
+    "PageObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "page_number": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "complete",
+            "partial",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "regions": {
+          "items": {
+            "$ref": "#/$defs/Region"
+          },
+          "type": "array"
+        },
+        "uncertainty": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "page_number",
+        "state",
+        "regions",
+        "uncertainty"
+      ],
+      "type": "object"
+    },
+    "Region": {
+      "additionalProperties": false,
+      "properties": {
+        "region_reference": {
+          "type": "string"
+        },
+        "bbox": {
+          "$ref": "#/$defs/BoundingBox"
+        }
+      },
+      "required": [
+        "region_reference",
+        "bbox"
+      ],
+      "type": "object"
+    },
+    "RowKind": {
+      "description": "Vocabulary only; Gate A does not define or extract document rows.",
+      "enum": [
+        "product",
+        "charge",
+        "tax",
+        "subtotal",
+        "total",
+        "note",
+        "unknown"
+      ],
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_name": {
+      "type": "string",
+      "enum": [
+        "ProductDocument"
+      ]
+    },
+    "schema_version": {
+      "enum": [
+        "1.2"
+      ],
+      "type": "string"
+    },
+    "document_type": {
+      "enum": [
+        "purchase_order",
+        "unsupported",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "document_type_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "document_number": {
+      "$ref": "#/$defs/FieldObservation"
+    },
+    "vendor_name": {
+      "$ref": "#/$defs/FieldObservation"
+    },
+    "currency": {
+      "$ref": "#/$defs/FieldObservation"
+    },
+    "pages": {
+      "items": {
+        "$ref": "#/$defs/PageObservation"
+      },
+      "type": "array"
+    },
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/ExtractedRow"
+      },
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "contract_name",
+    "schema_version",
+    "document_type",
+    "document_type_reason",
+    "document_number",
+    "vendor_name",
+    "currency",
+    "pages",
+    "rows",
+    "warnings"
+  ],
+  "type": "object"
+}

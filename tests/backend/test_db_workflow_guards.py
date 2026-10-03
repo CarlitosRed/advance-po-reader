@@ -38,8 +38,8 @@ def workflow_engine():
         pytest.skip("Set isolated local catalog test database to exercise workflow guards")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or url.database != "gate_a_test_backend_website_catalog" or url.query):
-        pytest.fail("Workflow guards refuse any database except loopback gate_a_test_backend_website_catalog")
+            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
+        pytest.fail("Workflow guards require an isolated loopback synthetic test database")
     engine = create_db_engine(url, 10)
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:

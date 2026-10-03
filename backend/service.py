@@ -122,7 +122,10 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
     attempt = ProviderAttempt(tenant_id=tenant, run_id=run.id, state="unknown_outcome",
                               model=getattr(provider, "model", "synthetic-fixture"),
                               prompt_version=getattr(provider, "prompt_version", "po-extraction-1.1"),
-                              schema_version="1.1", usage={}, latency_ms=0,
+                              schema_version=getattr(provider, "schema_version", None) or
+                                  ("1.2" if run.provider == "openai" or
+                                   (run.external_authorization or {}).get("fixture_name") == "continuation" else "1.1"),
+                              usage={}, latency_ms=0,
                               error_code="attempt_in_progress_or_interrupted", synthetic=run.provider == "synthetic")
     session.add(attempt)
     session.flush()
@@ -155,7 +158,7 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
     attempt.error_code = outcome.error_code
     attempt.finished_at = now()
     # Model/prompt/schema were persisted before call, and must agree with its outcome.
-    if (outcome.schema_version != "1.1" or outcome.model != attempt.model or outcome.prompt_version != attempt.prompt_version):
+    if (outcome.schema_version not in {"1.1", "1.2"} or outcome.model != attempt.model or outcome.prompt_version != attempt.prompt_version):
         attempt.state = "invalid_output"
         attempt.error_code = "provider_version_mismatch"
         outcome_payload = None
@@ -266,8 +269,12 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
         row_references = {(ref.page_number, ref.region_reference) for ref in row.evidence}
         if not references or not all((ref.page_number, ref.region_reference) in row_references for ref in references):
             raise BackendError("review_evidence_outside_row", 422)
+        if row.row_role == "continuation" and request.action in {"approve", "no_match", "acknowledge", "propose_candidate"}:
+            raise BackendError("continuation_is_grouped_source_evidence", 422)
+        if payload.schema_version == "1.2" and row.row_role == "document_detail" and request.action in {"approve", "no_match", "acknowledge", "propose_candidate"}:
+            raise BackendError("document_detail_does_not_require_product_review", 422)
         if request.action in {"approve", "no_match"}:
-            if row.row_kind != "product":
+            if row.row_kind != "product" or row.row_role == "continuation":
                 raise BackendError("non_product_row_cannot_match", 422)
             if request.action == "approve":
                 suggestion = session.scalar(select(Suggestion).where(Suggestion.tenant_id == tenant, Suggestion.run_id == run_id,
@@ -287,7 +294,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
             old_value = previous.new_value if previous else {"resolution": "unresolved"}
         elif request.action == "propose_candidate":
             from backend.models import CatalogProduct
-            if row.row_kind != "product":
+            if row.row_kind != "product" or row.row_role == "continuation":
                 raise BackendError("non_product_row_cannot_match", 422)
             products = session.scalars(select(CatalogProduct).where(
                 CatalogProduct.tenant_id == tenant, CatalogProduct.vendor_id == run.vendor_id,
@@ -301,6 +308,8 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
         elif request.action == "acknowledge":
             if row.row_kind == "product":
                 raise BackendError("product_requires_approve_or_no_match", 422)
+            if (payload.schema_version == "1.2" and row.row_role == "document_detail"):
+                raise BackendError("document_detail_does_not_require_product_review", 422)
             new_value = {"acknowledged_row_kind": row.row_kind}
         elif request.action == "correct":
             if request.field_name.startswith("identifier."):
