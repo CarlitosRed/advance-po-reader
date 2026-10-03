@@ -20,6 +20,7 @@ from backend.config import Settings
 from backend.contracts import ExtractionPayload, strict_schema
 from backend.errors import BackendError
 from backend.models import Vendor, CatalogProduct, CatalogAlias, SourceDocument, UploadReceipt, ProcessingRun, ProviderAttempt, Suggestion, ReviewEvent
+from backend.pools import default_pool, pool_members
 from backend.service import (serialize, lock_key, fingerprint, source_for, run_for, create_run,
                              process_run, cancel_run, review_run)
 from backend.uploads import digest, validate_file, write_source
@@ -31,7 +32,7 @@ from gate_a.contracts import ProductDocumentV1
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
 
-EXPECTED_REVISION = "0005_review_sequence"
+EXPECTED_REVISION = "0008_catalog_pools"
 
 
 class CatalogImport(RequestModel):
@@ -261,7 +262,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                     "offset": offset, "next_offset": offset + limit if len(records) > limit else None}
 
     @app.post("/documents", status_code=201, response_model=SourceResponse)
-    def upload(request: Request, vendor_id: UUID = Form(...), file: UploadFile = File(...)):
+    def upload(request: Request, file: UploadFile = File(...), vendor_id: UUID | None = Form(default=None)):
         key = idempotency(request)
         try:
             data = file.file.read(configuration.max_upload_bytes + 1)
@@ -269,22 +270,36 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             file.file.close()
         metadata = validate_file(data, configuration)
         sha = digest(data)
-        payload_hash = fingerprint({"sha256": sha, "vendor_id": str(vendor_id), **metadata})
         with Session(app.state.engine, expire_on_commit=False) as session:
             tenant = tenant_for(request, session)
-            vendor_for(session, tenant, vendor_id)
+            pool = None
+            if vendor_id is None:
+                pool = default_pool(session, tenant)
+                if pool is None:
+                    raise BackendError("default_catalog_pool_setup_required", 409)
+                members = pool_members(session, tenant, pool.id)
+                if not members:
+                    raise BackendError("default_catalog_pool_empty", 409)
+                vendor_id = sorted({member.vendor_id for member in members}, key=str)[0]
+            else:
+                vendor_for(session, tenant, vendor_id)
+            payload_hash = fingerprint({"sha256": sha, "vendor_id": str(vendor_id),
+                                        "catalog_pool_id": str(pool.id) if pool else None, **metadata})
             lock_key(session, tenant, "upload", key)
             receipt = session.scalar(select(UploadReceipt).where(UploadReceipt.tenant_id == tenant, UploadReceipt.idempotency_key == key))
             if receipt:
                 if receipt.payload_hash != payload_hash:
                     raise BackendError("idempotency_payload_conflict", 409)
                 return serialize(source_for(session, tenant, receipt.source_document_id))
-            lock_key(session, tenant, "source", f"{vendor_id}:{sha}")
+            lock_key(session, tenant, "source", f"{vendor_id}:{pool.id if pool else 'legacy'}:{sha}")
             source = session.scalar(select(SourceDocument).where(SourceDocument.tenant_id == tenant,
-                                    SourceDocument.vendor_id == vendor_id, SourceDocument.sha256 == sha))
+                                    SourceDocument.vendor_id == vendor_id,
+                                    SourceDocument.catalog_pool_id == (pool.id if pool else None),
+                                    SourceDocument.sha256 == sha))
             if source is None:
                 reference = write_source(configuration.storage_directory, data)
                 source = SourceDocument(tenant_id=tenant, vendor_id=vendor_id, sha256=sha,
+                                        catalog_pool_id=pool.id if pool else None,
                                         byte_size=len(data), storage_reference=reference, **metadata)
                 session.add(source)
                 session.flush()
@@ -303,7 +318,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
         with Session(app.state.engine, expire_on_commit=False) as session:
             run = create_run(session, tenant_for(request, session), source_id, idempotency(request), body)
             session.commit()
-            return serialize(run, ["id", "source_document_id", "vendor_id", "provider", "state", "review_state", "outcome_code", "created_at", "finished_at"])
+            return serialize(run, ["id", "source_document_id", "vendor_id", "catalog_pool_id", "provider", "state", "review_state", "outcome_code", "created_at", "finished_at"])
 
     @app.get("/documents/{source_id}/runs", response_model=RunsResponse)
     def runs_for_source(source_id: UUID, request: Request):
@@ -318,7 +333,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
     def run_read(run_id: UUID, request: Request):
         with Session(app.state.engine) as session:
             return serialize(run_for(session, tenant_for(request, session), run_id),
-                             ["id", "source_document_id", "vendor_id", "provider", "state", "review_state", "outcome_code", "created_at", "finished_at"])
+                             ["id", "source_document_id", "vendor_id", "catalog_pool_id", "provider", "state", "review_state", "outcome_code", "created_at", "finished_at"])
 
     @app.post("/runs/{run_id}/process", response_model=RunResponse)
     def process(run_id: UUID, request: Request):

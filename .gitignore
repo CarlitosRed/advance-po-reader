@@ -19,3 +19,4 @@ node_modules/
 *.pt
 *.pth
 .venv-gate-a/
+.venv-orderlens-all-products/

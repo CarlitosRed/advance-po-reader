@@ -11,6 +11,8 @@ from backend.catalog import retrieve_candidates
 from backend.contracts import ExtractionPayload, validate_payload, parsed_payload
 from backend.errors import BackendError
 from backend.models import SourceDocument, ProcessingRun, ProviderAttempt, Suggestion, ReviewEvent
+from backend.models import CatalogProduct
+from backend.pools import pool_vendor_ids, validate_pool_candidate
 from backend.providers import OpenAIProvider, SyntheticProvider
 from backend.uploads import read_source
 from gate_a.contracts import EvidenceReference, validate_run_transition
@@ -70,6 +72,7 @@ def create_run(session, tenant, source_id, key, request: RunRequest):
     if authorization:
         metadata["external_processing"] = {**authorization.model_dump(mode="json"), "recorded_at": now().isoformat()}
     run = ProcessingRun(tenant_id=tenant, source_document_id=source.id, vendor_id=source.vendor_id,
+                        catalog_pool_id=source.catalog_pool_id,
                         provider=request.provider, state="created", review_state="not_started",
                         idempotency_key=key, payload_hash=payload_hash, external_authorization=metadata)
     session.add(run)
@@ -191,10 +194,12 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                     if row.row_kind != "product":
                         continue
                     try:
+                        scoped_vendors = pool_vendor_ids(session, tenant, run.catalog_pool_id) if run.catalog_pool_id else [source.vendor_id]
                         candidate_result = retrieve_candidates(
                             session, tenant, source.vendor_id,
                             [identifier.model_dump(mode="json") for identifier in row.identifiers],
-                            row.description.raw_value, settings.candidate_limit)
+                            row.description.raw_value, settings.candidate_limit,
+                            vendor_ids=scoped_vendors, pool_id=run.catalog_pool_id)
                     except ValueError:
                         partial = True
                         candidate_result = {"method": "none", "outcome": "no_match", "candidates": [],
@@ -287,6 +292,13 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                         if value["candidate_id"] == str(request.selected_candidate_id)), None)
                 if candidate is None:
                     raise BackendError("selected_candidate_outside_snapshot", 422)
+                product = session.scalar(select(CatalogProduct).where(
+                    CatalogProduct.tenant_id == tenant, CatalogProduct.id == request.selected_candidate_id,
+                    CatalogProduct.active.is_(True)))
+                if product is None or (run.catalog_pool_id is not None and not validate_pool_candidate(
+                        session, tenant, run.catalog_pool_id, product.vendor_id, product.id)) or (
+                        run.catalog_pool_id is None and product.vendor_id != run.vendor_id):
+                    raise BackendError("selected_candidate_outside_run_pool", 422)
                 new_value = {"resolution": "approved", "candidate": candidate}
             else:
                 new_value = {"resolution": "no_match"}
@@ -297,8 +309,13 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
             if row.row_kind != "product" or row.row_role == "continuation":
                 raise BackendError("non_product_row_cannot_match", 422)
             products = session.scalars(select(CatalogProduct).where(
-                CatalogProduct.tenant_id == tenant, CatalogProduct.vendor_id == run.vendor_id,
-                CatalogProduct.id.in_(request.candidate_ids), CatalogProduct.active.is_(True))).all()
+                CatalogProduct.tenant_id == tenant, CatalogProduct.id.in_(request.candidate_ids),
+                CatalogProduct.active.is_(True))).all()
+            if run.catalog_pool_id is not None:
+                products = [product for product in products if validate_pool_candidate(
+                    session, tenant, run.catalog_pool_id, product.vendor_id, product.id)]
+            else:
+                products = [product for product in products if product.vendor_id == run.vendor_id]
             if len(products) != len(request.candidate_ids):
                 raise BackendError("proposed_candidate_outside_catalog", 422)
             by_id = {product.id: product for product in products}

@@ -77,15 +77,20 @@ class SourceDocument(Identity, Base):
     __tablename__ = "source_documents"
     __table_args__ = (
         ForeignKeyConstraint(["tenant_id", "vendor_id"], ["vendors.tenant_id", "vendors.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "catalog_pool_id"], ["catalog_pools.tenant_id", "catalog_pools.id"], ondelete="RESTRICT"),
         UniqueConstraint("tenant_id", "vendor_id", "id", name="uq_sources_scope_id"),
-        UniqueConstraint("tenant_id", "vendor_id", "sha256", name="uq_sources_scope_hash"),
         CheckConstraint("sha256 ~ '^[a-f0-9]{64}$'", name="ck_sources_sha256"),
         CheckConstraint("byte_size > 0 AND page_count > 0", name="ck_sources_sizes"),
         CheckConstraint("width IS NULL OR width > 0", name="ck_sources_width"),
         CheckConstraint("height IS NULL OR height > 0", name="ck_sources_height"),
         CheckConstraint("length(storage_reference) > 0", name="ck_sources_reference"),
+        Index("uq_sources_legacy_scope_hash", "tenant_id", "vendor_id", "sha256", unique=True,
+              postgresql_where=text("catalog_pool_id IS NULL")),
+        Index("uq_sources_pool_scope_hash", "tenant_id", "vendor_id", "catalog_pool_id", "sha256", unique=True,
+              postgresql_where=text("catalog_pool_id IS NOT NULL")),
     )
     vendor_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    catalog_pool_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
     media_type: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -99,6 +104,7 @@ class ProcessingRun(Identity, Base):
     __tablename__ = "processing_runs"
     __table_args__ = (
         ForeignKeyConstraint(["tenant_id", "vendor_id", "source_document_id"], ["source_documents.tenant_id", "source_documents.vendor_id", "source_documents.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "catalog_pool_id"], ["catalog_pools.tenant_id", "catalog_pools.id"], ondelete="RESTRICT"),
         UniqueConstraint("tenant_id", "id", name="uq_runs_tenant_id"),
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_runs_tenant_idempotency"),
         CheckConstraint("length(trim(idempotency_key)) > 0", name="ck_runs_idempotency"),
@@ -109,6 +115,7 @@ class ProcessingRun(Identity, Base):
     )
     source_document_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     vendor_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    catalog_pool_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     provider: Mapped[str] = mapped_column(String(80), nullable=False)
     state: Mapped[str] = mapped_column(String(24), nullable=False, default="created")
     review_state: Mapped[str] = mapped_column(String(24), nullable=False, default="not_started")
@@ -219,6 +226,33 @@ class CatalogNamespace(Identity, Base):
     adapter_version: Mapped[str] = mapped_column(String(80), nullable=False)
     assigned_by: Mapped[str] = mapped_column(String(200), nullable=False)
     synthetic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class CatalogPool(Identity, Base):
+    """An explicit tenant-local group of source namespaces for candidate search."""
+    __tablename__ = "catalog_pools"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_catalog_pools_tenant_id"),
+        UniqueConstraint("tenant_id", "name", name="uq_catalog_pools_tenant_name"),
+        CheckConstraint("length(trim(name)) > 0", name="ck_catalog_pools_name"),
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+
+class CatalogPoolMember(Identity, Base):
+    """Membership is by original namespace; products are never copied or merged."""
+    __tablename__ = "catalog_pool_members"
+    __table_args__ = (
+        ForeignKeyConstraint(["tenant_id", "pool_id"], ["catalog_pools.tenant_id", "catalog_pools.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "vendor_id", "namespace_id"],
+            ["catalog_namespaces.tenant_id", "catalog_namespaces.vendor_id", "catalog_namespaces.id"], ondelete="RESTRICT"),
+        UniqueConstraint("tenant_id", "pool_id", "namespace_id", name="uq_catalog_pool_member"),
+        UniqueConstraint("tenant_id", "pool_id", "vendor_id", "namespace_id", name="uq_catalog_pool_member_scope"),
+    )
+    pool_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    vendor_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    namespace_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
 
 
 class CatalogSourceProduct(Identity, Base):

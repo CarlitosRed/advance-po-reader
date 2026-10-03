@@ -11,7 +11,8 @@ from sqlalchemy.engine import make_url
 from backend.config import ROOT, Settings
 
 TEST_DATABASES = ("gate_a_test_backend_website_api", "gate_a_test_backend_website_catalog", "gate_a_test_backend_website_contract",
-                  "gate_a_test_backend_website_root", "gate_a_test_backend_website_gate_a")
+                  "gate_a_test_backend_website_root", "gate_a_test_backend_website_gate_a",
+                  "gate_a_test_backend_all_products")
 
 
 def create_database(database_url):

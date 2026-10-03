@@ -44,6 +44,9 @@ async function initialize() {
     state.workspace = scopes.workspaces[0] || null;
     if (!state.workspace) throw new Error("local_catalog_setup_required");
     state.catalogs = state.workspace.catalogs;
+    state.pools = state.workspace.catalog_pools || [];
+    state.defaultPool = corpus.default_catalog_pool ? {...corpus.default_catalog_pool, is_pool:true, synthetic:false} : null;
+    state.catalog = state.defaultPool;
     state.configuration = configuration;
     state.library = corpus.documents;
     $("library-count").textContent = state.library.length;
