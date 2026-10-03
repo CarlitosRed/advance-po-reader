@@ -88,7 +88,7 @@ def history(session):
 
 def test_backend_head_and_gate_a_seed(engine):
     with engine.connect() as connection:
-        assert MigrationContext.configure(connection).get_current_heads() == ("0006_catalog_description_hint",)
+        assert MigrationContext.configure(connection).get_current_heads() == ("0008_catalog_pools",)
         assert connection.scalar(text("SELECT count(*) FROM tenants WHERE id='00000000-0000-0000-0000-000000000001'")) == 1
 
 

@@ -31,6 +31,7 @@ class SourceResponse(ResponseModel):
     id: UUID
     tenant_id: UUID
     vendor_id: UUID
+    catalog_pool_id: UUID | None = None
     sha256: str
     byte_size: int
     media_type: Literal["application/pdf", "image/png", "image/jpeg"]
@@ -45,6 +46,7 @@ class RunResponse(ResponseModel):
     id: UUID
     source_document_id: UUID | None = None
     vendor_id: UUID | None = None
+    catalog_pool_id: UUID | None = None
     provider: Literal["openai", "synthetic"] | None = None
     state: Literal["created", "validating", "processing", "completed", "partial", "failed", "cancelled"]
     review_state: Literal["not_started", "in_progress", "resolved"]

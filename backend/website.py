@@ -21,7 +21,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from backend.config import ROOT
 from backend.contracts import ExtractionPayload
 from backend.errors import BackendError
-from backend.models import CatalogNamespace, CatalogProduct, CatalogSourceProduct, SourceDocument, Vendor
+from backend.models import (CatalogNamespace, CatalogProduct, CatalogPool, CatalogPoolMember,
+                            CatalogSourceProduct, SourceDocument, Vendor)
+from backend.pools import default_pool, pool_members
 from backend.service import run_for, serialize, source_for
 from backend.synthetic import generate_fixture
 from backend.uploads import digest, read_source
@@ -159,6 +161,24 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
                 scope["catalogs"].append({"id": str(vendor.id), "name": vendor.name, "product_count": count,
                     "synthetic": namespace.synthetic, "source_filename": namespace.source_filename,
                     "adapter_version": namespace.adapter_version, "assigned_by": namespace.assigned_by})
+            for tenant_id, scope in ((UUID(item["id"]), item) for item in result.values()):
+                pools = session.scalars(select(CatalogPool).where(CatalogPool.tenant_id == tenant_id)
+                                        .order_by(CatalogPool.name)).all()
+                scope["catalog_pools"] = []
+                for pool in pools:
+                    members = pool_members(session, tenant_id, pool.id)
+                    count = session.scalar(select(func.count()).select_from(CatalogProduct).join(CatalogSourceProduct,
+                        (CatalogSourceProduct.tenant_id == CatalogProduct.tenant_id) &
+                        (CatalogSourceProduct.vendor_id == CatalogProduct.vendor_id) &
+                        (CatalogSourceProduct.product_id == CatalogProduct.id)).join(CatalogPoolMember,
+                        (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                        (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                        (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                            CatalogPoolMember.tenant_id == tenant_id, CatalogPoolMember.pool_id == pool.id,
+                            CatalogProduct.active.is_(True)))
+                    scope["catalog_pools"].append({"id": str(pool.id), "name": pool.name,
+                        "product_count": count, "member_count": len(members), "is_default": pool.is_default,
+                        "synthetic": False})
             return {"workspaces": list(result.values())}
 
     @app.get("/website/readiness")
@@ -195,40 +215,116 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
                 "agent_transport": "local_stdio", "provider_requests_made_by_check": 0}
 
     @app.get("/website/catalog")
-    def browse(request: Request, vendor_id: UUID, q: str = Query(default="", max_length=120),
+    def browse(request: Request, vendor_id: UUID | None = None, pool_id: UUID | None = None,
+               q: str = Query(default="", max_length=120),
                offset: int = Query(default=0, ge=0), limit: int = Query(default=30, ge=1, le=50)):
         with Session(app.state.engine) as session:
             tenant = tenant_for(request, session)
-            vendor_for(session, tenant, vendor_id)
-            conditions = [CatalogProduct.tenant_id == tenant, CatalogProduct.vendor_id == vendor_id, CatalogProduct.active.is_(True)]
+            if vendor_id is not None and pool_id is not None:
+                raise BackendError("choose_one_catalog_scope", 422)
+            if vendor_id is None and pool_id is None:
+                pool = default_pool(session, tenant)
+                if pool is None:
+                    raise BackendError("default_catalog_pool_setup_required", 409)
+                pool_id = pool.id
+            conditions = [CatalogProduct.tenant_id == tenant, CatalogProduct.active.is_(True)]
+            if pool_id is not None:
+                members = pool_members(session, tenant, pool_id)
+                if not members:
+                    raise BackendError("catalog_pool_empty", 409)
+                conditions.extend([CatalogProduct.id.in_(select(CatalogSourceProduct.product_id).join(CatalogPoolMember,
+                    (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                    (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                    (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                        CatalogPoolMember.tenant_id == tenant, CatalogPoolMember.pool_id == pool_id,
+                        CatalogSourceProduct.tenant_id == tenant))])
+            else:
+                vendor_for(session, tenant, vendor_id)
+                conditions.append(CatalogProduct.vendor_id == vendor_id)
             if q.strip():
                 conditions.append(or_(CatalogProduct.sku.icontains(q.strip(), autoescape=True),
                     CatalogProduct.description.icontains(q.strip(), autoescape=True)))
             total = session.scalar(select(func.count()).select_from(CatalogProduct).where(*conditions))
             records = session.scalars(select(CatalogProduct).where(*conditions)
                 .order_by(CatalogProduct.sku, CatalogProduct.id).offset(offset).limit(limit)).all()
-            return {"products": [serialize(p, ["id", "sku", "description"]) for p in records],
+            products = []
+            for product in records:
+                entry = serialize(product, ["id", "sku", "description"])
+                if pool_id is not None:
+                    source = session.scalar(select(CatalogSourceProduct).join(CatalogPoolMember,
+                        (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                        (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                        (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                            CatalogSourceProduct.tenant_id == tenant, CatalogSourceProduct.vendor_id == product.vendor_id,
+                            CatalogSourceProduct.product_id == product.id, CatalogPoolMember.pool_id == pool_id))
+                    if source is None:
+                        continue
+                    namespace = session.get(CatalogNamespace, source.namespace_id)
+                    vendor = session.get(Vendor, product.vendor_id)
+                    entry.update({"origin_vendor_id": str(product.vendor_id), "origin_vendor": vendor.name,
+                                  "namespace_id": str(source.namespace_id),
+                                  "origin_catalog": namespace.source_catalog_id})
+                products.append(entry)
+            return {"products": products,
                 "total": total, "offset": offset, "next_offset": offset + limit if offset + limit < total else None}
 
     @app.get("/website/catalog/{product_id}")
-    def detail(product_id: UUID, request: Request, vendor_id: UUID):
+    def detail(product_id: UUID, request: Request, vendor_id: UUID | None = None, pool_id: UUID | None = None):
         with Session(app.state.engine) as session:
             tenant = tenant_for(request, session)
-            vendor_for(session, tenant, vendor_id)
-            product = session.scalar(select(CatalogProduct).where(CatalogProduct.tenant_id == tenant,
-                CatalogProduct.vendor_id == vendor_id, CatalogProduct.id == product_id))
+            if vendor_id is not None and pool_id is not None:
+                raise BackendError("choose_one_catalog_scope", 422)
+            if vendor_id is None and pool_id is None:
+                pool = default_pool(session, tenant)
+                if pool is None:
+                    raise BackendError("default_catalog_pool_setup_required", 409)
+                pool_id = pool.id
+            product_conditions = [CatalogProduct.tenant_id == tenant, CatalogProduct.id == product_id]
+            if pool_id is not None:
+                members = pool_members(session, tenant, pool_id)
+                product_conditions.append(CatalogProduct.id.in_(select(CatalogSourceProduct.product_id).join(CatalogPoolMember,
+                    (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                    (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                    (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                        CatalogPoolMember.tenant_id == tenant, CatalogPoolMember.pool_id == pool_id)))
+            else:
+                vendor_for(session, tenant, vendor_id)
+                product_conditions.append(CatalogProduct.vendor_id == vendor_id)
+            product = session.scalar(select(CatalogProduct).where(*product_conditions))
             if product is None:
                 raise BackendError("catalog_product_not_found", 404)
             source = session.scalar(select(CatalogSourceProduct).where(CatalogSourceProduct.tenant_id == tenant,
-                CatalogSourceProduct.vendor_id == vendor_id, CatalogSourceProduct.product_id == product_id))
+                CatalogSourceProduct.vendor_id == product.vendor_id, CatalogSourceProduct.product_id == product_id))
+            namespace = session.get(CatalogNamespace, source.namespace_id) if source else None
+            vendor = session.get(Vendor, product.vendor_id)
             return {"product": serialize(product, ["id", "sku", "description"]),
-                "source": serialize(source, ["source_row_number", "raw_fields", "attributes", "detail_sections"]) if source else None}
+                "source": ({**serialize(source, ["source_row_number", "raw_fields", "attributes", "detail_sections"]),
+                            "origin_vendor_id": str(product.vendor_id), "origin_vendor": vendor.name,
+                            "namespace_id": str(source.namespace_id), "origin_catalog": namespace.source_catalog_id}
+                           if source else None)}
 
     @app.get("/website/corpus")
     def library(request: Request):
-        private(request)
-        return {"documents": corpus_index(), "extraction_status": "not_processed",
-            "catalog_selection_required": True}
+        with Session(app.state.engine) as session:
+            tenant = tenant_for(request, session)
+            pool = default_pool(session, tenant)
+            summary = None
+            if pool is not None:
+                members = pool_members(session, tenant, pool.id)
+                count = session.scalar(select(func.count()).select_from(CatalogProduct).join(CatalogSourceProduct,
+                    (CatalogSourceProduct.tenant_id == CatalogProduct.tenant_id) &
+                    (CatalogSourceProduct.vendor_id == CatalogProduct.vendor_id) &
+                    (CatalogSourceProduct.product_id == CatalogProduct.id)).join(CatalogPoolMember,
+                    (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                    (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                    (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                        CatalogPoolMember.tenant_id == tenant, CatalogPoolMember.pool_id == pool.id,
+                        CatalogProduct.active.is_(True)))
+                summary = {"id": str(pool.id), "name": pool.name, "product_count": count,
+                           "member_count": len(members)}
+            return {"documents": corpus_index(), "extraction_status": "not_processed",
+                "default_catalog_pool": summary, "catalog_selection_required": summary is None,
+                "setup_requirement": "Configure a tenant default catalog pool before starting a new document" if summary is None else None}
 
     @app.get("/website/corpus/{source_hash}/content")
     def corpus_content(source_hash: str, request: Request):
@@ -250,12 +346,25 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
         return Response(generate_fixture(), media_type="application/pdf")
 
     @app.get("/documents")
-    def document_list(request: Request, vendor_id: UUID, limit: int = Query(default=50, ge=1, le=100)):
+    def document_list(request: Request, vendor_id: UUID | None = None, pool_id: UUID | None = None,
+                      limit: int = Query(default=50, ge=1, le=100)):
         with Session(app.state.engine) as session:
             tenant = tenant_for(request, session)
-            vendor_for(session, tenant, vendor_id)
-            return {"documents": [serialize(s) for s in session.scalars(select(SourceDocument).where(
-                SourceDocument.tenant_id == tenant, SourceDocument.vendor_id == vendor_id)
+            if vendor_id is not None and pool_id is not None:
+                raise BackendError("choose_one_catalog_scope", 422)
+            if vendor_id is None and pool_id is None:
+                pool = default_pool(session, tenant)
+                if pool is None:
+                    raise BackendError("default_catalog_pool_setup_required", 409)
+                pool_id = pool.id
+            conditions = [SourceDocument.tenant_id == tenant]
+            if pool_id is not None:
+                pool_members(session, tenant, pool_id)
+                conditions.append(SourceDocument.catalog_pool_id == pool_id)
+            else:
+                vendor_for(session, tenant, vendor_id)
+                conditions.append(SourceDocument.vendor_id == vendor_id)
+            return {"documents": [serialize(s) for s in session.scalars(select(SourceDocument).where(*conditions)
                 .order_by(SourceDocument.created_at.desc(), SourceDocument.id).limit(limit))]}
 
     @app.get("/documents/{source_id}/content")

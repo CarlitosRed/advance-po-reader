@@ -14,7 +14,7 @@ from sqlalchemy import and_, func, or_, select, text, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from backend.models import CatalogAlias, CatalogProduct, Vendor
+from backend.models import CatalogAlias, CatalogProduct, CatalogPoolMember, CatalogSourceProduct, Vendor
 
 CANONICAL_SKU_ROLES = frozenset({"sku", "vendor_sku", "vendor_product_code"})
 MAX_CANDIDATES = 20
@@ -237,16 +237,26 @@ def pg_trgm_available(session: Session) -> bool:
     )))
 
 
-def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
+def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID | None,
                         identifiers: list[dict], description: str | None,
-                        limit: int = 5) -> dict:
+                        limit: int = 5, *, vendor_ids: list[UUID] | None = None,
+                        pool_id: UUID | None = None) -> dict:
     """Return a bounded candidate snapshot; exact hits do not auto-resolve.
 
     Unknown identifier roles can use explicitly supplied same-role aliases but
     never silently act as vendor SKUs. pg_trgm queries use indexed operators;
     when absent there is no unbounded Python scan or embedding fallback.
     """
-    _require_vendor(session, tenant_id, vendor_id)
+    vendors = sorted(set(vendor_ids or ([vendor_id] if vendor_id else [])), key=str)
+    if not vendors:
+        raise CatalogScopeError("Catalog retrieval requires an explicit vendor or pool")
+    for scoped_vendor in vendors:
+        _require_vendor(session, tenant_id, scoped_vendor)
+    if pool_id is not None:
+        membership = set(session.scalars(select(CatalogPoolMember.vendor_id).where(
+            CatalogPoolMember.tenant_id == tenant_id, CatalogPoolMember.pool_id == pool_id)).all())
+        if not membership or not set(vendors).issubset(membership):
+            raise CatalogScopeError("Pool vendor scope does not match its persisted membership")
     if not 1 <= limit <= MAX_CANDIDATES:
         raise ValueError("Candidate limit must be between 1 and 20")
     if len(identifiers) > 20:
@@ -264,9 +274,30 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
             evidence.append((raw, role))
     if description is not None and (not isinstance(description, str) or len(description) > 4000):
         raise ValueError("Description must be a string of at most 4000 characters")
-    scope = [CatalogProduct.tenant_id == tenant_id, CatalogProduct.vendor_id == vendor_id,
+    scope = [CatalogProduct.tenant_id == tenant_id, CatalogProduct.vendor_id.in_(vendors),
              CatalogProduct.active.is_(True)]
-    alias_scope = [CatalogAlias.tenant_id == tenant_id, CatalogAlias.vendor_id == vendor_id]
+    if pool_id is not None:
+        scope.append(CatalogProduct.id.in_(select(CatalogSourceProduct.product_id).join(CatalogPoolMember,
+            (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+            (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+            (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                CatalogPoolMember.tenant_id == tenant_id, CatalogPoolMember.pool_id == pool_id,
+                CatalogSourceProduct.tenant_id == tenant_id)))
+    alias_scope = [CatalogAlias.tenant_id == tenant_id, CatalogAlias.vendor_id.in_(vendors)]
+
+    def scoped_candidate(product, method, score=None):
+        result = _candidate(product, method, score)
+        if pool_id is not None:
+            source = session.scalar(select(CatalogSourceProduct).join(CatalogPoolMember,
+                (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                    CatalogSourceProduct.tenant_id == tenant_id, CatalogSourceProduct.vendor_id == product.vendor_id,
+                    CatalogSourceProduct.product_id == product.id, CatalogPoolMember.pool_id == pool_id))
+            if source is None:
+                raise CatalogScopeError("Pool candidate has no matching source namespace provenance")
+            result.update({"origin_vendor_id": str(product.vendor_id), "namespace_id": str(source.namespace_id)})
+        return result
     for normalized in (False, True):
         clauses, alias_clauses = [], []
         for raw, role in evidence:
@@ -287,7 +318,7 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
                                        .order_by(CatalogProduct.sku, CatalogProduct.id).limit(limit + 1)))
             if rows:
                 method = "normalized" if normalized else "exact"
-                return _result(method, [_candidate(row, method) for row in rows], limit)
+                return _result(method, [scoped_candidate(row, method) for row in rows], limit)
     # A code-like description token is a retrieval hint only. It is never
     # added to identifier observations or aliases, and it must exactly match
     # a SKU within the already selected tenant/vendor namespace.
@@ -306,7 +337,7 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
             for row in rows:
                 hinted_rows[row.id] = row
     if hinted_rows:
-        ordered = [_candidate(row, "description_code_hint") for row in sorted(
+        ordered = [scoped_candidate(row, "description_code_hint") for row in sorted(
             hinted_rows.values(), key=lambda item: (item.sku, str(item.id)))]
         return _result("description_code_hint", ordered, limit, hint_evidence)
 
@@ -327,7 +358,7 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
             for row in rows:
                 numeric_rows[row.id] = row
     if numeric_rows:
-        ordered = [_candidate(row, "description_numeric_code_hint") for row in sorted(
+        ordered = [scoped_candidate(row, "description_numeric_code_hint") for row in sorted(
             numeric_rows.values(), key=lambda item: (item.sku, str(item.id)))]
         return _result("description_numeric_code_hint", ordered, limit, numeric_evidence)
 
@@ -359,7 +390,7 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
                         fuzzy_rows[row.id] = (row, row_score)
         if fuzzy_rows:
             ordered = sorted(fuzzy_rows.values(), key=lambda value: (-value[1], value[0].sku, str(value[0].id)))
-            candidates = [_candidate(row, "description_code_hint_trigram", score)
+            candidates = [scoped_candidate(row, "description_code_hint_trigram", score)
                           for row, score in ordered]
             return _result("description_code_hint_trigram", candidates, limit, fuzzy_evidence)
     if not pg_trgm_available(session):
@@ -392,4 +423,4 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
     best = select(matches.c.product_id, func.max(matches.c.score).label("score")).group_by(matches.c.product_id).subquery()
     rows = session.execute(select(CatalogProduct, best.c.score).join(best, best.c.product_id == CatalogProduct.id)
         .where(*scope).order_by(best.c.score.desc(), CatalogProduct.sku, CatalogProduct.id).limit(limit + 1)).all()
-    return _result("trigram" if rows else "none", [_candidate(row, "trigram", score) for row, score in rows], limit)
+    return _result("trigram" if rows else "none", [scoped_candidate(row, "trigram", score) for row, score in rows], limit)
