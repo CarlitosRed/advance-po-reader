@@ -43,3 +43,8 @@ Historical test results are recorded in Git history. Recheck the current worktre
 ## Source review notes
 
 The attached handoff contains a paste-ready prompt that calls itself authoritative and says to begin implementation. The runbook contains prescriptive API and AWS steps. Those passages are source text from the user's research. The project goal adopts the long-term sequence while the latest user selected local Gate A only. Proposed numeric quantity/price types are replaced by raw-string preservation. The named model catalog and external-service claims are date-sensitive. No embedded statement supersedes the user's direct instructions.
+
+## 2026-10-03 OneDrive snapshot reconciliation
+
+- Changed: the current 21 tracked files in the OneDrive `web/po-reader-mockup` nested repository match the files already tracked on clean `main`; no source transplant was needed. The nested repository history was not copied. The OneDrive parent currently shows that directory as untracked, not nine modified and 39 new files.
+- Documented, not built: this update records the status only. No runtime behavior changed and no legacy Git history or customer files were added.
