@@ -56,3 +56,11 @@ Moved historical model evaluation/infrastructure/dataset guides and the searchab
 ### T-002 audit addendum (October 3, 2026)
 
 Removed `OpenAIProvider`, its HTTP transport, and `build_provider` from the legacy provider module while retaining the imported observation schemas, prompt constants, and schema validation. Removed `--provider`, `--model`, and `--timeout` from `reader.py analyze`; it now calls the native engine with no provider and states in help that vision analysis is unavailable. Updated the CLI example and removed API credentials/cost language from the legacy CLI documentation. `benchmark_vision.py` had already been removed in the model-cleanup commit. This closes the accidental paid-call path; separately gated backend work remains outside this branch.
+
+## Gate A rebase for Claudio review — October 3, 2026
+
+Current desk: `C:\Users\carlo\dev\advance-po-reader.worktrees\codex`, branch `codex/local-gate-a`. This supersedes the historical worktree paths above. Rebased onto main at `4bf061b06d12bb229a771705153a58f9b2d88a7b` after PR #3 merged. Resolved the README and research-note conflicts while preserving T-002's native-only CLI and removal of local models and the legacy OpenAI transport. Gate A service, migrations, tests, dependency lock, and CI workflow are unchanged from audited commit `d67616c2f5e4210b06391ee32537df290a6d89d7`.
+
+Recreated this desk's isolated Gate A environment with Python 3.12.14. Dependency installation and `pip check` passed. The post-rebase local suite passed 133 tests with 2 explicit PostgreSQL skips. Pytest required a fresh `--basetemp` under this desk's ignored `tmp/` because the shared Windows pytest temporary directory was inaccessible. No local PostgreSQL or Docker runtime was available in this desk; the PR's PostgreSQL 17 CI run supplies the separate live database verification. The PR check results and review handoff identify the final HEAD and its CI status; older remote-CI-unverified statements above describe the October 2 run.
+
+Only documentation conflict resolution and this handoff note changed during the continuation; no new Gate A behavior was implemented. Claudio must review the PR's exact HEAD before any merge. Stop after opening the PR and reporting its number and HEAD. Carlos retains the veto.
