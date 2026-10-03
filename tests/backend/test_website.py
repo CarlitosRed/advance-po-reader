@@ -32,7 +32,8 @@ def web_engine():
     if not value:
         pytest.skip("Dedicated website PostgreSQL test database not configured")
     url = make_url(value)
-    if url.host not in {"localhost","127.0.0.1","::1"} or url.database != "gate_a_test_backend_website_api":
+    if (url.host not in {"localhost","127.0.0.1","::1"} or
+            not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows"))):
         pytest.fail("Website tests require their own loopback test database")
     engine = create_engine(url)
     config = Config(str(ROOT / "backend.alembic.ini"))
@@ -173,7 +174,8 @@ def test_correction_is_raw_string_and_invalidates_prior_decision(web_client):
     assert summary["review_state"]=="resolved" and summary["can_finish_review"] is False
     first=summary["approved_products"][0]
     assert first["quantity"]=="002.50" and first["original_quantity"]=="2"
-    assert summary["blockers"]==[] and len(summary["excluded_rows"])==2
+    assert summary["blockers"]==[] and len(summary["excluded_rows"])==0
+    assert len(summary["document_details"])==2
     assert web_client.get("/runs/"+run["id"]+"/result").json()==result
 
     assert web_client.get("/runs/"+run["id"]+"/result").json()["extraction"]["rows"][0]["quantity"]["raw_value"]=="2"

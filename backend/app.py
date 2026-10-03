@@ -183,7 +183,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
 
     @app.get("/configuration")
     def public_configuration():
-        return {"environment": "local", "extraction_schema_version": "1.1", "envelope_schema_version": "1.0",
+        return {"environment": "local", "extraction_schema_version": "1.2", "supported_extraction_schema_versions": ["1.1", "1.2"], "envelope_schema_version": "1.0",
                 "supported_document_type": "purchase_order", "review_only": True,
                 "live_processing_enabled": configuration.live_processing_enabled,
                 "provider_configured": bool(configuration.live_processing_enabled and configuration.openai_api_key
@@ -202,7 +202,15 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
 
     @app.get("/contracts/product-document/v1.1/provider-schema")
     def provider_schema():
-        return strict_schema()
+        return strict_schema("1.1")
+
+    @app.get("/contracts/product-document/v1.2/schema")
+    def extraction_schema_v12():
+        return ExtractionPayload.model_json_schema()
+
+    @app.get("/contracts/product-document/v1.2/provider-schema")
+    def provider_schema_v12():
+        return strict_schema("1.2")
 
     @app.post("/tenants", status_code=201, response_model=TenantResponse)
     def add_tenant(body: NameRequest, request: Request):
@@ -412,7 +420,9 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             "description": "HttpOnly, SameSite=Strict loopback session. Cookie mutations also require X-Website-CSRF."}
         public = {"/health/live", "/health/ready", "/configuration",
                   "/contracts/product-document/v1/schema", "/contracts/product-document/v1.1/schema",
-                  "/contracts/product-document/v1.1/provider-schema"}
+                  "/contracts/product-document/v1.1/provider-schema",
+                  "/contracts/product-document/v1.2/schema",
+                  "/contracts/product-document/v1.2/provider-schema"}
         for path, operations in schema["paths"].items():
             if path in public:
                 continue

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     candidate_limit: int = Field(default=5, ge=1, le=10)
     live_processing_enabled: bool = False
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")
-    extraction_model: str = Field(default="gpt-6.1-sol", min_length=1, max_length=120)
+    extraction_model: str = Field(default="gpt-6-luna", min_length=1, max_length=120)
     provider_store: bool = False
     provider_timeout_seconds: int = Field(default=60, ge=1, le=180)
 
@@ -35,7 +35,7 @@ class Settings(BaseSettings):
         try:
             url = make_url(value.get_secret_value())
             valid = (url.drivername == "postgresql+psycopg" and url.host in {"127.0.0.1", "::1", "localhost"}
-                     and url.database and url.database.startswith(("gate_a_backend_", "gate_a_test_backend_"))
+                     and url.database and url.database.startswith(("gate_a_backend_", "gate_a_test_backend_", "orderlens_product_rows"))
                      and not url.query)
         except Exception:
             valid = False
