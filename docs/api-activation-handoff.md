@@ -1,5 +1,13 @@
 # New chat handoff: API activation and live demo
 
+Continuation update, October 2, 2026: secure API configuration, native
+`po_reader` connectivity, crash recovery and one human-authorized live PDF
+extraction are verified. The saved result requires human review. Separate
+development chats handle fixes while the current chat retains the live demo.
+See [the demo continuation](live-demo-continuation.md) and
+[API activation evidence](api-activation-verification.md). The original
+transfer baseline below is preserved.
+
 Prepared October 2, 2026 at Carlos's direct request to continue in a fresh
 project chat. The previous chat stops source changes after committing this
 handoff. The new chat is the sole continuation writer in the existing

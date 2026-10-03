@@ -1,5 +1,12 @@
 # Active handoff: local agent/demo preparation
 
+Current continuation, October 2, 2026: secure API configuration, crash recovery
+and one human-authorized live extraction are verified. The saved run requires
+human review. Carlos requested separate chats for development fixes and this
+chat for the live demo. Follow [the demo continuation](live-demo-continuation.md)
+and [API activation evidence](api-activation-verification.md). Deferred-key
+statements below describe the prior preparation checkpoint.
+
 Carlos has requested a fresh API activation chat. Follow
 [the new chat handoff](api-activation-handoff.md) and reuse the managed
 local-website-catalogs worktree on `codex/local-website-catalogs`. The previous
