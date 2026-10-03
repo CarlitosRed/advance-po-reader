@@ -1,6 +1,7 @@
 .venv/
 .venv-backend/
 .venv-agent/
+.venv-product-rows/
 __pycache__/
 data/
 output/
