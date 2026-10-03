@@ -5,6 +5,7 @@ they are never written back to extraction evidence. No function resolves a row.
 """
 
 import re
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -23,6 +24,18 @@ DESCRIPTION_HINT_TRGM_THRESHOLD = 0.65
 # Description hints must look like a product code, not a lone row number,
 # quantity, date, or ordinary word. Matching still requires an exact scoped SKU.
 _DESCRIPTION_CODE = re.compile(r"(?<![A-Z0-9])(?=[A-Z0-9._/-]{4,40}(?![A-Z0-9]))(?=[A-Z0-9._/-]*[A-Z]{2})[A-Z0-9]+(?:[-_./][A-Z0-9]+)*(?![A-Z0-9])", re.IGNORECASE)
+_DESCRIPTION_NUMERIC_CODE = re.compile(r"(?<![A-Z0-9.,/\-])(?P<token>[0-9]{4,12})(?![A-Z0-9.,/\-])", re.IGNORECASE)
+_NUMERIC_NON_PRODUCT_CONTEXT = re.compile(
+    r"(?:\b(?:line|row|tag|seq(?:uence)?|lot|qty|quantity|price|cost|total|date)\b"
+    r"(?:\s+(?:number|no\.?|id|#))?|\b(?:units?|ea|each|pcs?|pieces?|packs?|count)\b"
+    r"\s+(?:of\s*)?|(?:^|\s)x)\s*(?:of\s*)?(?:no\.?\s*)?(?:#|:|=)?\s*$",
+    re.IGNORECASE,
+)
+_NUMERIC_UNIT_OR_CURRENCY = re.compile(
+    r"^\s*(?:(?:mm|cm|km|inch|inches|in|ft|feet|m|kg|g|lbs|lb|oz|each|ea|pcs|pc|pieces|piece|units|unit|packs|pack|count|ct|usd|eur|gbp|cad|aud|crc|dollars?|x|by)\b|[$€£¥%×*])",
+    re.IGNORECASE,
+)
+_NUMERIC_CURRENCY_PREFIX = re.compile(r"(?:USD|EUR|GBP|CAD|AUD|CRC)\s*$", re.IGNORECASE)
 
 
 class CatalogScopeError(ValueError):
@@ -163,6 +176,59 @@ def _description_code_hints(description: str | None) -> list[str]:
     return result
 
 
+def _numeric_description_code_hints(description: str | None) -> list[str]:
+    """Accept only isolated numeric tokens with no nearby quantity/measure context.
+
+    Numeric hints use literal SKU equality only. We deliberately do not normalize
+    separators or run fuzzy retrieval because short numeric strings are common
+    quantities, dimensions, money and row references.
+    """
+    if not description:
+        return []
+    result = []
+    for match in _DESCRIPTION_NUMERIC_CODE.finditer(description):
+        token = match.group("token")
+        before = description[max(0, match.start() - 40):match.start()]
+        after = description[match.end():match.end() + 24]
+        if 1900 <= int(token) <= 2099:
+            continue
+        date_like = False
+        if len(token) == 8:
+            for year, month, day in ((token[:4], token[4:6], token[6:]),
+                                     (token[4:], token[:2], token[2:4])):
+                try:
+                    date(int(year), int(month), int(day))
+                    date_like = True
+                    break
+                except ValueError:
+                    continue
+        elif len(token) == 6:
+            for year, month, day in ((token[:2], token[2:4], token[4:]),
+                                     (token[4:], token[:2], token[2:4])):
+                expanded_year = 2000 + int(year) if int(year) < 70 else 1900 + int(year)
+                try:
+                    date(expanded_year, int(month), int(day))
+                    date_like = True
+                    break
+                except ValueError:
+                    continue
+        if date_like:
+            continue
+        if before.rstrip().endswith(("$", "€", "£", "¥")) or _NUMERIC_CURRENCY_PREFIX.search(before):
+            continue
+        if _NUMERIC_NON_PRODUCT_CONTEXT.search(before):
+            continue
+        if _NUMERIC_UNIT_OR_CURRENCY.search(after):
+            continue
+        if re.match(r"^\s*(?:line|row|tag|sequence|seq|lot|date|qty|quantity)\b", after, re.IGNORECASE):
+            continue
+        if token not in result:
+            result.append(token)
+        if len(result) == 10:
+            break
+    return result
+
+
 def pg_trgm_available(session: Session) -> bool:
     """Extension absence is an expected exact/normalized-only capability state."""
     return bool(session.scalar(text(
@@ -243,6 +309,27 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
         ordered = [_candidate(row, "description_code_hint") for row in sorted(
             hinted_rows.values(), key=lambda item: (item.sku, str(item.id)))]
         return _result("description_code_hint", ordered, limit, hint_evidence)
+
+    # Standalone numeric catalog codes are common, but short numeric values
+    # also resemble quantities, money, dates and row references. Require a
+    # clean token and literal SKU equality; never apply numeric typo search.
+    numeric_hints = _numeric_description_code_hints(description)
+    numeric_rows = {}
+    numeric_evidence = []
+    for token in numeric_hints:
+        rows = list(session.scalars(select(CatalogProduct).where(
+            *scope, CatalogProduct.sku == token
+        ).order_by(CatalogProduct.sku, CatalogProduct.id).limit(limit + 1)))
+        if rows:
+            numeric_evidence.append({"kind": "description_numeric_code_hint",
+                                     "source": "product_description", "raw_token": token,
+                                     "match_method": "exact_sku"})
+            for row in rows:
+                numeric_rows[row.id] = row
+    if numeric_rows:
+        ordered = [_candidate(row, "description_numeric_code_hint") for row in sorted(
+            numeric_rows.values(), key=lambda item: (item.sku, str(item.id)))]
+        return _result("description_numeric_code_hint", ordered, limit, numeric_evidence)
 
     # Typo recovery is limited to code-shaped description tokens and a stricter
     # SKU similarity bar than broad text retrieval. Keep it distinct from

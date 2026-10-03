@@ -323,6 +323,34 @@ def test_description_code_hint_is_persisted_without_changing_observation_or_matc
     assert observed["description"]["raw_value"] == "DEMO ZX-901 STAGING PLATFORM"
 
 
+def test_numeric_description_code_hint_is_exact_only_and_source_preserving(resource_factory):
+    payload = fixture_payload().model_dump(mode="json")
+    first = payload["rows"][0]
+    first["identifiers"][0].update(state="not_present", raw_value=None, alternative_readings=[])
+    first["description"]["raw_value"] = "DEMO 4516 STAGING PLATFORM"
+    charge = {**payload["rows"][1], "row_id": "charge-with-numeric-code", "row_kind": "charge"}
+    charge["description"]["raw_value"] = "Charge note for item 4516"
+    payload["rows"].append(charge)
+    resource = resource_factory(OfflineProvider(outcome(payload=ExtractionPayload.model_validate(payload))),
+                               extra_products=(ProductInput(sku="4516", description="Different catalog wording"),))
+    run = resource.run()
+    resource.process(run)
+    values = {item["row_id"]: item for item in resource.suggestions(run)}
+    assert set(values) == {"line-1", "line-2"}
+    hint = values["line-1"]
+    assert hint["method"] == "description_numeric_code_hint"
+    assert hint["retrieval_version"] == "catalog-retrieval-v2"
+    assert hint["evidence"] == [{"kind": "description_numeric_code_hint",
+                                  "source": "product_description", "raw_token": "4516",
+                                  "match_method": "exact_sku"}]
+    assert hint["candidates"][0]["sku"] == "4516"
+    saved = resource.result(run)["extraction"]
+    observed = next(row for row in saved["rows"] if row["row_id"] == "line-1")
+    assert observed["identifiers"][0]["state"] == "not_present"
+    assert observed["identifiers"][0]["raw_value"] is None
+    assert observed["description"]["raw_value"] == "DEMO 4516 STAGING PLATFORM"
+
+
 def test_correction_after_approval_invalidates_resolution_and_preserves_original(resource_factory):
     resource = resource_factory(OfflineProvider(outcome()))
     run = resource.run()
