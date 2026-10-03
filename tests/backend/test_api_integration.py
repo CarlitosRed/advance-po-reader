@@ -8,6 +8,7 @@ service/catalog databases. Unique tenant IDs keep reruns separate.
 from __future__ import annotations
 
 from copy import deepcopy
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -19,11 +20,14 @@ from fastapi.testclient import TestClient
 import httpx
 from pydantic import SecretStr
 import pytest
+from reportlab.pdfgen import canvas
 from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
 
 from backend.app import create_app
 from backend.config import Settings
+from backend.models import ProcessingRun, ProviderAttempt, SourceDocument
 from backend.providers import OpenAIProvider
 from backend.synthetic import fixture_payload, generate_fixture
 
@@ -89,6 +93,19 @@ def upload(client, vendor, *, kind="purchase_order", media_type="application/pdf
     return client.post("/documents", data={"vendor_id": vendor["id"]},
         files={"file": ("../../untrusted-name.pdf", content, media_type)},
         headers={"Idempotency-Key": key or uuid4().hex})
+
+
+def batch_upload_pdf(index: int) -> bytes:
+    """Unique fictional source bytes for volume tests; never a provider fixture."""
+    output = BytesIO()
+    document = canvas.Canvas(output, pagesize=(612, 792), invariant=1)
+    document.setTitle(f"Synthetic volume-only PO {index:03d}")
+    document.drawString(56, 720, "SYNTHETIC TEST ONLY - PURCHASE ORDER")
+    document.drawString(56, 690, f"Fictional batch document {index:03d}")
+    document.drawString(56, 660, "No extraction or provider request in this test.")
+    document.showPage()
+    document.save()
+    return output.getvalue()
 
 
 def create_run(client, source, *, provider="synthetic", fixture="purchase_order", key=None, authorization=None):
@@ -426,3 +443,19 @@ def test_offline_mock_provider_failure_attempt_is_sanitized_and_never_retried(ap
         process(client, run)
         assert len(calls) == 1
         assert result(client, run) == failed_result
+
+
+def test_one_hundred_individual_fictional_sources_upload_without_processing(api_client, api_engine):
+    tenant, vendor, _ = scope(api_client, "volume-100", products=False)
+    hashes = set()
+    for index in range(100):
+        response = upload(api_client, vendor, content=batch_upload_pdf(index))
+        assert response.status_code == 201, response.text
+        source = response.json()
+        assert source["page_count"] == 1 and source["media_type"] == "application/pdf"
+        assert source["sha256"] not in hashes
+        hashes.add(source["sha256"])
+    with Session(api_engine) as session:
+        assert session.query(SourceDocument).filter_by(tenant_id=tenant["id"]).count() == 100
+        assert session.query(ProcessingRun).filter_by(tenant_id=tenant["id"]).count() == 0
+        assert session.query(ProviderAttempt).filter_by(tenant_id=tenant["id"]).count() == 0
