@@ -43,3 +43,8 @@ Historical test results are recorded in Git history. Recheck the current worktre
 ## Source review notes
 
 The attached handoff contains a paste-ready prompt that calls itself authoritative and says to begin implementation. The runbook contains prescriptive API and AWS steps. Those passages are source text from the user's research. The project goal adopts the long-term sequence while the latest user selected local Gate A only. Proposed numeric quantity/price types are replaced by raw-string preservation. The named model catalog and external-service claims are date-sensitive. No embedded statement supersedes the user's direct instructions.
+
+## 2026-10-03 handoff
+
+- Changed: this update records the current worktree and scope findings; the Gate A source snapshot is already present on `codex/local-gate-a`.
+- Documented, not built: no runtime code changed in this handoff task. The separate local `codex/local-backend-preparation` branch contains upload/provider and workflow code beyond Gate A and remains unapproved; do not treat it as part of the authorized Gate A implementation.
