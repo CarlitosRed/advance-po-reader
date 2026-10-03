@@ -33,8 +33,8 @@ def engine():
         pytest.skip("Set PO_BACKEND_TEST_DATABASE_URL to the isolated catalog test database")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or url.database != "gate_a_test_backend_website_catalog" or url.query):
-        pytest.fail("Catalog tests require loopback gate_a_test_backend_website_catalog; refusing another database")
+            or url.database != "orderlens_catalog_fix" or url.query):
+        pytest.fail("Catalog tests require loopback orderlens_catalog_fix; refusing another database")
     engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config("backend.alembic.ini")
     with engine.begin() as connection:
@@ -88,7 +88,7 @@ def history(session):
 
 def test_backend_head_and_gate_a_seed(engine):
     with engine.connect() as connection:
-        assert MigrationContext.configure(connection).get_current_heads() == ("0005_review_sequence",)
+        assert MigrationContext.configure(connection).get_current_heads() == ("0006_catalog_description_hint",)
         assert connection.scalar(text("SELECT count(*) FROM tenants WHERE id='00000000-0000-0000-0000-000000000001'")) == 1
 
 
@@ -206,6 +206,115 @@ def test_pg_trgm_typo_and_description_are_bounded_suggestions(session):
     assert isinstance(result["candidates"][0]["score"], str)
     result = retrieve_candidates(session, tenant, vendor, [], "Synthetic blue widgte", limit=1)
     assert result["method"] == "trigram" and result["candidates"][0]["sku"] == "WIDGET-ABC123"
+
+
+def test_description_code_hint_retrieves_exact_scoped_sku_with_separate_provenance(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("ZX-901", "Completely different catalog wording")])
+    identifiers = [{"raw_value": None, "source_role": "vendor_product_code", "status": "not_present"}]
+    before = [dict(item) for item in identifiers]
+    result = retrieve_candidates(session, tenant, vendor, identifiers, "DEMO ZX-901 STAGING PLATFORM")
+    assert result["method"] == "description_code_hint"
+    assert result["retrieval_version"] == "catalog-retrieval-v2"
+    assert result["outcome"] == "suggested"
+    assert result["candidates"][0]["sku"] == "ZX-901"
+    assert result["candidates"][0]["method"] == "description_code_hint"
+    assert result["evidence"] == [{"kind": "description_code_hint", "source": "product_description",
+                                   "raw_token": "ZX-901", "search_key": "ZX901",
+                                   "match_method": "exact_normalized_sku"}]
+    assert identifiers == before
+    assert "human approval" in result["reason"]
+
+
+@pytest.mark.parametrize("description", ["line 12 staging platform", "2026-10-02 staging platform",
+                                          "ZX-90X1 staging platform", "X-901 staging platform",
+                                          "ZX-9012X staging platform", "staging platform"])
+def test_description_hint_false_positives_require_token_boundaries_and_code_shape(session, description):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("ZX-901", "Unrelated")])
+    result = retrieve_candidates(session, tenant, vendor, [], description)
+    assert result["method"] != "description_code_hint"
+    assert result["candidates"] == []
+
+
+def test_description_hint_typo_uses_distinct_strict_fuzzy_method(session):
+    if not pg_trgm_available(session):
+        pytest.skip("Local pg_trgm module unavailable; typo-tolerant hint retrieval requires pg_trgm")
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("ABCD-90123", "Different catalog wording")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO ABCD-9012S PLATFORM", limit=2)
+    assert result["method"] == "description_code_hint_trigram"
+    assert result["outcome"] == "suggested"
+    assert len(result["candidates"]) == 1
+    assert result["candidates"][0]["sku"] == "ABCD-90123"
+    assert result["candidates"][0]["method"] == "description_code_hint_trigram"
+    assert float(result["candidates"][0]["score"]) >= 0.65
+    assert result["evidence"] == [{"kind": "description_code_hint", "source": "product_description",
+                                   "raw_token": "ABCD-9012S", "search_key": "ABCD9012S",
+                                   "match_method": "pg_trgm_sku", "similarity_threshold": "0.65"}]
+
+
+def test_description_hint_typo_collision_is_bounded_and_ambiguous(session):
+    if not pg_trgm_available(session):
+        pytest.skip("Local pg_trgm module unavailable; typo-tolerant hint retrieval requires pg_trgm")
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("ABCD-90123"), product("ABCD90123")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO ABCD-9012S PLATFORM", limit=1)
+    assert result["method"] == "description_code_hint_trigram"
+    assert result["outcome"] == "ambiguous"
+    assert len(result["candidates"]) == 1
+    assert "omitted" in result["reason"]
+
+
+def test_absent_description_code_has_no_match_and_no_forced_nearest_candidate(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("ABCD-90123", "Generic staging platform")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO QWER-98765 PLATFORM")
+    assert result["outcome"] == "no_match"
+    assert result["candidates"] == []
+
+
+def test_description_hint_preserves_normalized_collisions_as_ambiguous(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("ZX-901"), product("ZX901")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO ZX-901 PLATFORM")
+    assert result["method"] == "description_code_hint"
+    assert result["outcome"] == "ambiguous"
+    assert {item["sku"] for item in result["candidates"]} == {"ZX-901", "ZX901"}
+
+
+def test_description_hint_obeys_tenant_vendor_and_candidate_bounds(session):
+    tenant, vendor = tenant_vendor(session)
+    other_tenant, other_vendor = tenant_vendor(session)
+    second_vendor = Vendor(tenant_id=tenant, name="Other synthetic namespace")
+    session.add(second_vendor)
+    session.flush()
+    import_products(session, other_tenant, other_vendor, [product("ZX-901")])
+    import_products(session, tenant, second_vendor.id, [product("ZX-901")])
+    assert retrieve_candidates(session, tenant, vendor, [], "DEMO ZX-901 PLATFORM")["outcome"] == "no_match"
+    import_products(session, tenant, vendor, [product("ZX-901"), product("ZX901")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO ZX-901 PLATFORM", limit=1)
+    assert result["outcome"] == "ambiguous"
+    assert len(result["candidates"]) == 1
+    assert "omitted" in result["reason"]
+
+
+def test_exact_identifier_priority_precedes_description_hint(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("OBS-777"), product("ZX-901")])
+    result = retrieve_candidates(session, tenant, vendor,
+        [{"raw_value": "OBS-777", "source_role": "vendor_sku"}], "DEMO ZX-901 PLATFORM")
+    assert result["method"] == "exact"
+    assert [item["sku"] for item in result["candidates"]] == ["OBS-777"]
+
+
+def test_tag_or_row_sequence_identifier_is_not_promoted_to_sku_hint(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("ZX-901")])
+    result = retrieve_candidates(session, tenant, vendor,
+        [{"raw_value": "ZX-901", "source_role": "tag_or_row_sequence"}], None)
+    assert result["outcome"] == "no_match"
+    assert result["candidates"] == []
 
 
 def test_extension_absence_has_no_python_full_catalog_scan(session, monkeypatch):

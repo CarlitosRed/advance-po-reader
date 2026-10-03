@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey,
-    ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint, Uuid, func,
+    ForeignKeyConstraint, Index, Integer, String, Text, UniqueConstraint, Uuid, func, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -171,6 +171,10 @@ class Suggestion(Identity, Base):
     row_id: Mapped[str] = mapped_column(String(120), nullable=False)
     candidates: Mapped[list] = mapped_column(JSONB, nullable=False)
     method: Mapped[str] = mapped_column(String(80), nullable=False)
+    retrieval_version: Mapped[str] = mapped_column(String(80), nullable=False, default="catalog-retrieval-v1",
+                                                    server_default=text("'catalog-retrieval-v1'"))
+    evidence: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                           server_default=text("'[]'::jsonb"))
     outcome: Mapped[str] = mapped_column(String(24), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
 

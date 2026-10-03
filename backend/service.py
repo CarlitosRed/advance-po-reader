@@ -195,6 +195,7 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                     except ValueError:
                         partial = True
                         candidate_result = {"method": "none", "outcome": "no_match", "candidates": [],
+                                            "retrieval_version": "catalog-retrieval-v2", "evidence": [],
                                             "reason": "Retrieval input exceeds the bounded search contract; human review required"}
                     session.add(Suggestion(tenant_id=tenant, run_id=run.id, row_id=row.row_id, **candidate_result))
                 advance(run, "partial" if partial else "completed")
