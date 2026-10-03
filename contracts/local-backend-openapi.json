@@ -1472,6 +1472,14 @@
             "title": "Created At",
             "type": "string"
           },
+          "evidence": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -1492,6 +1500,10 @@
           },
           "reason": {
             "title": "Reason",
+            "type": "string"
+          },
+          "retrieval_version": {
+            "title": "Retrieval Version",
             "type": "string"
           },
           "row_id": {
@@ -1528,6 +1540,8 @@
           "row_id",
           "candidates",
           "method",
+          "retrieval_version",
+          "evidence",
           "outcome",
           "reason",
           "suggested_candidate_id",

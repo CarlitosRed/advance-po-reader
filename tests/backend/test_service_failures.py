@@ -33,8 +33,8 @@ def engine():
         pytest.skip("Set PO_BACKEND_CONTRACT_TEST_DATABASE_URL to isolated gate_a_test_backend_website_contract")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or url.database != "gate_a_test_backend_website_contract" or url.query):
-        pytest.fail("Failure tests require loopback gate_a_test_backend_website_contract; refusing another DB")
+            or not (url.database or "").startswith("gate_a_test_backend_") or url.query):
+        pytest.fail("Failure tests require a uniquely named loopback gate_a_test_backend_* database")
     result = create_db_engine(url, connect_timeout_seconds=10)
     config = Config("backend.alembic.ini")
     with result.begin() as connection:
@@ -118,7 +118,7 @@ class Resource:
 @pytest.fixture
 def resource_factory(engine):
     with ExitStack() as stack:
-        def factory(provider=None, kind="purchase_order", page_count=1):
+        def factory(provider=None, kind="purchase_order", page_count=1, extra_products=()):
             storage = Path(__file__).parents[2] / "data" / "contract-agent" / "tests" / uuid4().hex
             settings = Settings(_env_file=None, database_url=os.environ["PO_BACKEND_CONTRACT_TEST_DATABASE_URL"],
                                 storage_directory=storage, live_processing_enabled=False, openai_api_key=None)
@@ -141,6 +141,7 @@ def resource_factory(engine):
                 import_products(session, tenant.id, vendor.id, [
                     ProductInput(sku="SYN-001", description="Synthetic blue widget"),
                     ProductInput(sku="SYN-002", description="Synthetic red widget"),
+                    *extra_products,
                 ])
                 source = SourceDocument(tenant_id=tenant.id, vendor_id=vendor.id, sha256=digest(source_bytes),
                                         byte_size=len(source_bytes), media_type="application/pdf", page_count=page_count,
@@ -292,6 +293,34 @@ def test_candidate_search_limits_route_to_review_without_losing_long_literal(res
     assert result["attempts"][0]["state"] == "succeeded"
     suggestion = next(item for item in resource.suggestions(run) if item["row_id"] == "line-1")
     assert suggestion["outcome"] == "no_match" and suggestion["candidates"] == []
+
+
+def test_description_code_hint_is_persisted_without_changing_observation_or_matching_charge(resource_factory):
+    payload = fixture_payload().model_dump(mode="json")
+    first = payload["rows"][0]
+    first["identifiers"][0].update(state="not_present", raw_value=None, alternative_readings=[])
+    first["description"]["raw_value"] = "DEMO ZX-901 STAGING PLATFORM"
+    charge = {**payload["rows"][1], "row_id": "charge-with-code", "row_kind": "charge"}
+    charge["description"]["raw_value"] = "Charge note DEMO ZX-901"
+    payload["rows"].append(charge)
+    resource = resource_factory(OfflineProvider(outcome(payload=ExtractionPayload.model_validate(payload))),
+                               extra_products=(ProductInput(sku="ZX-901", description="Different catalog wording"),))
+    run = resource.run()
+    resource.process(run)
+    values = {item["row_id"]: item for item in resource.suggestions(run)}
+    assert set(values) == {"line-1", "line-2"}
+    hint = values["line-1"]
+    assert hint["method"] == "description_code_hint"
+    assert hint["retrieval_version"] == "catalog-retrieval-v2"
+    assert hint["evidence"] == [{"kind": "description_code_hint", "source": "product_description",
+                                  "raw_token": "ZX-901", "search_key": "ZX901",
+                                  "match_method": "exact_normalized_sku"}]
+    assert hint["candidates"][0]["sku"] == "ZX-901"
+    saved = resource.result(run)["extraction"]
+    observed = next(row for row in saved["rows"] if row["row_id"] == "line-1")
+    assert observed["identifiers"][0]["state"] == "not_present"
+    assert observed["identifiers"][0]["raw_value"] is None
+    assert observed["description"]["raw_value"] == "DEMO ZX-901 STAGING PLATFORM"
 
 
 def test_correction_after_approval_invalidates_resolution_and_preserves_original(resource_factory):

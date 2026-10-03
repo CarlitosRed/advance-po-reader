@@ -1,5 +1,6 @@
 .venv/
 .venv-backend/
+.venv-catalog-fix/
 .venv-agent/
 __pycache__/
 data/

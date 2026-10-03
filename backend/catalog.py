@@ -17,6 +17,12 @@ from backend.models import CatalogAlias, CatalogProduct, Vendor
 
 CANONICAL_SKU_ROLES = frozenset({"sku", "vendor_sku", "vendor_product_code"})
 MAX_CANDIDATES = 20
+RETRIEVAL_VERSION = "catalog-retrieval-v2"
+DESCRIPTION_HINT_TRGM_THRESHOLD = 0.65
+
+# Description hints must look like a product code, not a lone row number,
+# quantity, date, or ordinary word. Matching still requires an exact scoped SKU.
+_DESCRIPTION_CODE = re.compile(r"(?<![A-Z0-9])(?=[A-Z0-9._/-]{4,40}(?![A-Z0-9]))(?=[A-Z0-9._/-]*[A-Z]{2})[A-Z0-9]+(?:[-_./][A-Z0-9]+)*(?![A-Z0-9])", re.IGNORECASE)
 
 
 class CatalogScopeError(ValueError):
@@ -122,7 +128,7 @@ def import_products(session: Session, tenant_id: UUID, vendor_id: UUID,
     return result
 
 
-def _result(method: str, rows: list, limit: int) -> dict:
+def _result(method: str, rows: list, limit: int, evidence: list[dict] | None = None) -> dict:
     truncated = len(rows) > limit
     candidates = rows[:limit]
     outcome = "no_match" if not rows else ("ambiguous" if len(rows) > 1 else "suggested")
@@ -131,7 +137,30 @@ def _result(method: str, rows: list, limit: int) -> dict:
               "Multiple candidates require human review; no candidate was selected")
     if truncated:
         reason += "; additional hits omitted by candidate bound"
-    return {"method": method, "outcome": outcome, "reason": reason, "candidates": candidates}
+    return {"method": method, "retrieval_version": RETRIEVAL_VERSION,
+            "evidence": evidence or [], "outcome": outcome, "reason": reason, "candidates": candidates}
+
+
+def _description_code_hints(description: str | None) -> list[str]:
+    """Extract bounded, code-shaped tokens without treating them as observations."""
+    if not description:
+        return []
+    result = []
+    seen = set()
+    for match in _DESCRIPTION_CODE.finditer(description):
+        token = match.group(0)
+        letters = sum(char.isalpha() for char in token)
+        digits = sum(char.isdigit() for char in token)
+        if letters < 2 or digits < 2:
+            continue
+        key = normalize_identifier(token)
+        if len(key) < 4 or key in seen:
+            continue
+        seen.add(key)
+        result.append(token)
+        if len(result) == 10:
+            break
+    return result
 
 
 def pg_trgm_available(session: Session) -> bool:
@@ -193,6 +222,59 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID,
             if rows:
                 method = "normalized" if normalized else "exact"
                 return _result(method, [_candidate(row, method) for row in rows], limit)
+    # A code-like description token is a retrieval hint only. It is never
+    # added to identifier observations or aliases, and it must exactly match
+    # a SKU within the already selected tenant/vendor namespace.
+    description_hints = _description_code_hints(description)
+    hint_evidence = []
+    hinted_rows = {}
+    for token in description_hints:
+        key = normalize_identifier(token)
+        rows = list(session.scalars(select(CatalogProduct).where(
+            *scope, CatalogProduct.normalized_sku == key
+        ).order_by(CatalogProduct.sku, CatalogProduct.id).limit(limit + 1)))
+        if rows:
+            hint_evidence.append({"kind": "description_code_hint", "source": "product_description",
+                                  "raw_token": token, "search_key": key,
+                                  "match_method": "exact_normalized_sku"})
+            for row in rows:
+                hinted_rows[row.id] = row
+    if hinted_rows:
+        ordered = [_candidate(row, "description_code_hint") for row in sorted(
+            hinted_rows.values(), key=lambda item: (item.sku, str(item.id)))]
+        return _result("description_code_hint", ordered, limit, hint_evidence)
+
+    # Typo recovery is limited to code-shaped description tokens and a stricter
+    # SKU similarity bar than broad text retrieval. Keep it distinct from
+    # identifier trigram and full-description trigram methods.
+    if description_hints and pg_trgm_available(session):
+        session.execute(text("SELECT set_config('pg_trgm.similarity_threshold', '0.35', true)"))
+        fuzzy_rows = {}
+        fuzzy_evidence = []
+        for token in description_hints:
+            key = normalize_identifier(token)
+            # Very short codes have unstable trigram similarity and are not
+            # expanded; exact description-code lookup above still supports them.
+            if len(key) < 8:
+                continue
+            score = func.public.similarity(CatalogProduct.normalized_sku, key)
+            rows = session.execute(select(CatalogProduct, score).where(
+                *scope, CatalogProduct.normalized_sku.op("%") (key),
+                score >= DESCRIPTION_HINT_TRGM_THRESHOLD
+            ).order_by(score.desc(), CatalogProduct.sku, CatalogProduct.id).limit(limit + 1)).all()
+            if rows:
+                fuzzy_evidence.append({"kind": "description_code_hint", "source": "product_description",
+                                       "raw_token": token, "search_key": key, "match_method": "pg_trgm_sku",
+                                       "similarity_threshold": str(DESCRIPTION_HINT_TRGM_THRESHOLD)})
+                for row, row_score in rows:
+                    current = fuzzy_rows.get(row.id)
+                    if current is None or row_score > current[1]:
+                        fuzzy_rows[row.id] = (row, row_score)
+        if fuzzy_rows:
+            ordered = sorted(fuzzy_rows.values(), key=lambda value: (-value[1], value[0].sku, str(value[0].id)))
+            candidates = [_candidate(row, "description_code_hint_trigram", score)
+                          for row, score in ordered]
+            return _result("description_code_hint_trigram", candidates, limit, fuzzy_evidence)
     if not pg_trgm_available(session):
         result = _result("none", [], limit)
         result["reason"] += "; pg_trgm unavailable, fuzzy retrieval disabled"
