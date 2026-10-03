@@ -57,6 +57,12 @@ Moved historical model evaluation/infrastructure/dataset guides and the searchab
 
 Removed `OpenAIProvider`, its HTTP transport, and `build_provider` from the legacy provider module while retaining the imported observation schemas, prompt constants, and schema validation. Removed `--provider`, `--model`, and `--timeout` from `reader.py analyze`; it now calls the native engine with no provider and states in help that vision analysis is unavailable. Updated the CLI example and removed API credentials/cost language from the legacy CLI documentation. `benchmark_vision.py` had already been removed in the model-cleanup commit. This closes the accidental paid-call path; separately gated backend work remains outside this branch.
 
+## T-005 static mockup v2 (October 3, 2026)
+
+`chat/mockup-v2` starts from `origin/main` at `4bf061b`. The explicitly requested static UI task is separate from Gate A. `web/po-reader-mockup/dist/` now shows phone-first Certain/Probable/Uncertain review, zero initial approvals, three source-bound uncertain answers, session-local sample product creation, retained ignored lines, and a final approval tap after every line is reviewed. Selection or typing never accepts a product; edits revoke earlier approval. The existing sample assets are unchanged.
+
+Run `node web/po-reader-mockup/tests/mockup-v2.cjs` for the browser checks. Before/after screenshots and verification limits are in `docs/mockup-v2/README.md` and `web/po-reader-mockup/QA.md`. This implements sample interface behavior only: no login, API calls, backend changes, live extraction, persistent catalog insertion, deployment, or order action. Review goes to Claudio; Carlos decides whether to merge.
+
 ## Gate A rebase for Claudio review — October 3, 2026
 
 Current desk: `C:\Users\carlo\dev\advance-po-reader.worktrees\codex`, branch `codex/local-gate-a`. This supersedes the historical worktree paths above. Rebased onto main at `4bf061b06d12bb229a771705153a58f9b2d88a7b` after PR #3 merged. Resolved the README and research-note conflicts while preserving T-002's native-only CLI and removal of local models and the legacy OpenAI transport. Gate A service, migrations, tests, dependency lock, and CI workflow are unchanged from audited commit `d67616c2f5e4210b06391ee32537df290a6d89d7`.
