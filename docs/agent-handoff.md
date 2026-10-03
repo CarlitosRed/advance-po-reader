@@ -1,8 +1,11 @@
 # Active handoff: local agent/demo preparation
 
-Continue in this chat and the managed local-website-catalogs worktree on
-`codex/local-website-catalogs`. The user chose both the document workflow and
-scoped Codex tools. The API key remains explicitly deferred; make no live
+Carlos has requested a fresh API activation chat. Follow
+[the new chat handoff](api-activation-handoff.md) and reuse the managed
+local-website-catalogs worktree on `codex/local-website-catalogs`. The previous
+chat stops source changes after this documentation handoff. The user chose
+both the document workflow and scoped Codex tools. The API key remains
+explicitly deferred; make no live
 provider request or credential import/creation without the next authorized
 activation task. Source/customer privacy authorization is still required for
 the particular document.
