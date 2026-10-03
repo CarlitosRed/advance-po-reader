@@ -43,6 +43,116 @@
         "title": "AliasResponse",
         "type": "object"
       },
+      "ApprovedProductResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/CandidateResponse"
+          },
+          "continuation_descriptions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Continuation Descriptions",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReference"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "item_group_id": {
+            "title": "Item Group Id",
+            "type": "string"
+          },
+          "original_quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Quantity"
+          },
+          "original_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Unit"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "reviewer": {
+            "title": "Reviewer",
+            "type": "string"
+          },
+          "row_id": {
+            "title": "Row Id",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "row_id",
+          "item_group_id",
+          "description",
+          "continuation_descriptions",
+          "candidate",
+          "quantity",
+          "unit",
+          "original_quantity",
+          "original_unit",
+          "reviewer",
+          "reason",
+          "evidence"
+        ],
+        "title": "ApprovedProductResponse",
+        "type": "object"
+      },
       "AttemptResponse": {
         "additionalProperties": false,
         "properties": {
@@ -416,6 +526,30 @@
         "title": "EvidenceReference",
         "type": "object"
       },
+      "ExcludedRowResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "row_id": {
+            "title": "Row Id",
+            "type": "string"
+          },
+          "row_kind": {
+            "title": "Row Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "row_id",
+          "row_kind",
+          "decision"
+        ],
+        "title": "ExcludedRowResponse",
+        "type": "object"
+      },
       "ExternalAuthorization": {
         "additionalProperties": false,
         "properties": {
@@ -461,6 +595,17 @@
       "ExtractedRow": {
         "additionalProperties": false,
         "properties": {
+          "continuation_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Of"
+          },
           "description": {
             "$ref": "#/components/schemas/FieldObservation"
           },
@@ -478,6 +623,17 @@
             "title": "Identifiers",
             "type": "array"
           },
+          "item_group_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Group Id"
+          },
           "line_total": {
             "$ref": "#/components/schemas/FieldObservation"
           },
@@ -491,6 +647,23 @@
           },
           "row_kind": {
             "$ref": "#/components/schemas/RowKind"
+          },
+          "row_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "product_item",
+                  "continuation",
+                  "document_detail",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Role"
           },
           "uncertainty": {
             "anyOf": [
@@ -574,7 +747,10 @@
             "type": "array"
           },
           "schema_version": {
-            "const": "1.1",
+            "enum": [
+              "1.1",
+              "1.2"
+            ],
             "title": "Schema Version",
             "type": "string"
           },
@@ -1111,6 +1287,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "event_sequence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Sequence"
+          },
           "evidence_reference": {
             "items": {
               "$ref": "#/components/schemas/EvidenceReference"
@@ -1195,9 +1382,96 @@
           "old_value",
           "new_value",
           "selected_candidate_id",
-          "created_at"
+          "created_at",
+          "event_sequence"
         ],
         "title": "ReviewResponse",
+        "type": "object"
+      },
+      "ReviewSummaryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "approved_products": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovedProductResponse"
+            },
+            "title": "Approved Products",
+            "type": "array"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "can_finish_review": {
+            "title": "Can Finish Review",
+            "type": "boolean"
+          },
+          "document_details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Document Details",
+            "type": "array"
+          },
+          "excluded_rows": {
+            "items": {
+              "$ref": "#/components/schemas/ExcludedRowResponse"
+            },
+            "title": "Excluded Rows",
+            "type": "array"
+          },
+          "pending_row_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Pending Row Ids",
+            "type": "array"
+          },
+          "review_event_count": {
+            "title": "Review Event Count",
+            "type": "integer"
+          },
+          "review_state": {
+            "title": "Review State",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "source_observations_unchanged": {
+            "title": "Source Observations Unchanged",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "summary_policy_version": {
+            "title": "Summary Policy Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "state",
+          "review_state",
+          "summary_policy_version",
+          "approved_products",
+          "pending_row_ids",
+          "excluded_rows",
+          "document_details",
+          "review_event_count",
+          "blockers",
+          "can_finish_review",
+          "source_observations_unchanged"
+        ],
+        "title": "ReviewSummaryResponse",
         "type": "object"
       },
       "ReviewsResponse": {
@@ -1230,6 +1504,69 @@
         ],
         "title": "RowKind",
         "type": "string"
+      },
+      "RunReadinessResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_count": {
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "can_process": {
+            "title": "Can Process",
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "openai",
+              "synthetic"
+            ],
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_configured": {
+            "title": "Provider Configured",
+            "type": "boolean"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "source_authorized": {
+            "title": "Source Authorized",
+            "type": "boolean"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "vendor_id": {
+            "format": "uuid",
+            "title": "Vendor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "vendor_id",
+          "provider",
+          "source_sha256",
+          "source_authorized",
+          "provider_configured",
+          "attempt_count",
+          "can_process",
+          "blockers"
+        ],
+        "title": "RunReadinessResponse",
+        "type": "object"
       },
       "RunRequest": {
         "additionalProperties": false,
@@ -1526,6 +1863,14 @@
             "title": "Created At",
             "type": "string"
           },
+          "evidence": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -1546,6 +1891,10 @@
           },
           "reason": {
             "title": "Reason",
+            "type": "string"
+          },
+          "retrieval_version": {
+            "title": "Retrieval Version",
             "type": "string"
           },
           "row_id": {
@@ -1582,6 +1931,8 @@
           "row_id",
           "candidates",
           "method",
+          "retrieval_version",
+          "evidence",
           "outcome",
           "reason",
           "suggested_candidate_id",
@@ -2212,6 +2563,178 @@
           }
         },
         "summary": "Extraction Schema"
+      }
+    },
+    "/contracts/product-document/v1.2/provider-schema": {
+      "get": {
+        "operationId": "provider_schema_v12_contracts_product_document_v1_2_provider_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Provider Schema V12"
+      }
+    },
+    "/contracts/product-document/v1.2/schema": {
+      "get": {
+        "operationId": "extraction_schema_v12_contracts_product_document_v1_2_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Extraction Schema V12"
       }
     },
     "/contracts/product-document/v1/schema": {
@@ -3755,6 +4278,124 @@
         "summary": "Process"
       }
     },
+    "/runs/{run_id}/readiness": {
+      "get": {
+        "operationId": "run_readiness_runs__run_id__readiness_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Explicit local tenant scope, not an authenticated identity.",
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LocalToken": []
+          },
+          {
+            "LocalBrowserSession": []
+          }
+        ],
+        "summary": "Run Readiness"
+      }
+    },
     "/runs/{run_id}/result": {
       "get": {
         "operationId": "result_runs__run_id__result_get",
@@ -4367,6 +5008,124 @@
           }
         ],
         "summary": "Suggestions"
+      }
+    },
+    "/runs/{run_id}/summary": {
+      "get": {
+        "operationId": "run_summary_runs__run_id__summary_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Explicit local tenant scope, not an authenticated identity.",
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LocalToken": []
+          },
+          {
+            "LocalBrowserSession": []
+          }
+        ],
+        "summary": "Run Summary"
       }
     },
     "/tenants": {
@@ -5249,6 +6008,102 @@
           }
         ],
         "summary": "Corpus Page"
+      }
+    },
+    "/website/readiness": {
+      "get": {
+        "description": "Safe diagnostics remain usable when the database is stopped.",
+        "operationId": "website_readiness_website_readiness_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LocalToken": []
+          },
+          {
+            "LocalBrowserSession": []
+          }
+        ],
+        "summary": "Website Readiness"
       }
     },
     "/website/workspaces": {

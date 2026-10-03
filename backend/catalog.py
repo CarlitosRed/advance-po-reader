@@ -5,6 +5,7 @@ they are never written back to extraction evidence. No function resolves a row.
 """
 
 import re
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -17,6 +18,24 @@ from backend.models import CatalogAlias, CatalogProduct, CatalogPoolMember, Cata
 
 CANONICAL_SKU_ROLES = frozenset({"sku", "vendor_sku", "vendor_product_code"})
 MAX_CANDIDATES = 20
+RETRIEVAL_VERSION = "catalog-retrieval-v2"
+DESCRIPTION_HINT_TRGM_THRESHOLD = 0.65
+
+# Description hints must look like a product code, not a lone row number,
+# quantity, date, or ordinary word. Matching still requires a scoped SKU hit.
+_DESCRIPTION_CODE = re.compile(r"(?<![A-Z0-9])(?=[A-Z0-9._/-]{4,40}(?![A-Z0-9]))(?=[A-Z0-9._/-]*[A-Z]{2})[A-Z0-9]+(?:[-_./][A-Z0-9]+)*(?![A-Z0-9])", re.IGNORECASE)
+_DESCRIPTION_NUMERIC_CODE = re.compile(r"(?<![A-Z0-9.,/\-])(?P<token>[0-9]{4,12})(?![A-Z0-9.,/\-])", re.IGNORECASE)
+_NUMERIC_NON_PRODUCT_CONTEXT = re.compile(
+    r"(?:\b(?:line|row|tag|seq(?:uence)?|lot|qty|quantity|price|cost|total|date)\b"
+    r"(?:\s+(?:number|no\.?|id|#))?|\b(?:units?|ea|each|pcs?|pieces?|packs?|count)\b"
+    r"\s+(?:of\s*)?|(?:^|\s)x)\s*(?:of\s*)?(?:no\.?\s*)?(?:#|:|=)?\s*$",
+    re.IGNORECASE,
+)
+_NUMERIC_UNIT_OR_CURRENCY = re.compile(
+    r"^\s*(?:(?:mm|cm|km|inch|inches|in|ft|feet|m|kg|g|lbs|lb|oz|each|ea|pcs|pc|pieces|piece|units|unit|packs|pack|count|ct|usd|eur|gbp|cad|aud|crc|dollars?|x|by)\b|[$€£¥%×*])",
+    re.IGNORECASE,
+)
+_NUMERIC_CURRENCY_PREFIX = re.compile(r"(?:USD|EUR|GBP|CAD|AUD|CRC)\s*$", re.IGNORECASE)
 
 
 class CatalogScopeError(ValueError):
@@ -122,7 +141,7 @@ def import_products(session: Session, tenant_id: UUID, vendor_id: UUID,
     return result
 
 
-def _result(method: str, rows: list, limit: int) -> dict:
+def _result(method: str, rows: list, limit: int, evidence: list[dict] | None = None) -> dict:
     truncated = len(rows) > limit
     candidates = rows[:limit]
     outcome = "no_match" if not rows else ("ambiguous" if len(rows) > 1 else "suggested")
@@ -131,7 +150,65 @@ def _result(method: str, rows: list, limit: int) -> dict:
               "Multiple candidates require human review; no candidate was selected")
     if truncated:
         reason += "; additional hits omitted by candidate bound"
-    return {"method": method, "outcome": outcome, "reason": reason, "candidates": candidates}
+    return {"method": method, "retrieval_version": RETRIEVAL_VERSION,
+            "evidence": evidence or [], "outcome": outcome, "reason": reason, "candidates": candidates}
+
+
+def _description_code_hints(description: str | None) -> list[str]:
+    """Extract bounded, code-shaped search hints without altering observations."""
+    if not description:
+        return []
+    result, seen = [], set()
+    for match in _DESCRIPTION_CODE.finditer(description):
+        token = match.group(0)
+        if sum(char.isalpha() for char in token) < 2 or sum(char.isdigit() for char in token) < 2:
+            continue
+        key = normalize_identifier(token)
+        if len(key) < 4 or key in seen:
+            continue
+        seen.add(key)
+        result.append(token)
+        if len(result) == 10:
+            break
+    return result
+
+
+def _numeric_description_code_hints(description: str | None) -> list[str]:
+    """Accept isolated numeric tokens only when nearby context is not quantity, date or money."""
+    if not description:
+        return []
+    result = []
+    for match in _DESCRIPTION_NUMERIC_CODE.finditer(description):
+        token = match.group("token")
+        before = description[max(0, match.start() - 40):match.start()]
+        after = description[match.end():match.end() + 24]
+        if 1900 <= int(token) <= 2099:
+            continue
+        date_like = False
+        if len(token) == 8:
+            date_parts = ((token[:4], token[4:6], token[6:]), (token[4:], token[:2], token[2:4]))
+        elif len(token) == 6:
+            date_parts = ((token[:2], token[2:4], token[4:]), (token[4:], token[:2], token[2:4]))
+        else:
+            date_parts = ()
+        for year, month, day in date_parts:
+            expanded_year = int(year) if len(year) == 4 else (2000 + int(year) if int(year) < 70 else 1900 + int(year))
+            try:
+                date(expanded_year, int(month), int(day))
+                date_like = True
+                break
+            except ValueError:
+                pass
+        if (date_like or before.rstrip().endswith(("$", "€", "£", "¥"))
+                or _NUMERIC_CURRENCY_PREFIX.search(before) or _NUMERIC_NON_PRODUCT_CONTEXT.search(before)
+                or _NUMERIC_UNIT_OR_CURRENCY.search(after)
+                or re.match(r"^\s*(?:line|row|tag|sequence|seq|lot|date|qty|quantity)\b", after, re.IGNORECASE)):
+            continue
+        if token not in result:
+            result.append(token)
+        if len(result) == 10:
+            break
+    return result
 
 
 def pg_trgm_available(session: Session) -> bool:

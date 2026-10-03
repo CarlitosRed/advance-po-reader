@@ -101,6 +101,8 @@ class SuggestionResponse(ResponseModel):
     row_id: str
     candidates: list[CandidateResponse]
     method: str
+    retrieval_version: str
+    evidence: list[dict]
     outcome: Literal["suggested", "ambiguous", "no_match"]
     reason: str
     suggested_candidate_id: UUID | None

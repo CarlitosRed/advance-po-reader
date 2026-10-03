@@ -96,6 +96,41 @@ def test_payload_deeply_immutable_and_raw_strings_preserved():
     assert payload.rows[0].quantity.raw_value == "2"
 
 
+def test_contract_preserves_large_varied_purchase_order_without_sample_row_assumptions():
+    raw = _payload()
+    template = deepcopy(raw["rows"][0])
+    raw_values = [("0007", "1.2500", "0008.7500"), ("4", "1,234.50", "4,938.00"),
+                  ("2.00", "0.075", "0.150"), ("1/2", "9.99", "5.00")]
+    rows, regions = [], []
+    for index in range(100):
+        row = deepcopy(template)
+        row_id = f"vendor-line-{index + 1:03d}"
+        reference = {"page_number": 1, "region_reference": row_id}
+        row["row_id"] = row_id
+        row["evidence"] = [reference]
+        ident = row["identifiers"][0]
+        ident.update(raw_value=f"LOT-{index + 1:04d}", evidence=[reference])
+        for field_name, value in (("description", f"Fictional varied product {index + 1}"),
+                                  ("quantity", raw_values[index % len(raw_values)][0]),
+                                  ("unit_price", raw_values[index % len(raw_values)][1]),
+                                  ("line_total", raw_values[index % len(raw_values)][2])):
+            row[field_name]["raw_value"] = value
+            row[field_name]["evidence"] = [reference]
+        row["unit"]["raw_value"] = "EA" if index % 2 == 0 else "BOX"
+        row["unit"]["evidence"] = [reference]
+        rows.append(row)
+        regions.append({"region_reference": row_id,
+                        "bbox": {"x0": 0.05, "y0": 0.25, "x1": 0.95, "y1": 0.30}})
+    raw["rows"] = rows
+    raw["pages"][0]["regions"].extend(regions)
+
+    parsed = validate_payload(raw, page_count=1)
+    assert len(parsed.rows) == 100
+    assert [parsed.rows[index].quantity.raw_value for index in range(4)] == ["0007", "4", "2.00", "1/2"]
+    assert [parsed.rows[index].unit_price.raw_value for index in range(4)] == ["1.2500", "1,234.50", "0.075", "9.99"]
+    assert parsed.rows[99].identifiers[0].raw_value == "LOT-0100"
+
+
 @pytest.mark.parametrize("name", ["selected_product_id", "catalog_id", "reviewer_correction"])
 def test_catalog_and_review_fields_do_not_enter_observations(name):
     payload = _payload()
