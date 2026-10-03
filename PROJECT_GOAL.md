@@ -65,9 +65,9 @@ Evaluate on a frozen, versioned reviewed set spanning ordinary PDFs, clear phone
 
 The repository retains a legacy native PDF/CLI reader and provisional sample catalog. The self-hosted inference, candidate-service, reranker, and training-dataset implementation has been removed. Historical evaluation findings and infrastructure guides are archived; they are not results for the OpenAI workflow. No FastAPI service, canonical ProductDocument v1 implementation, authoritative commerce catalog, or production cart connection has been built or verified by this model-cleanup task.
 
-The API-first FastAPI/PostgreSQL application, its ProductDocument v1 implementation, catalog API and review UI have **not** been built or verified. As of this documentation update, no OpenAI API request was made and no API key or spend allowance was configured. The next workstream is authorized for local Gate A only.
+The local Gate A FastAPI health/configuration service, PostgreSQL tenant/Alembic baseline, and initial ProductDocument v1 envelope/state validators have now been implemented in a dedicated worktree and verified using synthetic fixtures, live HTTP checks, and native PostgreSQL. The full extraction payload, catalog API and review UI have **not** been built or verified. No OpenAI API request was made and no API key or spend allowance was configured. See [the Gate A guide](docs/gate-a.md) for the implemented behavior and verification boundaries, including unexecuted Docker Compose and remote CI.
 
-The next implementation task is Gate A only in a separate local worktree: create the small FastAPI health/configuration service, PostgreSQL/Alembic foundation, and initial versioned contract boundary. Stop at Gate A. Do not implement file upload, document extraction, catalog matching, human review UI, cart actions, OpenAI requests, Apple, AWS deployment, Qwen inference, or training in that workstream.
+The active workstream has implemented Gate A only in a separate local worktree and stops there. Further gates require a new scoped implementation request. Do not implement file upload, document extraction, catalog matching, human review UI, cart actions, OpenAI requests, Apple, AWS deployment, Qwen inference, or training in this workstream.
 
 ## Completion order
 
