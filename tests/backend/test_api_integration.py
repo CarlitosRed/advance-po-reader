@@ -1,7 +1,7 @@
 """Actual PostgreSQL/API workflow checks on public synthetic bytes only.
 
 Set PO_BACKEND_API_TEST_DATABASE_URL to an isolated loopback database named
-gate_a_test_backend_*. The fixture never deletes history or touches Gate A's
+gate_a_test_backend_* or orderlens_product_rows*. The fixture never deletes history or touches Gate A's
 service/catalog databases. Unique tenant IDs keep reruns separate.
 """
 
@@ -39,8 +39,8 @@ def api_engine():
         pytest.skip("isolated PostgreSQL API database is not configured")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or not (url.database or "").startswith("gate_a_test_backend_") or url.query):
-        pytest.fail("API tests require a loopback gate_a_test_backend_* database with no query overrides")
+            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
+        pytest.fail("API tests require a loopback isolated test database with no query overrides")
     engine = create_engine(url, connect_args={"connect_timeout": 3})
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:
@@ -201,14 +201,10 @@ def test_review_requires_every_line_in_set_approval_and_keeps_observations_immut
     for item in candidate_rows:
         product = next(row for row in original["extraction"]["rows"] if row["row_id"] == item["row_id"])
         accepted(review(client, run, action="approve", row=product, candidate=item["candidates"][0]["candidate_id"]))
-    assert review(client, run, action="resolve").status_code == 409  # charge/total acknowledgement still required
-    for nonproduct in original["extraction"]["rows"]:
-        if nonproduct["row_kind"] != "product":
-            accepted(review(client, run, action="acknowledge", row=nonproduct))
     accepted(review(client, run, action="resolve"))
     assert accepted(client.get(f"/runs/{run['id']}"))["review_state"] == "resolved"
     events = accepted(client.get(f"/runs/{run['id']}/reviews"))["events"]
-    assert len(events) == 6
+    assert len(events) == 4
     assert all(event["reviewer"] and event["reason"] and event["created_at"] for event in events)
     assert result(client, run)["extraction"] == original["extraction"]
     tenant_b, vendor_b, _ = scope(client, "review-B")
@@ -256,11 +252,12 @@ def test_explicit_no_match_and_sequential_corrections_are_append_only(api_client
     assert second_correction["new_value"] == {"field_name": "quantity", "value": "003"}
     assert review(client, run, action="resolve").status_code == 409
     for row in original["extraction"]["rows"]:
-        accepted(review(client, run, action="no_match" if row["row_kind"] == "product" else "acknowledge", row=row))
+        if row["row_kind"] == "product":
+            accepted(review(client, run, action="no_match", row=row))
     accepted(review(client, run, action="resolve"))
     assert result(client, run) == original
     events = accepted(client.get(f"/runs/{run['id']}/reviews"))["events"]
-    assert len(events) == 7
+    assert len(events) == 5
     assert sum(event["action"] == "correct" for event in events) == 2
     assert review(client, run, action="correct", row=original["extraction"]["rows"][0], field="quantity", value="4").status_code == 409
 
@@ -315,6 +312,11 @@ def test_mock_provider_still_requires_affirmative_source_specific_authorization(
 def test_authorized_openai_workflow_with_mocked_response_and_shared_human_summary(api_engine,api_settings):
     calls=[]
     payload=fixture_payload().model_dump(mode="json")
+    payload["schema_version"] = "1.2"
+    for row in payload["rows"]:
+        row.update(item_group_id=row["row_id"] if row["row_kind"] == "product" else None,
+                   row_role="product_item" if row["row_kind"] == "product" else "document_detail",
+                   continuation_of=None)
     def transport(request):
         calls.append(request)
         assert request.url=="https://api.openai.com/v1/responses"
@@ -340,9 +342,52 @@ def test_authorized_openai_workflow_with_mocked_response_and_shared_human_summar
         assert value["extraction"]==payload and len(value["attempts"])==1
         assert value["attempts"][0]["request_id"]=="req_offline_demo"
         summary=accepted(client.get(path+"/summary"))
-        assert summary["approved_products"]==[] and len(summary["pending_row_ids"])==4
+        assert summary["approved_products"]==[] and len(summary["pending_row_ids"])==2
         assert not accepted(client.get(path+"/readiness"))["can_process"]
         assert process(client,run)["state"]=="completed" and len(calls)==1
+
+
+def test_continuation_fixture_one_logical_product_blank_quantity_details_and_unknown_blocker(api_client):
+    client = api_client
+    tenant, vendor, products = scope(client, "continuation", products=True)
+    content = generate_fixture("continuation")
+    source = accepted(upload(client, vendor, kind="continuation"))
+    run = process(client, accepted(create_run(client, source, fixture="continuation")))
+    assert run["state"] == "partial" and run["outcome_code"] == "review_required"
+    extraction = result(client, run)["extraction"]
+    original_rows = deepcopy(extraction["rows"])
+    assert extraction["schema_version"] == "1.2" and len(original_rows) == 7
+    root, continuation, blank_quantity, *_ = original_rows
+    assert root["item_group_id"] == continuation["item_group_id"] == "item-101"
+    assert continuation["row_role"] == "continuation" and continuation["continuation_of"] == root["row_id"]
+    assert root["description"]["raw_value"] == "Synthetic blue widget adjustable support arm"
+    assert continuation["description"]["raw_value"] == "20 inch width; 16′ length; zinc-coated steel"
+    assert root["quantity"]["raw_value"] == "4" and root["unit"]["raw_value"] == "EA"
+    assert root["unit_price"]["raw_value"] == "432.2000" and root["line_total"]["raw_value"] == "1728.8000"
+    assert blank_quantity["row_role"] == "product_item" and blank_quantity["quantity"]["raw_value"] is None
+    suggestions_by_id = {item["row_id"]: item for item in suggestions(client, run)}
+    assert set(suggestions_by_id) == {"item-101", "item-202"}
+    assert all(item["candidates"] for item in suggestions_by_id.values())
+    events = accepted(client.get(f"/runs/{run['id']}/reviews"))["events"]
+    assert not events
+    summary = accepted(client.get(f"/runs/{run['id']}/summary"))
+    assert summary["summary_policy_version"] == "review-summary-v2"
+    assert summary["pending_row_ids"] == ["item-101", "item-202", "ambiguous-item"]
+    assert len(summary["document_details"]) == 4
+    assert {item["row_kind"] for item in summary["document_details"]} == {"unknown", "charge", "total", "note"}
+    url=f"/runs/{run['id']}/reviews"
+    # A continuation is inspectable but cannot be separately approved or acknowledged.
+    assert client.post(url,json={"action":"acknowledge","row_id":continuation["row_id"],
+        "reviewer":"Synthetic QA","reason":"Fixture inspected","evidence_reference":continuation["evidence"]}).status_code == 422
+    for index, item in ((0, root), (1, blank_quantity)):
+        chosen = suggestions_by_id[item["row_id"]]["candidates"][0]["candidate_id"]
+        accepted(review(client, run, action="approve", row=item, candidate=chosen))
+    summary = accepted(client.get(f"/runs/{run['id']}/summary"))
+    first = summary["approved_products"][0]
+    assert first["continuation_descriptions"][0]["raw_description"] == continuation["description"]["raw_value"]
+    assert first["quantity"] == "4" and first["unit"] == "EA"
+    assert summary["pending_row_ids"] == ["ambiguous-item"] and not summary["can_finish_review"]
+    assert accepted(client.get(f"/runs/{run['id']}/result"))["extraction"]["rows"] == original_rows
 
 
 @pytest.mark.parametrize("behavior,attempt_state", [("refusal", "refused"), ("timeout", "unknown_outcome"), ("invalid", "invalid_output")])

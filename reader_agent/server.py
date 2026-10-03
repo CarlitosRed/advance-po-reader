@@ -79,7 +79,7 @@ def create_server(client=None):
 
     @server.tool(annotations=read)
     async def reader_get_review_summary(tenant_id: UUID, vendor_id: UUID, run_id: UUID) -> dict[str, Any]:
-        """Read the same approved-product summary and blockers shown by the website."""
+        """Read the same versioned approved-item, continuation, document-detail and blocker projection shown by the website."""
         await safe(bridge.scoped_run(tenant_id, vendor_id, run_id))
         return await safe(bridge.request("GET", f"/runs/{run_id}/summary", tenant_id))
 

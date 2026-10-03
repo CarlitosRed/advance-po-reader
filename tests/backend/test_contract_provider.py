@@ -14,6 +14,7 @@ from backend.contracts import (
     strict_schema, validate_payload,
 )
 from backend.providers import OpenAIProvider, PROMPT_VERSION, RESPONSES_URL, SyntheticProvider
+from backend.config import Settings
 from backend.synthetic import (
     KINDS, MEDIA_TYPES, fixture_identity, fixture_payload, fixture_registry, generate_fixture,
 )
@@ -54,6 +55,32 @@ def test_new_payload_does_not_modify_gate_a_envelope():
     assert schema["properties"]["schema_version"]["const"] == "1.0"
     assert "rows" not in schema["properties"]
     assert fixture_payload().schema_version == "1.1"
+
+
+def test_v12_continuation_group_is_evidence_bound_and_keeps_literal_values():
+    payload = fixture_payload("continuation")
+    assert payload.schema_version == "1.2"
+    assert [(row.row_id, row.row_kind, row.row_role) for row in payload.rows] == [
+        ("item-101", "product", "product_item"), ("description-cont-101", "unknown", "continuation"),
+        ("item-202", "product", "product_item"), ("freight", "charge", "document_detail"),
+        ("order-total", "total", "document_detail"), ("delivery-note", "note", "document_detail"),
+        ("ambiguous-item", "unknown", "unknown")]
+    assert payload.rows[1].description.raw_value == "20 inch width; 16′ length; zinc-coated steel"
+    assert payload.rows[0].quantity.raw_value == "4" and payload.rows[0].unit_price.raw_value == "432.2000"
+    assert payload.rows[2].quantity.raw_value is None and payload.rows[2].row_role == "product_item"
+    assert {ref.region_reference for ref in payload.rows[0].evidence}.isdisjoint(
+        {ref.region_reference for ref in payload.rows[1].evidence})
+
+
+@pytest.mark.parametrize("change", ["independent_fields", "far_region", "wrong_group", "missing_role"])
+def test_v12_rejects_unsupported_continuation_links(change):
+    raw = fixture_payload("continuation").model_dump(mode="json")
+    cont = raw["rows"][1]
+    if change == "independent_fields": cont["quantity"] = deepcopy(raw["rows"][0]["quantity"])
+    elif change == "far_region": raw["pages"][0]["regions"][1]["bbox"]["y0"] = 0.7
+    elif change == "wrong_group": cont["item_group_id"] = "item-202"
+    else: raw["rows"][2]["row_role"] = None
+    with pytest.raises(ValidationError): validate_payload(raw, 1)
 
 
 def test_payload_deeply_immutable_and_raw_strings_preserved():
@@ -227,7 +254,7 @@ def test_synthetic_bytes_real_valid_deterministic_and_hash_registered(kind, medi
     result = SyntheticProvider().extract(source, media_type, 1, kind)
     assert result.state == "succeeded" and result.synthetic
     assert result.actual_model == result.model == "synthetic-po-v1"
-    assert result.payload.partial == (kind == "partial")
+    assert result.payload.partial == (kind in {"partial", "continuation"})
 
 
 @pytest.mark.parametrize("change", ["bytes", "name", "media", "pages"])
@@ -259,8 +286,12 @@ def test_explicit_unsupported_unknown_type_has_no_product_rows(kind):
 
 
 def test_strict_schema_snapshot_all_properties_required_and_closed():
-    schema = strict_schema()
-    assert schema == json.loads((Path(__file__).parents[2] / "contracts/product-document-extraction-1.1.json").read_text())
+    schema = strict_schema("1.2")
+    assert schema["properties"]["schema_version"]["enum"] == ["1.2"]
+    legacy = strict_schema("1.1")
+    assert legacy["properties"]["schema_version"]["enum"] == ["1.1"]
+    assert "item_group_id" not in legacy["$defs"]["ExtractedRow"]["properties"]
+    assert Settings(_env_file=None).extraction_model == "gpt-6-luna"
 
     def check(node):
         if isinstance(node, dict):
@@ -309,9 +340,9 @@ def test_responses_request_shape_and_metadata(media_type):
         calls.append(request)
         assert str(request.url) == RESPONSES_URL
         body = json.loads(request.content)
-        assert body["model"] == "gpt-6.1-sol" and body["store"] is False
-        assert body["text"]["format"] == {"type": "json_schema", "name": "product_document_v1_1",
-                                             "strict": True, "schema": strict_schema()}
+        assert body["model"] == "gpt-6-luna" and body["store"] is False
+        assert body["text"]["format"] == {"type": "json_schema", "name": "product_document_v1_2",
+                                             "strict": True, "schema": strict_schema("1.2")}
         media = body["input"][0]["content"][0]
         if media_type == "application/pdf":
             assert media["type"] == "input_file" and media["filename"] == "source.pdf"
@@ -408,7 +439,7 @@ def test_actual_response_model_retained_distinct_from_requested_alias(status, co
     body["model"] = "gpt-6.1-sol-offline-snapshot"
     result = _extract(_provider(lambda request: httpx.Response(200, json=body)))
     assert result.state == state
-    assert result.model == "gpt-6.1-sol"
+    assert result.model == "gpt-6-luna"
     assert result.actual_model == "gpt-6.1-sol-offline-snapshot"
 
 
@@ -418,7 +449,7 @@ def test_actual_model_absent_or_invalid_is_not_fabricated(model):
     if model is not None:
         body["model"] = model
     result = _extract(_provider(lambda request: httpx.Response(200, json=body)))
-    assert result.state == "succeeded" and result.model == "gpt-6.1-sol" and result.actual_model is None
+    assert result.state == "succeeded" and result.model == "gpt-6-luna" and result.actual_model is None
 
 
 def test_duplicate_model_output_json_keys_are_rejected_without_losing_receipt():

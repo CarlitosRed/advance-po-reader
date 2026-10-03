@@ -1,4 +1,4 @@
-"""ProductDocument extraction payload 1.1; Gate A's 1.0 envelope is unchanged.
+"""ProductDocument extraction payload 1.2; Gate A's 1.0 envelope is unchanged.
 
 Provider observations are immutable. Deterministic parses, catalog suggestions
 and human corrections are separate records and never mutate this payload.
@@ -17,7 +17,8 @@ from gate_a.contracts import (
     IdentifierObservation as GateAIdentifierObservation, ObservationState, ParsedDecimal, ParseStatus, RowKind,
 )
 
-SCHEMA_VERSION = "1.1"
+SCHEMA_VERSION = "1.2"
+SUPPORTED_SCHEMA_VERSIONS = {"1.1", "1.2"}
 
 
 class Immutable(BaseModel):
@@ -99,6 +100,9 @@ class ExtractedRow(Immutable):
     unit_price: FieldObservation
     line_total: FieldObservation
     uncertainty: StrictStr | None
+    item_group_id: StrictStr | None = None
+    row_role: Literal["product_item", "continuation", "document_detail", "unknown"] | None = None
+    continuation_of: StrictStr | None = None
 
     @model_validator(mode="after")
     def row_semantics(self) -> ExtractedRow:
@@ -106,6 +110,20 @@ class ExtractedRow(Immutable):
             raise ValueError("rows require a nonblank row_id and source evidence")
         if self.uncertainty is not None and not self.uncertainty.strip():
             raise ValueError("uncertainty must contain text or be null")
+        if self.item_group_id is not None and not self.item_group_id.strip():
+            raise ValueError("item_group_id must contain text or be null")
+        if self.continuation_of is not None and not self.continuation_of.strip():
+            raise ValueError("continuation_of must contain text or be null")
+        if self.row_role == "continuation" and (self.row_kind != RowKind.UNKNOWN or
+                not self.continuation_of or not self.item_group_id):
+            raise ValueError("continuations must be unknown rows linked to a product item group")
+        if self.row_role == "product_item" and (self.row_kind != RowKind.PRODUCT or not self.item_group_id):
+            raise ValueError("product items require a product row and item group")
+        if self.row_role == "document_detail" and (self.row_kind not in {RowKind.CHARGE, RowKind.TAX,
+                RowKind.SUBTOTAL, RowKind.TOTAL, RowKind.NOTE} or self.item_group_id is not None):
+            raise ValueError("document details must use a non-product detail kind without an item group")
+        if self.row_role == "unknown" and self.row_kind != RowKind.UNKNOWN:
+            raise ValueError("unknown role requires an unknown row kind")
         if self.row_kind == RowKind.UNKNOWN and self.uncertainty is None:
             raise ValueError("unknown row kinds require an uncertainty reason")
         return self
@@ -113,7 +131,7 @@ class ExtractedRow(Immutable):
 
 class ExtractionPayload(Immutable):
     contract_name: Literal["ProductDocument"]
-    schema_version: Literal["1.1"]
+    schema_version: Literal["1.1", "1.2"]
     document_type: Literal["purchase_order", "unsupported", "unknown"]
     document_type_reason: StrictStr | None
     document_number: FieldObservation
@@ -146,6 +164,11 @@ class ExtractionPayload(Immutable):
             self._check_refs(row.evidence, regions)
             observations.extend((*row.identifiers, row.description, row.quantity,
                                  row.unit, row.unit_price, row.line_total))
+        if self.schema_version == "1.2":
+            self._validate_item_groups(regions)
+        elif any(row.item_group_id is not None or row.row_role is not None or row.continuation_of is not None
+                 for row in self.rows):
+            raise ValueError("ProductDocument 1.1 cannot carry 1.2 row relationships")
         for observation in observations:
             self._check_refs(observation.evidence, regions)
             if observation.state in (ObservationState.OBSERVED, ObservationState.UNCERTAIN):
@@ -153,6 +176,45 @@ class ExtractionPayload(Immutable):
                        for ref in observation.evidence):
                     raise ValueError("failed pages cannot support readable observations")
         return self
+
+    def _validate_item_groups(self, regions: dict) -> None:
+        by_id = {row.row_id: row for row in self.rows}
+        groups: dict[str, list[ExtractedRow]] = {}
+        for row in self.rows:
+            if row.row_role is None:
+                raise ValueError("ProductDocument 1.2 requires an explicit row role")
+            if row.row_role == "product_item" and row.continuation_of is not None:
+                raise ValueError("product roots cannot be continuations")
+            if row.item_group_id:
+                groups.setdefault(row.item_group_id, []).append(row)
+            if row.row_role == "continuation":
+                target = by_id.get(row.continuation_of or "")
+                if target is None or target.row_kind != RowKind.PRODUCT or target.row_role != "product_item":
+                    raise ValueError("continuations must link to a declared product item")
+                if row.row_id == target.row_id or row.item_group_id != target.item_group_id:
+                    raise ValueError("continuations must share their target item group")
+                if any(ref.page_number != target_ref.page_number for ref in row.evidence for target_ref in target.evidence):
+                    raise ValueError("continuation and product item must be on the same source page")
+                if row.quantity.raw_value is not None or row.unit.raw_value is not None or row.unit_price.raw_value is not None or row.line_total.raw_value is not None or row.identifiers:
+                    raise ValueError("continuations cannot carry independent item fields or identifiers")
+                source_boxes = [next(region.bbox for region in self.pages[ref.page_number - 1].regions
+                                     if region.region_reference == ref.region_reference)
+                                for ref in target.evidence]
+                continuation_boxes = [next(region.bbox for region in self.pages[ref.page_number - 1].regions
+                                           if region.region_reference == ref.region_reference)
+                                      for ref in row.evidence]
+                if not any(box.y1 <= following.y0 and following.y0 - box.y1 <= 0.08 and
+                           box.x0 <= following.x1 and following.x0 <= box.x1
+                           for box in source_boxes for following in continuation_boxes):
+                    raise ValueError("continuation requires vertically adjacent, horizontally aligned source regions")
+            elif row.continuation_of is not None:
+                raise ValueError("only continuation rows may name continuation_of")
+        for group_id, members in groups.items():
+            roots = [row for row in members if row.row_role == "product_item"]
+            if len(roots) != 1 or any(row.row_role == "document_detail" for row in members):
+                raise ValueError("each product item group must have exactly one product root")
+            if any(row.row_role == "continuation" and row.continuation_of != roots[0].row_id for row in members):
+                raise ValueError("grouped continuations must link to their group's product root")
 
     @staticmethod
     def _check_refs(refs: tuple[EvidenceReference, ...], regions: dict) -> None:
@@ -167,6 +229,9 @@ class ExtractionPayload(Immutable):
             return True
         fields = [self.document_number, self.vendor_name, self.currency]
         for row in self.rows:
+            if row.row_role == "continuation" and self.schema_version == "1.2":
+                fields.extend((row.description,))
+                continue
             if row.row_kind == RowKind.UNKNOWN or row.uncertainty is not None:
                 return True
             fields.extend((*row.identifiers, row.description, row.quantity, row.unit,
@@ -182,6 +247,7 @@ def validate_payload(payload: ExtractionPayload | dict, page_count: int) -> Extr
     # A third-party provider may use model_construct/model_copy (which bypass
     # validators). Validate every boundary again, including nested observations.
     raw = payload.model_dump(mode="python", warnings=False) if isinstance(payload, ExtractionPayload) else payload
+    # Only legacy fixture/provider output explicitly marked 1.1 stays legacy.
     value = ExtractionPayload.model_validate(raw)
     if len(value.pages) != page_count:
         raise ValueError("payload page coverage does not match the immutable source")
@@ -216,9 +282,17 @@ def parsed_payload(payload: ExtractionPayload) -> dict:
                      for row in payload.rows]}
 
 
-def strict_schema() -> dict:
+def strict_schema(schema_version: str = SCHEMA_VERSION) -> dict:
     """Responses strict subset: required nullable keys, closed objects, no defaults."""
     schema = deepcopy(ExtractionPayload.model_json_schema())
+    if schema_version not in {"1.1", "1.2"}:
+        raise ValueError("unsupported extraction schema version")
+    schema["properties"]["schema_version"] = {"enum": [schema_version], "type": "string"}
+    if schema_version == "1.1":
+        for name in ("item_group_id", "row_role", "continuation_of"):
+            schema["$defs"]["ExtractedRow"]["properties"].pop(name, None)
+            if name in schema["$defs"]["ExtractedRow"]["required"]:
+                schema["$defs"]["ExtractedRow"]["required"].remove(name)
 
     def clean(node: object) -> None:
         if isinstance(node, dict):

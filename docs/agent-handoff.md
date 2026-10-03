@@ -4,7 +4,11 @@ Current continuation, October 2, 2026: secure API configuration, crash recovery
 and one human-authorized live extraction are verified. The saved run requires
 human review. Carlos requested separate chats for development fixes and this
 chat for the live demo. Follow [the demo continuation](live-demo-continuation.md)
-and [API activation evidence](api-activation-verification.md). Deferred-key
+and [API activation evidence](api-activation-verification.md). Continuation/review
+fix branch `codex/orderlens-product-rows` defines ProductDocument 1.2 and
+`review-summary-v2`; it preserves the existing 1.1 run. Integrate it with the
+catalog fix at migration 0006 and the separate product-pool work before
+reprocessing. Deferred-key
 statements below describe the prior preparation checkpoint.
 
 Carlos has requested a fresh API activation chat. Follow

@@ -171,6 +171,9 @@ class RunReadinessResponse(ResponseModel):
 
 class ApprovedProductResponse(ResponseModel):
     row_id: str
+    item_group_id: str
+    description: str | None
+    continuation_descriptions: list[dict[str, Any]]
     candidate: CandidateResponse
     quantity: str | None
     unit: str | None
@@ -191,9 +194,11 @@ class ReviewSummaryResponse(ResponseModel):
     run_id: UUID
     state: str
     review_state: str
+    summary_policy_version: str
     approved_products: list[ApprovedProductResponse]
     pending_row_ids: list[str]
     excluded_rows: list[ExcludedRowResponse]
+    document_details: list[dict[str, Any]]
     review_event_count: int
     blockers: list[str]
     can_finish_review: bool

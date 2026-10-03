@@ -33,8 +33,13 @@ def engine():
         pytest.skip("Set PO_BACKEND_TEST_DATABASE_URL to the isolated catalog test database")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
+<<<<<<< HEAD
             or url.database != "orderlens_catalog_fix" or url.query):
         pytest.fail("Catalog tests require loopback orderlens_catalog_fix; refusing another database")
+=======
+            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
+        pytest.fail("Catalog tests require an isolated loopback synthetic test database")
+>>>>>>> 66c3692 (Improve extraction contracts and product row handling)
     engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config("backend.alembic.ini")
     with engine.begin() as connection:

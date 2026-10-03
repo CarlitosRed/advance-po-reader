@@ -33,8 +33,13 @@ def engine():
         pytest.skip("Set PO_BACKEND_CONTRACT_TEST_DATABASE_URL to isolated gate_a_test_backend_website_contract")
     url = make_url(value)
     if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
+<<<<<<< HEAD
             or not (url.database or "").startswith("gate_a_test_backend_") or url.query):
         pytest.fail("Failure tests require a uniquely named loopback gate_a_test_backend_* database")
+=======
+            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
+        pytest.fail("Failure tests require an isolated loopback synthetic test database")
+>>>>>>> 66c3692 (Improve extraction contracts and product row handling)
     result = create_db_engine(url, connect_timeout_seconds=10)
     config = Config("backend.alembic.ini")
     with result.begin() as connection:
@@ -47,6 +52,7 @@ def engine():
 class OfflineProvider:
     model = "offline-test-adapter"
     prompt_version = PROMPT_VERSION
+    schema_version = "1.1"
 
     def __init__(self, outcome=None, callback=None):
         self.outcome = outcome
@@ -208,7 +214,9 @@ def test_document_classification_stops_before_catalog(resource_factory, kind, co
     provider = OfflineProvider(outcome(payload=fixture_payload(kind)))
     resource = resource_factory(provider, kind)
     run = resource.run()
-    response = resource.process(run).json()
+    processed = resource.process(run)
+    assert processed.status_code == 200, processed.text
+    response = processed.json()
     assert response["state"] == "failed" and response["outcome_code"] == code
     assert resource.result(run)["extraction"]["document_type"] == kind
     assert resource.suggestions(run) == []
