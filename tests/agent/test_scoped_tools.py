@@ -14,6 +14,7 @@ from reader_agent.connection import ConnectionSettings
 from reader_agent.server import create_server
 
 TENANT, VENDOR, OTHER, RUN, SOURCE = (str(uuid4()) for _ in range(5))
+POOL = str(uuid4())
 TOKEN = "fictional-connection-token-only"
 CONTENT = b"%PDF-fictional-rest-boundary-fixture"
 HASH = sha256(CONTENT).hexdigest()
@@ -27,6 +28,7 @@ def fake_server(*, synthetic=False, authorized=False, configured=False, state="c
                 unknown=False, wrong_vendor=False, corrupt_source=False):
     calls = []
     run = {"id": RUN, "source_document_id": SOURCE, "vendor_id": OTHER if wrong_vendor else VENDOR,
+           "catalog_pool_id": POOL,
            "provider": "synthetic" if synthetic else "openai", "state": state, "review_state": "not_started"}
     def handler(request):
         calls.append(request)
@@ -34,11 +36,13 @@ def fake_server(*, synthetic=False, authorized=False, configured=False, state="c
         assert request.headers["X-Local-Token"] == TOKEN
         path = request.url.path
         if path == "/website/workspaces":
-            value = {"workspaces": [{"id": TENANT, "catalogs": [{"id": VENDOR, "synthetic": synthetic}]}]}
+            value = {"workspaces": [{"id": TENANT, "catalogs": [{"id": VENDOR, "synthetic": synthetic}],
+                "catalog_pools": [{"id": POOL, "name": "All products", "is_default": True, "synthetic": False}]}]}
         elif path == "/website/readiness":
             value = {"database": "ready", "provider_configured": configured}
         elif path == "/website/corpus":
-            value = {"documents": [{"document_id": "D01", "sha256": HASH}]}
+            value = {"documents": [{"document_id": "D01", "sha256": HASH}],
+                "default_catalog_pool": {"id": POOL, "name": "All products"}}
         elif path.endswith("/content") or path == "/website/demo-document":
             return httpx.Response(200, content=b"bad" if corrupt_source else CONTENT)
         elif path == "/documents":
@@ -66,7 +70,7 @@ def fake_server(*, synthetic=False, authorized=False, configured=False, state="c
         elif path.endswith("/summary"):
             value = {"approved_products": [], "pending_row_ids": ["line-1"], "source_observations_unchanged": True}
         elif path == "/website/catalog":
-            assert request.url.params["vendor_id"] == VENDOR
+            assert request.url.params.get("vendor_id") == VENDOR or request.url.params.get("pool_id") == POOL
             assert request.headers["X-Tenant-ID"] == TENANT
             value = {"products": [{"sku": "FICTIONAL-001"}], "total": 1}
         else:
@@ -133,6 +137,18 @@ def test_real_pdf_preparation_never_grants_authorization_or_processes():
     assert not any(request.url.path.endswith("/process") for request in calls)
     assert [request.headers["Idempotency-Key"] for request in calls if request.method == "POST"] == [
         "agent-upload-" + key, "agent-run-" + key]
+
+
+def test_default_agent_search_uses_same_all_products_boundary_as_website():
+    calls, server = fake_server()
+    async def exercise():
+        async with Client(server) as client:
+            result = await client.call_tool("reader_search_catalog", {"tenant_id": TENANT, "query": "FICTIONAL"})
+            assert not result.is_error and result.structured_content["total"] == 1
+    protocol(exercise)
+    catalog = next(request for request in calls if request.url.path == "/website/catalog")
+    assert catalog.url.params["pool_id"] == POOL
+    assert all(request.headers["X-Tenant-ID"] == TENANT for request in calls if request.url.path != "/website/workspaces")
 
 
 def test_corrupt_corpus_stops_before_upload():

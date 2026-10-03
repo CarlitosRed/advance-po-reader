@@ -54,16 +54,33 @@ class ReaderClient:
 
     async def scope(self, tenant, vendor):
         workspace = await self.catalogs(tenant)
+        if vendor is None:
+            corpus = await self.request("GET", "/website/corpus", tenant)
+            default = corpus.get("default_catalog_pool")
+            if not default:
+                raise ReaderError("default_catalog_pool_setup_required")
+            pool = next((item for item in workspace.get("catalog_pools", []) if item["id"] == default["id"]), None)
+            if pool is None:
+                raise ReaderError("catalog_pool_not_in_workspace")
+            return {**pool, "is_pool": True}
         catalog = next((c for c in workspace["catalogs"] if c["id"] == str(vendor)), None)
         if catalog is None:
             raise ReaderError("catalog_not_in_workspace")
         return catalog
 
     async def scoped_run(self, tenant, vendor, run):
-        await self.scope(tenant, vendor)
         value = await self.request("GET", f"/runs/{run}", tenant)
-        if value["vendor_id"] != str(vendor):
-            raise ReaderError("run_not_in_selected_catalog")
+        workspace = await self.catalogs(tenant)
+        if vendor is None:
+            if value.get("catalog_pool_id"):
+                if not any(pool["id"] == value["catalog_pool_id"] for pool in workspace.get("catalog_pools", [])):
+                    raise ReaderError("run_pool_not_in_workspace")
+            elif not any(c["id"] == value.get("vendor_id") for c in workspace["catalogs"]):
+                raise ReaderError("run_not_in_selected_catalog")
+        else:
+            await self.scope(tenant, vendor)
+            if value["vendor_id"] != str(vendor):
+                raise ReaderError("run_not_in_selected_catalog")
         return value
 
     def review_url(self, source, run):
@@ -71,8 +88,9 @@ class ReaderClient:
 
     async def prepare(self, tenant, vendor, content, request_id, synthetic=False):
         key = str(request_id)
+        data = {"vendor_id": str(vendor)} if vendor is not None else {}
         source = await self.request("POST", "/documents", tenant,
-            data={"vendor_id": str(vendor)}, files={"file": ("source.pdf", content, "application/pdf")},
+            data=data, files={"file": ("source.pdf", content, "application/pdf")},
             headers={"Idempotency-Key": f"agent-upload-{key}"})
         if source["sha256"] != sha256(content).hexdigest():
             raise ReaderError("source_hash_mismatch_processing_not_requested")
@@ -83,9 +101,11 @@ class ReaderClient:
 
     async def prepare_test(self, tenant, vendor, document_id, request_id):
         catalog = await self.scope(tenant, vendor)
-        if catalog["synthetic"]:
+        if not catalog.get("is_pool") and catalog["synthetic"]:
             raise ReaderError("choose_a_real_catalog_explicitly")
-        library = await self.request("GET", "/website/corpus")
+        library = await self.request("GET", "/website/corpus", tenant)
+        if vendor is None and not library.get("default_catalog_pool"):
+            raise ReaderError("default_catalog_pool_setup_required")
         item = next((d for d in library["documents"] if d["document_id"] == document_id), None)
         if item is None:
             raise ReaderError("test_document_not_found")

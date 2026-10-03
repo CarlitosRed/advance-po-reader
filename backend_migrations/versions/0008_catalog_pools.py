@@ -27,7 +27,7 @@ def upgrade():
                     postgresql_where=sa.text("is_default"))
     op.create_table("catalog_pool_members",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("tenant_id", sa.Uuid(), nullable=False),
+        sa.Column("tenant_id", sa.Uuid(), sa.ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.current_timestamp(), nullable=False),
         sa.Column("pool_id", sa.Uuid(), nullable=False),
         sa.Column("vendor_id", sa.Uuid(), nullable=False),

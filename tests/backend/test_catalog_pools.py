@@ -8,7 +8,7 @@ from alembic.config import Config
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,7 @@ from backend.catalog import ProductInput, import_products, retrieve_candidates
 from backend.config import ROOT, Settings
 from backend.errors import BackendError
 from backend.models import (CatalogNamespace, CatalogPoolMember, CatalogProduct,
-                            CatalogSourceProduct, Vendor)
+                            CatalogSourceProduct, Vendor, SourceDocument, ProcessingRun, Suggestion)
 from backend.pools import configure_pool, pool_vendor_ids, validate_pool_candidate
 from backend.synthetic import generate_fixture
 from gate_a.database import create_db_engine
@@ -32,7 +32,7 @@ def engine():
     if not value:
         pytest.skip("Set PO_BACKEND_POOL_TEST_DATABASE_URL to the isolated all-products PostgreSQL database")
     url = make_url(value)
-    if url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"} or url.database not in {"gate_a_test_backend_all_products", "gate_a_test_backend_all_products_v2"} or url.query:
+    if url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"} or url.database not in {"gate_a_test_backend_all_products", "gate_a_test_backend_all_products_v2", "gate_a_test_backend_all_products_v3"} or url.query:
         pytest.fail("All-products checks require their isolated loopback test database")
     engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config(str(ROOT / "backend.alembic.ini"))
@@ -176,8 +176,11 @@ def test_default_upload_search_details_and_legacy_vendor_path(web_client, engine
         pool_id = str(pool.id)
         namespace_ids = {str(first.id), str(second.id)}
         first_vendor_id = str(first.vendor_id)
+        second_vendor_id = str(second.vendor_id)
+        outside_vendor_id = str(outside_vendor.id)
         session.commit()
-    workspace = web_client.get("/website/workspaces").json()["workspaces"][0]
+    workspace = next(item for item in web_client.get("/website/workspaces").json()["workspaces"]
+                     if item["id"] == tenant["id"])
     all_products = next(item for item in workspace["catalog_pools"] if item["id"] == pool_id)
     assert all_products["product_count"] == 5 and all_products["member_count"] == 2 and all_products["is_default"]
     assert web_client.get("/website/catalog?q=SHARED-1").json()["total"] == 2
@@ -200,9 +203,9 @@ def test_default_upload_search_details_and_legacy_vendor_path(web_client, engine
     suggestion = next(item for item in suggestions if item["row_id"] == "line-1")
     assert suggestion["outcome"] == "ambiguous" and len(suggestion["candidates"]) == 2
     assert {candidate["origin_vendor_id"] for candidate in suggestion["candidates"]} == {
-        str(first.vendor_id), str(second.vendor_id)}
+        first_vendor_id, second_vendor_id}
     assert web_client.get("/runs/" + created["id"] + "/reviews").json()["events"] == []
-    outside_id = web_client.get("/website/catalog?vendor_id=" + str(outside_vendor.id) + "&q=OUTSIDE-9").json()["products"][0]["id"]
+    outside_id = web_client.get("/website/catalog?vendor_id=" + outside_vendor_id + "&q=OUTSIDE-9").json()["products"][0]["id"]
     row = web_client.get("/runs/" + created["id"] + "/result").json()["extraction"]["rows"][0]
     review = {"action": "propose_candidate", "row_id": row["row_id"], "reviewer": "Synthetic QA",
         "reason": "Pool boundary check", "evidence_reference": row["evidence"], "candidate_ids": [outside_id]}
@@ -229,3 +232,62 @@ def test_no_default_pool_has_clear_setup_error(web_client):
     upload = web_client.post("/documents", headers={"Idempotency-Key": uuid4().hex},
         files={"file": ("synthetic.pdf", generate_fixture(), "application/pdf")})
     assert upload.status_code == 409 and upload.json()["error"] == "default_catalog_pool_setup_required"
+
+
+def test_0008_upgrade_preserves_existing_immutable_suggestions():
+    value = os.environ.get("PO_BACKEND_POOL_MIGRATION_TEST_DATABASE_URL")
+    if not value:
+        pytest.skip("Set PO_BACKEND_POOL_MIGRATION_TEST_DATABASE_URL to a separate migration test database")
+    url = make_url(value)
+    if url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"} or url.database != "gate_a_test_backend_all_products_migration" or url.query:
+        pytest.fail("Migration history test requires its separate loopback database")
+    migration_engine = create_db_engine(url, connect_timeout_seconds=10)
+    config = Config(str(ROOT / "backend.alembic.ini"))
+    with migration_engine.connect() as connection:
+        heads = __import__("alembic.runtime.migration", fromlist=["MigrationContext"]).MigrationContext.configure(connection).get_current_heads()
+    if not heads:
+        with migration_engine.begin() as connection:
+            config.attributes["connection"] = connection
+            command.upgrade(config, "0006_catalog_description_hint")
+    with Session(migration_engine, expire_on_commit=False) as session:
+        tenant = Tenant(name="Historical synthetic migration " + uuid4().hex)
+        session.add(tenant)
+        session.flush()
+        vendor = Vendor(tenant_id=tenant.id, name="Historical fictional catalog")
+        session.add(vendor)
+        session.flush()
+        product = CatalogProduct(tenant_id=tenant.id, vendor_id=vendor.id, sku="OLD-001",
+            description="Fictional preserved product", normalized_sku="OLD001", active=True)
+        session.add(product)
+        session.flush()
+        source_id, run_id = uuid4(), uuid4()
+        session.execute(text("INSERT INTO source_documents "
+            "(id, tenant_id, vendor_id, sha256, byte_size, media_type, page_count, storage_reference) "
+            "VALUES (:id,:tenant,:vendor,:sha,10,'application/pdf',1,:reference)"), {
+                "id": source_id, "tenant": tenant.id, "vendor": vendor.id,
+                "sha": (uuid4().hex * 2)[:64], "reference": uuid4().hex})
+        session.execute(text("INSERT INTO processing_runs "
+            "(id, tenant_id, source_document_id, vendor_id, provider, state, review_state, idempotency_key, payload_hash) "
+            "VALUES (:id,:tenant,:source,:vendor,'synthetic','partial','in_progress',:key,:hash)"), {
+                "id": run_id, "tenant": tenant.id, "source": source_id, "vendor": vendor.id,
+                "key": uuid4().hex, "hash": "c" * 64})
+        snapshot = [{"candidate_id": str(product.id), "sku": product.sku,
+                     "description": product.description, "method": "exact"}]
+        suggestion = Suggestion(tenant_id=tenant.id, run_id=run_id, row_id="historical-line",
+            candidates=snapshot, method="exact", retrieval_version="catalog-retrieval-v2", evidence=[],
+            outcome="suggested", reason="Historical synthetic suggestion")
+        session.add(suggestion)
+        session.commit()
+        tenant_id, suggestion_id = tenant.id, suggestion.id
+    with migration_engine.begin() as connection:
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+    with Session(migration_engine) as session:
+        run = session.get(ProcessingRun, run_id)
+        suggestion = session.get(Suggestion, suggestion_id)
+        assert run.catalog_pool_id is None
+        assert suggestion.candidates == snapshot
+        assert suggestion.retrieval_version == "catalog-retrieval-v2"
+        assert suggestion.reason == "Historical synthetic suggestion"
+        assert session.get(Tenant, tenant_id) is not None
+    migration_engine.dispose()

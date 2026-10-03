@@ -181,13 +181,19 @@
             "type": "string"
           },
           "vendor_id": {
-            "format": "uuid",
-            "title": "Vendor Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
           }
         },
         "required": [
-          "vendor_id",
           "file"
         ],
         "title": "Body_upload_documents_post",
@@ -246,6 +252,30 @@
           "method": {
             "title": "Method",
             "type": "string"
+          },
+          "namespace_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Namespace Id"
+          },
+          "origin_vendor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Vendor Id"
           },
           "score": {
             "anyOf": [
@@ -1242,6 +1272,18 @@
       "RunResponse": {
         "additionalProperties": false,
         "properties": {
+          "catalog_pool_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Pool Id"
+          },
           "created_at": {
             "anyOf": [
               {
@@ -1376,6 +1418,18 @@
           "byte_size": {
             "title": "Byte Size",
             "type": "integer"
+          },
+          "catalog_pool_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Pool Id"
           },
           "created_at": {
             "format": "date-time",
@@ -2253,11 +2307,35 @@
           {
             "in": "query",
             "name": "vendor_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "format": "uuid",
-              "title": "Vendor Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vendor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pool_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pool Id"
             }
           },
           {
@@ -4542,11 +4620,35 @@
           {
             "in": "query",
             "name": "vendor_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "format": "uuid",
-              "title": "Vendor Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vendor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pool_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pool Id"
             }
           },
           {
@@ -4702,11 +4804,35 @@
           {
             "in": "query",
             "name": "vendor_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "format": "uuid",
-              "title": "Vendor Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Vendor Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pool_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Pool Id"
             }
           },
           {

@@ -235,6 +235,8 @@ class CatalogPool(Identity, Base):
         UniqueConstraint("tenant_id", "id", name="uq_catalog_pools_tenant_id"),
         UniqueConstraint("tenant_id", "name", name="uq_catalog_pools_tenant_name"),
         CheckConstraint("length(trim(name)) > 0", name="ck_catalog_pools_name"),
+        Index("uq_catalog_pools_one_default", "tenant_id", unique=True,
+              postgresql_where=text("is_default")),
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
@@ -249,6 +251,7 @@ class CatalogPoolMember(Identity, Base):
             ["catalog_namespaces.tenant_id", "catalog_namespaces.vendor_id", "catalog_namespaces.id"], ondelete="RESTRICT"),
         UniqueConstraint("tenant_id", "pool_id", "namespace_id", name="uq_catalog_pool_member"),
         UniqueConstraint("tenant_id", "pool_id", "vendor_id", "namespace_id", name="uq_catalog_pool_member_scope"),
+        Index("ix_catalog_pool_members_products", "tenant_id", "pool_id", "vendor_id", "namespace_id"),
     )
     pool_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     vendor_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)

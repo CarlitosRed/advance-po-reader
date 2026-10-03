@@ -11,7 +11,7 @@ from backend.catalog import retrieve_candidates
 from backend.contracts import ExtractionPayload, validate_payload, parsed_payload
 from backend.errors import BackendError
 from backend.models import SourceDocument, ProcessingRun, ProviderAttempt, Suggestion, ReviewEvent
-from backend.models import CatalogProduct
+from backend.models import CatalogProduct, CatalogSourceProduct, CatalogPoolMember
 from backend.pools import pool_vendor_ids, validate_pool_candidate
 from backend.providers import OpenAIProvider, SyntheticProvider
 from backend.uploads import read_source
@@ -319,9 +319,21 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
             if len(products) != len(request.candidate_ids):
                 raise BackendError("proposed_candidate_outside_catalog", 422)
             by_id = {product.id: product for product in products}
-            new_value = {"candidates": [{"candidate_id": str(by_id[id_].id),
-                "sku": by_id[id_].sku, "description": by_id[id_].description,
-                "method": "human_catalog_search"} for id_ in request.candidate_ids]}
+            proposed = []
+            for id_ in request.candidate_ids:
+                product = by_id[id_]
+                candidate = {"candidate_id": str(product.id), "sku": product.sku,
+                    "description": product.description, "method": "human_catalog_search"}
+                if run.catalog_pool_id is not None:
+                    source = session.scalar(select(CatalogSourceProduct).join(CatalogPoolMember,
+                        (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
+                        (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
+                        (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
+                            CatalogSourceProduct.tenant_id == tenant, CatalogSourceProduct.vendor_id == product.vendor_id,
+                            CatalogSourceProduct.product_id == product.id, CatalogPoolMember.pool_id == run.catalog_pool_id))
+                    candidate.update({"origin_vendor_id": str(product.vendor_id), "namespace_id": str(source.namespace_id)})
+                proposed.append(candidate)
+            new_value = {"candidates": proposed}
         elif request.action == "acknowledge":
             if row.row_kind == "product":
                 raise BackendError("product_requires_approve_or_no_match", 422)

@@ -90,6 +90,8 @@ class CandidateResponse(ResponseModel):
     description: str
     method: str
     score: str | None = None
+    origin_vendor_id: UUID | None = None
+    namespace_id: UUID | None = None
 
 
 class SuggestionResponse(ResponseModel):

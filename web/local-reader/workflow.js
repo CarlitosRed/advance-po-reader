@@ -39,12 +39,13 @@ async function initialize() {
       $("view").innerHTML = '<section class="panel"><h1>Your local database is stopped.</h1><p class="field">Start the preserved local database, then use Check connection above. Your documents and catalogs remain saved.</p></section>';
       return;
     }
-    const [scopes, configuration, corpus] = await Promise.all([
-      api("/website/workspaces"), api("/configuration"), api("/website/corpus")]);
+    const [scopes, configuration] = await Promise.all([
+      api("/website/workspaces"), api("/configuration")]);
     state.workspace = scopes.workspaces[0] || null;
     if (!state.workspace) throw new Error("local_catalog_setup_required");
+    const corpus = await api("/website/corpus");
     state.catalogs = state.workspace.catalogs;
-    state.pools = state.workspace.catalog_pools || [];
+    state.pools = (state.workspace.catalog_pools || []).map(pool => ({...pool, is_pool:true}));
     state.defaultPool = corpus.default_catalog_pool ? {...corpus.default_catalog_pool, is_pool:true, synthetic:false} : null;
     state.catalog = state.defaultPool;
     state.configuration = configuration;
