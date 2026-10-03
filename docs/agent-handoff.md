@@ -54,3 +54,9 @@ Moved historical model evaluation/infrastructure/dataset guides and the searchab
 ### T-002 audit addendum (October 3, 2026)
 
 Removed `OpenAIProvider`, its HTTP transport, and `build_provider` from the legacy provider module while retaining the imported observation schemas, prompt constants, and schema validation. Removed `--provider`, `--model`, and `--timeout` from `reader.py analyze`; it now calls the native engine with no provider and states in help that vision analysis is unavailable. Updated the CLI example and removed API credentials/cost language from the legacy CLI documentation. `benchmark_vision.py` had already been removed in the model-cleanup commit. This closes the accidental paid-call path; separately gated backend work remains outside this branch.
+
+## T-005 static mockup v2 (October 3, 2026)
+
+`chat/mockup-v2` starts from `origin/main` at `4bf061b`. The explicitly requested static UI task is separate from Gate A. `web/po-reader-mockup/dist/` now shows phone-first Certain/Probable/Uncertain review, zero initial approvals, three source-bound uncertain answers, session-local sample product creation, retained ignored lines, and a final approval tap after every line is reviewed. Selection or typing never accepts a product; edits revoke earlier approval. The existing sample assets are unchanged.
+
+Run `node web/po-reader-mockup/tests/mockup-v2.cjs` for the browser checks. Before/after screenshots and verification limits are in `docs/mockup-v2/README.md` and `web/po-reader-mockup/QA.md`. This implements sample interface behavior only: no login, API calls, backend changes, live extraction, persistent catalog insertion, deployment, or order action. Review goes to Claudio; Carlos decides whether to merge.
