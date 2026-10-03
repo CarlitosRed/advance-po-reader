@@ -35,7 +35,7 @@ def unknown(desk):
 
 def tier(suggestion):
     # Inspect the public response; never derive a tier from test-side matching rules.
-    return str(suggestion.get("confidence_tier", suggestion["outcome"])).casefold()
+    return str(suggestion.get("tier", suggestion["outcome"])).casefold()
 
 
 def test_goal_1_separate_code_column_preserves_every_product_and_raw_quantity(desk):
@@ -100,7 +100,6 @@ def test_goal_4_exact_code_preselected_but_needs_explicit_human_approval(desk):
     assert summary["review_event_count"] == 1
 
 
-@gap("backend/responses.py:SuggestionResponse and catalog.py:_result expose suggested/ambiguous/no_match; no Certain tier")
 def test_goal_4_exact_code_is_in_certain_tier(desk):
     _, result = exact(desk)
     assert tier(result.suggestions[0]) == "certain", result.suggestions[0]
@@ -116,7 +115,6 @@ def test_goal_5_description_only_match_finds_scoped_product_and_stays_pending(de
     assert result.summary["pending_row_ids"] == ["line-1"]
 
 
-@gap("backend/responses.py:SuggestionResponse has no Probable tier; description-only trigram matches remain generic suggested outcomes")
 def test_goal_5_description_only_match_is_in_probable_tier(desk):
     rows = [product_row(1, description="Synthetic cobalt ladder", quantity="2")]
     result = process(desk, rows, code_column=False)
@@ -138,7 +136,6 @@ def test_goal_6_unknown_line_keeps_source_snippet_and_pending_review(desk):
         assert image.convert("L").getextrema()[0] < 255, "snippet must retain printed ink"
 
 
-@gap("backend/service.py skips unknown rows during retrieval; the public review projection has no Uncertain tier for them")
 def test_goal_6_unknown_line_is_in_uncertain_tier(desk):
     _, result = unknown(desk)
     rows = {s["row_id"]: s for s in result.suggestions}

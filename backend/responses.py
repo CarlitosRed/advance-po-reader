@@ -106,6 +106,9 @@ class SuggestionResponse(ResponseModel):
     outcome: Literal["suggested", "ambiguous", "no_match"]
     reason: str
     suggested_candidate_id: UUID | None
+    tier: Literal["certain", "probable", "uncertain"]
+    tier_reason: str
+    approval_status: Literal["needs_approval"]
     created_at: datetime
 
 

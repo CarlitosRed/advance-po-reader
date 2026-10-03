@@ -1851,6 +1851,11 @@
       "SuggestionResponse": {
         "additionalProperties": false,
         "properties": {
+          "approval_status": {
+            "const": "needs_approval",
+            "title": "Approval Status",
+            "type": "string"
+          },
           "candidates": {
             "items": {
               "$ref": "#/components/schemas/CandidateResponse"
@@ -1922,6 +1927,19 @@
             "format": "uuid",
             "title": "Tenant Id",
             "type": "string"
+          },
+          "tier": {
+            "enum": [
+              "certain",
+              "probable",
+              "uncertain"
+            ],
+            "title": "Tier",
+            "type": "string"
+          },
+          "tier_reason": {
+            "title": "Tier Reason",
+            "type": "string"
           }
         },
         "required": [
@@ -1936,6 +1954,9 @@
           "outcome",
           "reason",
           "suggested_candidate_id",
+          "tier",
+          "tier_reason",
+          "approval_status",
           "created_at"
         ],
         "title": "SuggestionResponse",

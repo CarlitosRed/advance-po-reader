@@ -395,16 +395,9 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
     def suggestions(run_id: UUID, request: Request):
         with Session(app.state.engine) as session:
             tenant = tenant_for(request, session)
-            run_for(session, tenant, run_id)
-            records = session.scalars(select(Suggestion).where(Suggestion.tenant_id == tenant,
-                                      Suggestion.run_id == run_id).order_by(Suggestion.row_id)).all()
-            values = []
-            for record in records:
-                value = serialize(record)
-                value["suggested_candidate_id"] = (record.candidates[0]["candidate_id"]
-                                                    if record.outcome == "suggested" and len(record.candidates) == 1 else None)
-                values.append(value)
-            return {"suggestions": values}
+            run = run_for(session, tenant, run_id)
+            from backend.tiers import review_suggestions
+            return {"suggestions": review_suggestions(session, tenant, run)}
 
     @app.post("/runs/{run_id}/reviews", status_code=201, response_model=ReviewResponse)
     def review(run_id: UUID, body: ReviewRequest, request: Request):
