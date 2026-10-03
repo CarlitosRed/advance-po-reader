@@ -29,3 +29,20 @@ A terminal failed provider attempt is preserved as private evidence. Do not retr
 2. Audit and create a safe source-only GitHub backup, then read back its exact remote ref and SHA.
 3. Keep ignored runtime/evidence backups separate and verify their recovery path before any cleanup.
 4. Report documentation updates separately from implemented behavior, and leave unresolved ownership or backup details marked `Unknown`.
+
+## Goal acceptance tests — October 3, 2026
+
+The dedicated `Codex · goal tests` desk starts at remote
+`codex/worktree-standards` commit `183412f4b1daaf8fc49b2a60f91ed8e34b749afb`.
+T-007 adds all ten product-goal groups under `tests/goal`, default goal-only
+pytest configuration, an injected fixed-JSON provider, generated fictional
+PDF/PNG/JPG sources and a disposable PostgreSQL cluster/database. The measured
+suite reports 10 passed, 8 strict xfail and 0 blocked; each xfail names the
+application fault. See [test guide](goal-acceptance-tests.md) and
+[scorecard](goal-scorecard-2026-10-03.md).
+
+Implemented changes are tests and their isolated harness only. Backend logic,
+provider settings and customer evidence are unchanged. The scorecard documents
+missing confidence tiers, unknown-row decisions, source grounding and product
+line completeness; none of those features is fixed or approved by this task.
+The PR targets `codex/worktree-standards`, not `main`.
