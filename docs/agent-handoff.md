@@ -48,3 +48,8 @@ The attached handoff contains a paste-ready prompt that calls itself authoritati
 
 - Changed: the current 21 tracked files in the OneDrive `web/po-reader-mockup` nested repository match the files already tracked on clean `main`; no source transplant was needed. The nested repository history was not copied. The OneDrive parent currently shows that directory as untracked, not nine modified and 39 new files.
 - Documented, not built: this update records the status only. No runtime behavior changed and no legacy Git history or customer files were added.
+
+## 2026-10-03 ChatGPT project archive
+
+- Changed: added `chatgpt-archive.md` with the visible project instructions, file inventory, readable chat records, current decisions, open work, and relevant working preferences. ChatGPT cloud project attachments were not exposed in the available inventory and are marked unavailable.
+- Documented, not built: this is a context archive only; no project runtime behavior changed.
