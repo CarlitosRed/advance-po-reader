@@ -226,6 +226,73 @@ def test_description_code_hint_retrieves_exact_scoped_sku_with_separate_provenan
     assert "human approval" in result["reason"]
 
 
+def test_numeric_description_code_hint_uses_literal_scoped_sku_only(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("4516", "Different catalog description")])
+    identifiers = [{"raw_value": None, "source_role": "vendor_product_code", "status": "not_present"}]
+    original = [dict(item) for item in identifiers]
+    result = retrieve_candidates(session, tenant, vendor, identifiers, "DEMO 4516 STAGING PLATFORM")
+    assert result["method"] == "description_numeric_code_hint"
+    assert result["outcome"] == "suggested"
+    assert result["candidates"][0]["sku"] == "4516"
+    assert result["candidates"][0]["method"] == "description_numeric_code_hint"
+    assert result["evidence"] == [{"kind": "description_numeric_code_hint",
+                                   "source": "product_description", "raw_token": "4516",
+                                   "match_method": "exact_sku"}]
+    assert identifiers == original
+    assert "human approval" in result["reason"]
+
+
+@pytest.mark.parametrize("description", [
+    "DEMO line 4516 platform", "DEMO row number 4516 platform", "DEMO tag #4516 platform",
+    "DEMO seq: 4516 platform", "DEMO qty 4516 EA", "DEMO 4516 each", "DEMO 12 x 4516 mm",
+    "DEMO 4516 x 2 mm", "DEMO 2 units of 4516", "DEMO 4516 line",
+    "DEMO $4516 staging platform", "DEMO USD 4516", "DEMO 4516 USD price",
+    "DEMO 4516 dollars", "DEMO 4516.00 platform",
+    "DEMO 45,16 platform", "DEMO 2026-10-02 platform", "DEMO 20261002 platform",
+    "DEMO 10022026 platform", "DEMO 100226 platform", "DEMO 2026 release",
+])
+def test_numeric_description_hints_reject_sequence_measure_money_and_date_context(session, description):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("4516", "Unrelated catalog wording")])
+    result = retrieve_candidates(session, tenant, vendor, [], description)
+    assert result["method"] != "description_numeric_code_hint"
+    assert result["candidates"] == []
+
+
+def test_numeric_description_hint_does_not_fuzzy_match_a_nearby_numeric_sku(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("4516", "Unrelated catalog wording")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO 4517 STAGING PLATFORM")
+    assert result["outcome"] == "no_match"
+    assert result["candidates"] == []
+
+
+def test_numeric_description_hint_stays_inside_selected_tenant_and_vendor(session):
+    tenant, vendor = tenant_vendor(session)
+    other_tenant, other_vendor = tenant_vendor(session)
+    other_vendor_same_tenant = Vendor(tenant_id=tenant, name="Other numeric namespace")
+    session.add(other_vendor_same_tenant)
+    session.flush()
+    import_products(session, other_tenant, other_vendor, [product("4516")])
+    import_products(session, tenant, other_vendor_same_tenant.id, [product("4516")])
+    assert retrieve_candidates(session, tenant, vendor, [], "DEMO 4516 PLATFORM")["outcome"] == "no_match"
+    import_products(session, tenant, vendor, [product("4516")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO 4516 PLATFORM")
+    assert result["outcome"] == "suggested"
+    assert result["candidates"][0]["sku"] == "4516"
+
+
+def test_numeric_description_hints_return_bounded_ambiguous_candidate_set(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("4516"), product("4517")])
+    result = retrieve_candidates(session, tenant, vendor, [], "DEMO 4516 OR 4517 STAGING", limit=1)
+    assert result["method"] == "description_numeric_code_hint"
+    assert result["outcome"] == "ambiguous"
+    assert len(result["candidates"]) == 1
+    assert "omitted" in result["reason"]
+
+
 @pytest.mark.parametrize("description", ["line 12 staging platform", "2026-10-02 staging platform",
                                           "ZX-90X1 staging platform", "X-901 staging platform",
                                           "ZX-9012X staging platform", "staging platform"])
@@ -313,6 +380,15 @@ def test_tag_or_row_sequence_identifier_is_not_promoted_to_sku_hint(session):
     import_products(session, tenant, vendor, [product("ZX-901")])
     result = retrieve_candidates(session, tenant, vendor,
         [{"raw_value": "ZX-901", "source_role": "tag_or_row_sequence"}], None)
+    assert result["outcome"] == "no_match"
+    assert result["candidates"] == []
+
+
+def test_numeric_tag_or_row_sequence_identifier_is_not_promoted_to_sku_hint(session):
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product("4516")])
+    result = retrieve_candidates(session, tenant, vendor,
+        [{"raw_value": "4516", "source_role": "tag_or_row_sequence"}], None)
     assert result["outcome"] == "no_match"
     assert result["candidates"] == []
 
