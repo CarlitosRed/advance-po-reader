@@ -46,3 +46,14 @@ provider settings and customer evidence are unchanged. The scorecard documents
 missing confidence tiers, unknown-row decisions, source grounding and product
 line completeness; none of those features is fixed or approved by this task.
 The PR targets `codex/worktree-standards`, not `main`.
+
+## T-009 PR B plan — October 3, 2026
+
+`Codex · goal gaps` published the separate [PR B plan](goal-gaps-pr-b-plan.md)
+from the assigned `goal-tests` desk after PR A #7 was marked ready. B proposes
+independent per-page product-line coverage, source-text grounding and F7/F8.
+Only this plan and handoff note change; no code, tests or migrations are built
+and no new runtime result is claimed. Implementation waits for A's merge and
+Claudio's plan go. Refresh B from that merged base, retain A's approval/scoping
+regressions, and keep all runtime checks synthetic and disposable. B's merge
+requires approval at its own current head and passing tests.
