@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -644,6 +645,130 @@ class PathsTests(unittest.TestCase):
         self.assertIn("   1  .github/*", text)
         self.assertIn("   0  nothing/*", text)
         self.assertIn("match no file today", text)
+
+
+FAKE_KEY = b"-----BEGIN OPENSSH " b"PRIVATE KEY-----\nabc\n"
+GATE_DIR = os.path.dirname(os.path.abspath(g.__file__))
+HOOK = os.path.join(os.path.dirname(os.path.dirname(GATE_DIR)), ".githooks", "pre-push")
+
+
+def add_then_remove_history(d, git):
+    """A clean, then B adds a key file, then C removes it (the tip looks like A)."""
+    write(d, "a.txt", "1")
+    git("add", "-A")
+    git("commit", "-q", "-m", "A")
+    a = git("rev-parse", "HEAD")
+    with open(os.path.join(d, "k.txt"), "wb") as fh:
+        fh.write(FAKE_KEY)
+    git("add", "-A")
+    git("commit", "-q", "-m", "B")
+    b = git("rev-parse", "HEAD")
+    git("rm", "-q", "k.txt")
+    git("commit", "-q", "-m", "C")
+    return a, b, git("rev-parse", "HEAD")
+
+
+class HistoryScanTests(unittest.TestCase):
+    def scan(self, d, **kw):
+        lines = []
+        code = g.cmd_scan(git_runner(d), CFG, out=lines.append, **kw)
+        return code, "\n".join(lines)
+
+    def test_range_catches_a_key_added_then_removed_inside_the_range(self):
+        d, git = git_repo()
+        a, b, c = add_then_remove_history(d, git)
+        self.assertEqual(self.scan(d, rev=c)[0], 0)  # the tip alone looks clean
+        code, out = self.scan(d, rng=f"{a}..{c}")
+        self.assertEqual(code, 1)
+        self.assertIn("k.txt", out)
+        self.assertIn(b[:7], out)
+        self.assertNotIn("abc", out)
+
+    def test_range_before_the_bad_commit_is_clean(self):
+        d, git = git_repo()
+        a, b, c = add_then_remove_history(d, git)
+        self.assertEqual(self.scan(d, rng=f"{a}..{a}")[0], 0)
+
+    def test_outgoing_without_a_remote_covers_the_whole_history(self):
+        d, git = git_repo()
+        a, b, c = add_then_remove_history(d, git)
+        code, out = self.scan(d, outgoing=c)
+        self.assertEqual(code, 1)
+        self.assertIn("k.txt", out)
+
+    def test_outgoing_skips_commits_a_remote_already_has(self):
+        d, git = git_repo()
+        a, b, c = add_then_remove_history(d, git)
+        remote = tempfile.mkdtemp()
+        subprocess.run(["git", "init", "-q", "--bare", remote], check=True)
+        git("remote", "add", "origin", remote)
+        git("push", "-q", "origin", f"{c}:refs/heads/main")
+        write(d, "later.txt", "ok")
+        git("add", "-A")
+        git("commit", "-q", "-m", "D")
+        self.assertEqual(self.scan(d, outgoing=git("rev-parse", "HEAD"))[0], 0)
+
+    def test_merge_commit_and_first_commit_are_read(self):
+        d, git = git_repo()
+        write(d, "a.txt", "1")
+        git("add", "-A")
+        git("commit", "-q", "-m", "A")
+        git("checkout", "-q", "-b", "side")
+        with open(os.path.join(d, "n.bin"), "wb") as fh:
+            fh.write(b"%PDF-1.7")
+        git("add", "-A")
+        git("commit", "-q", "-m", "S")
+        git("checkout", "-q", "main")
+        write(d, "b.txt", "2")
+        git("add", "-A")
+        git("commit", "-q", "-m", "M")
+        git("merge", "-q", "--no-ff", "side", "-m", "merge")
+        self.assertEqual(self.scan(d, outgoing=git("rev-parse", "HEAD"))[0], 1)
+
+
+@unittest.skipUnless(shutil.which("sh"), "needs a POSIX sh to run the hook")
+class HookHistoryTests(unittest.TestCase):
+    """Runs the real .githooks/pre-push in a throw-away repository."""
+
+    def hooked_repo(self):
+        d, git = git_repo()
+        shutil.copytree(GATE_DIR, os.path.join(d, "tools", "gate"),
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        os.makedirs(os.path.join(d, ".githooks"))
+        shutil.copy(HOOK, os.path.join(d, ".githooks", "pre-push"))
+        return d, git
+
+    def push(self, d, local, remote):
+        line = f"refs/heads/x {local} refs/heads/x {remote}\n".encode()
+        p = subprocess.run(["sh", ".githooks/pre-push"], cwd=d, input=line, capture_output=True)
+        return p.returncode, (p.stdout + p.stderr).decode(errors="replace")
+
+    def test_update_push_with_add_then_remove_is_blocked(self):
+        d, git = self.hooked_repo()
+        a, b, c = add_then_remove_history(d, git)
+        code, out = self.push(d, c, a)
+        self.assertEqual(code, 1, out)
+        self.assertIn("k.txt", out)
+
+    def test_new_branch_push_with_add_then_remove_is_blocked(self):
+        d, git = self.hooked_repo()
+        a, b, c = add_then_remove_history(d, git)
+        code, out = self.push(d, c, "0" * 40)
+        self.assertEqual(code, 1, out)
+        self.assertIn("k.txt", out)
+
+    def test_clean_pushes_pass(self):
+        d, git = self.hooked_repo()
+        write(d, "a.txt", "1")
+        git("add", "-A")
+        git("commit", "-q", "-m", "A")
+        a = git("rev-parse", "HEAD")
+        write(d, "b.txt", "2")
+        git("add", "-A")
+        git("commit", "-q", "-m", "B")
+        c = git("rev-parse", "HEAD")
+        self.assertEqual(self.push(d, c, a)[0], 0)
+        self.assertEqual(self.push(d, c, "0" * 40)[0], 0)
 
 
 class ConfigTests(unittest.TestCase):

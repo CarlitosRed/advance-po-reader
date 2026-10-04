@@ -472,22 +472,44 @@ def scan_blob(path, data, cfg):
     return problems
 
 
-def cmd_scan(git, cfg, staged=False, rev="HEAD", rng=None, out=print):
-    if staged:
-        names = git(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]).split("\n")
-        spec = lambda p: ":" + p
-    elif rng:
-        a, b = rng.split("..")
-        names = git(["diff", "--name-only", "--diff-filter=ACMR", a, b]).split("\n")
-        spec = lambda p: f"{b}:{p}"
-    else:
-        names = git(["ls-tree", "-r", "--name-only", rev]).split("\n")
-        spec = lambda p: f"{rev}:{p}"
+def scan_history(git, cfg, commits):
+    """Scan every file version that any of these commits adds or changes, so a file
+    that is added in one commit and removed in the next is still seen."""
+    bad, seen = [], set()
+    for commit in commits:
+        raw = git(["diff-tree", "-r", "-m", "--root", "-z", "--no-commit-id",
+                   "--diff-filter=ACMR", commit])
+        tokens = [t for t in raw.split("\0") if t]
+        for meta, path in zip(tokens[0::2], tokens[1::2]):
+            blob = meta.split()[3]  # ":old-mode new-mode old-sha new-sha status"
+            if (blob, path) in seen:
+                continue
+            seen.add((blob, path))
+            for problem in scan_blob(path, git(["cat-file", "blob", blob], binary=True), cfg):
+                bad.append((f"{path} (commit {commit[:7]})", problem))
+    return bad
+
+
+def cmd_scan(git, cfg, staged=False, rev="HEAD", rng=None, outgoing=None, out=print):
     bad = []
-    for path in [n for n in names if n]:
-        data = git(["show", spec(path)], binary=True)
-        for problem in scan_blob(path, data, cfg):
-            bad.append((path, problem))
+    if rng or outgoing:
+        if rng:
+            a, b = rng.split("..")
+            args = ["rev-list", "--reverse", f"{a}..{b}"]
+        else:  # commits no remote branch has yet: what a push of this revision would upload
+            args = ["rev-list", "--reverse", outgoing, "--not", "--remotes"]
+        bad = scan_history(git, cfg, git(args).split())
+    else:
+        if staged:
+            names = git(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]).split("\n")
+            spec = lambda p: ":" + p
+        else:
+            names = git(["ls-tree", "-r", "--name-only", rev]).split("\n")
+            spec = lambda p: f"{rev}:{p}"
+        for path in [n for n in names if n]:
+            data = git(["show", spec(path)], binary=True)
+            for problem in scan_blob(path, data, cfg):
+                bad.append((path, problem))
     if bad:
         out("SCAN FAILED:")
         for path, problem in bad:
@@ -535,7 +557,8 @@ def main(argv=None):
     s = sub.add_parser("scan")
     s.add_argument("--staged", action="store_true")
     s.add_argument("--rev", default="HEAD")
-    s.add_argument("--range")
+    s.add_argument("--range", help="A..B: scan every commit in the range")
+    s.add_argument("--outgoing", help="REV: scan every commit of REV that no remote branch has yet")
     sub.add_parser("paths")
     args = ap.parse_args(argv)
     try:
@@ -548,7 +571,7 @@ def main(argv=None):
             return cmd_audit(run_git, cfg, args.range)
         if args.cmd == "paths":
             return cmd_paths(run_git, cfg)
-        return cmd_scan(run_git, cfg, args.staged, args.rev, args.range)
+        return cmd_scan(run_git, cfg, args.staged, args.rev, args.range, args.outgoing)
     except GateError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

@@ -21,7 +21,7 @@ while read local_ref local_sha remote_ref remote_sha; do
     # --- content scan (T-010): forbidden files and secrets, by content as well as by name ---
     if [ -f "$gate" ] && [ -n "$py" ]; then
         if [ "$remote_sha" = "$zeros" ]; then
-            "$py" "$gate" scan --rev "$local_sha"
+            "$py" "$gate" scan --outgoing "$local_sha"
         else
             "$py" "$gate" scan --range "$remote_sha..$local_sha"
         fi
