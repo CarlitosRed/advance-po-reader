@@ -4,7 +4,10 @@ legacy=93a1b5c7fa1dd769db9bc60ec51205749c6faf5b
 zeros=0000000000000000000000000000000000000000
 root=$(git rev-parse --show-toplevel)
 gate="$root/tools/gate/po_gate.py"
-py=$(command -v python3 || command -v python || command -v py)
+py=""
+for c in python3 python py; do
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c "" >/dev/null 2>&1; then py=$c; break; fi
+done
 while read local_ref local_sha remote_ref remote_sha; do
     case "$local_sha" in 0000000000000000000000000000000000000000) continue ;; esac
     if git merge-base --is-ancestor "$legacy" "$local_sha" 2>/dev/null; then
