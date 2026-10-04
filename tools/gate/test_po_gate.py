@@ -590,7 +590,7 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(self.scan(d)[0], 0)
 
     def test_private_key_header_is_caught(self):
-        d, git = self.repo_with({"k.txt": b"-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n"})
+        d, git = self.repo_with({"k.txt": b"-----BEGIN OPENSSH " b"PRIVATE KEY-----\nabc\n"})
         git("commit", "-q", "-m", "x")
         self.assertEqual(self.scan(d)[0], 1)
 
