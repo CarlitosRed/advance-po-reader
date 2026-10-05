@@ -1,16 +1,24 @@
 # T-009 PR B: completeness, source grounding and F7/F8
 
-Owner: **Codex · goal gaps:**. Reviewer: Claudio. Date: 2026-10-03.
-Status: plan-only draft. Carlos requested this draft after PR A was marked ready.
-Implementation waits for **PR A #7 to merge** and **Claudio's go on this plan**.
+Owner: **Codex · goal gaps:**. Reviewer: Claudio · PR review. Updated: 2026-10-05.
+Status: plan-only draft; conditions 3/4 clarified for reviewer confirmation.
+Carlos merged PR A #7 into `codex/worktree-standards` as
+`fe5c1f421c4293d0b993a5e2e4abecc69fba500c` on 2026-10-05 at 07:03 UTC.
+B now includes that merged base through a merge, preserving its existing
+published history without a rebase or force-push. Implementation still waits
+for **Claudio · PR review to confirm this revised plan at its new head**.
 No application code, tests or migrations change in this draft.
 
-PR A's tested head is `21e9fc47442d61a95817411e432eb5ab910c401f`, with
-49 passed and 2 strict xfail. That is A's measurement, not a new run on this
-plan branch. The remaining xfails are goals 7 (source grounding) and 8
+PR A's approved head `54c979e457e9fa83e0ac22ada12cb2b3385e0a21` is a parent
+of the merge. A's CI measured backend 268 passed and goal 53 passed,
+1 documented browser skip and 2 strict xfails; its local goal run measured
+54 passed, 2 strict xfails and no skips. These are A's measurements, not new
+local runs on this plan branch. The remaining xfails are goals 7 (source
+grounding) and 8
 (independent product-line completeness). A supplies tiers, explicit line
 answers, scoped/marked review-created products and same-row quantity/unit
-evidence. B will refresh from the merged A base before implementation.
+evidence. B also inherits A's full backend and goal CI job; new B tests must
+run in those suites before implementation can be considered verified.
 
 Follow AGENT-WORKFLOW rule 3, AGENTS.md, PROJECT_GOAL.md and the local logic
 rules. Preserve source hashes, literal observations, immutable candidate sets,
@@ -25,14 +33,33 @@ database, model installation, training, deployment or cart/order actions.
   path is an attributed reviewer-confirmed product count bound to that page
   and source hash. A generic text-line count is not a product count; use a
   text-layer signal only if an explicit, tested rule identifies product lines.
-- Persist count, method, page/source evidence, reviewer/reason where relevant,
-  and matched/mismatch/unavailable status separately from the provider payload.
+- Persist each reviewer count per source page and exact source hash, scoped
+  to the tenant and run, with count, method, page/source evidence,
+  reviewer/reason, timestamp and matched/mismatch/unavailable status separately
+  from the provider payload. Counts are nonnegative integers. A count of zero
+  on a page with extracted product rows is a mismatch, never missing evidence
+  or a successful empty-page check. A genuinely empty page still needs its own
+  independent zero count; another page's count cannot stand in for it.
   Continuation and document-detail rows must not inflate product counts.
+- **Reconciliation choice: rerun-only in B.** A missing or extra product line
+  requires a new source-bound run against the same immutable source hash; B
+  adds no action that inserts/removes extracted rows or overrides a count
+  mismatch in the existing run. Keep the old run, observations and decisions
+  intact. The new run must receive its own independent per-page checks and
+  explicit product decisions before it can finish; starting it is subject to
+  the existing source/provider authorization rules and is not an automatic retry.
 - Missing independent evidence or a mismatch keeps processing partial and
-  blocks Finish. Provider declarations and page/document acknowledgments
-  cannot clear coverage blockers. A revised count requires append-only
-  evidence; an omitted line remains blocked until a new source-bound run or
-  explicit reconciliation accounts for it. Never silently lower the count.
+  blocks Finish. Provider declarations, row exclusions, generic page/document
+  acknowledgments and unavailable-text confirmations cannot clear coverage
+  blockers. Surface the mismatching page, compared counts and the new-run
+  remedy in the review controls, so the reviewer has an actionable next step.
+- A reviewer may correct a genuinely mistaken independent count only by a
+  new attributed, reasoned, append-only count record bound to the same page,
+  source hash and run; preserve the prior record. The latest source-supported
+  count is compared again. This is a count-evidence correction, not row
+  reconciliation: it cannot represent an omitted line, remove an extra line
+  or silently lower the count to match the provider. A discrepancy that still
+  exists in the source requires the new-run remedy above.
 - Reuse A's explicit product binding/approval gate. A count confirmation must
   neither create a catalog entry nor approve an observed product.
 
@@ -47,21 +74,42 @@ a migration. Define permitted processing/review transitions explicitly.
 - Decode text from the actual hash-checked source page with the existing local
   PDF library. Compare each product's observed text with independently decoded
   text in its declared source region, recording method, comparison evidence
-  and supported/unsupported/unavailable status. Keep printed strings intact;
-  any comparison normalization must be named and retained separately.
-- Flag unsupported product text and make the flag visible in review. A region
-  declaration alone is insufficient. Include the flag in the review blockers
-  and tier policy without mutating the original extraction.
-- A scanned page, photo or empty text layer is unavailable evidence, not proof
-  of fabrication. Use an existing local OCR path only if available; install no
-  model and call no paid provider. Otherwise require an attributed source-bound
-  review of the unavailable/unsupported evidence. Clearing a source flag cannot
-  approve a product or clear an independent completeness discrepancy.
+  and supported/unsupported/unavailable status. A valid region declaration by
+  itself does not prove text support.
+- **Comparison normalization:** apply Unicode case-folding, collapse each run
+  of Unicode whitespace to one ASCII space, and trim leading/trailing space
+  on both observed text and decoded region text. Compare complete observed
+  text as a contiguous phrase with alphanumeric token boundaries in the
+  normalized region text. Do not erase punctuation or numbers, rewrite codes,
+  apply fuzzy matching, or search other regions/pages to rescue a failed
+  comparison. Preserve literal observations and decoded source text; retain
+  the normalized comparison evidence and named method separately.
+- Grounding status remains separate from candidate tier and product approval.
+  Unsupported product text is a visible row-level source flag and blocker;
+  it requires an attributed source review/correction through the existing
+  audited review flow. Generic acknowledgment cannot clear it. A source-flag
+  decision cannot approve a product or clear independent count discrepancies.
+- **Unavailable-text policy:** a scanned page, photo or empty text layer is
+  unavailable evidence, not proof of fabrication. It retains each line's
+  existing Certain/Probable/Uncertain tier and its normal selection policy;
+  no tier is demoted because independent text is unavailable. Use an existing
+  local OCR path only if already available; install no model and call no paid
+  provider. Preserve the unavailable status when no independent text exists.
+- Provide one distinct, attributed page-level `confirm_unavailable_page_text`
+  review action bound to the tenant, run, exact source hash and page, with
+  reviewer, reason and timestamp in append-only evidence. It satisfies the
+  unavailable-text review requirement for every affected row on that page;
+  no additional per-row grounding confirmation is required. It does not turn
+  unavailable text into a claimed text match, resolve unsupported text,
+  approve products, clear normal row decisions, or clear the item 3 count
+  blocker. A generic page/document acknowledgment is not this confirmation.
+  Each affected page needs its own confirmation; a new run requires its own
+  source-bound evidence.
 
 Expected files: a small `backend/source_checks.py` helper or
-`backend/uploads.py`, `backend/service.py`, `backend/tiers.py`,
-`backend/review_summary.py`, `backend/responses.py`, review controls, focused
-tests and any required migration/contracts.
+`backend/uploads.py`, `backend/service.py`, `backend/api_models.py`,
+`backend/models.py`, `backend/review_summary.py`, `backend/responses.py`,
+review controls, focused tests and any required migration/contracts.
 
 ## Item 6: bounded F7/F8 repairs
 
@@ -89,9 +137,19 @@ throwaway PostgreSQL cluster, dotenv/external-transport guards and headless
 browser bridge. Do not reuse an existing application's database or service.
 
 1. Keep goals 7/8 strict xfail until their original assertions pass through the
-   real processing routes, then remove only those markers. Add missing-count,
-   per-page mismatch, invented-region text, empty-text/photo and continuation
-   counting cases. Check count corrections/reconciliation cannot hide omissions.
+   real processing routes, then remove only those markers. Cover missing
+   counts, per-page/source-hash binding, zero count with product rows as a
+   mismatch, genuinely empty pages, continuation counting, and append-only
+   reviewer-count corrections. Prove a mismatch stays blocked in the old run
+   and a new source-bound run requires fresh checks rather than copying approval.
+   For grounding, test an invented product string inside an otherwise valid
+   real source region and a correct product string in that same region; the
+   invented text must be unsupported and the correct text supported. Test
+   case/whitespace equivalence, token boundaries and wrong-region/page text
+   without rewriting literal observations. On scanned/empty-text/photo pages,
+   preserve all three tiers, including Certain, and show that one attributed
+   page confirmation satisfies unavailable-text review for multiple rows while
+   product approvals, unsupported flags and a mismatched count remain blocked.
 2. Test labeled codes with and without pg_trgm, conflicting evidence and
    unlabeled dates/quantities. Exercise actual acknowledgment buttons against
    partial pages, document warnings and pages with no regions. Verify they never
@@ -103,12 +161,22 @@ browser bridge. Do not reuse an existing application's database or service.
    a separate throwaway database. Refuse any downgrade that would discard
    source-check or human-decision evidence.
 5. Give each item its own implementation commit; keep F7/F8 changes easy to
-   review. Run `pytest -m goal`, affected suites with explicit configurations,
-   changed browser controls and `git diff --check`. Regenerate the scorecard
-   from actual results, treating skips as blocked, and update the handoff.
+   review. Run the full backend (`pytest -c pytest.backend.ini
+   --isolated-backend`) and `pytest -m goal`, affected suites with explicit
+   configurations, changed browser controls and `git diff --check`. Verify
+   the inherited `backend-goal` CI job runs both full suites including B's new
+   cases at B's head; local output alone does not satisfy the CI prerequisite.
+   Name CI and local coverage separately, including the documented CI browser
+   skip and the actual local browser result. Regenerate the scorecard from
+   actual results, treating skips as blocked, and update the handoff. In the
+   first B contract-changing commit, regenerate `contracts/local-backend-openapi.json`
+   and add a comparison with `app.openapi()` to close A's non-blocking snapshot nit.
 6. Reply to review comments as **Codex · goal gaps:** and post the measured
    scorecard when B is ready. Merge requires `Approved at <commit>` matching
    B's current head with passing tests; Carlos's hold stops work.
 
 This publication requests plan review only. No B behavior is implemented,
 no runtime is changed, and no new accuracy or production result is claimed.
+Only documentation is added or changed relative to the merged base. This
+plan update is checked with `git diff --check`; local runtime suites and new
+B tests wait for Claudio's confirmation. No B code starts before that comment.

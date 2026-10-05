@@ -137,13 +137,23 @@ source grounding, independent completeness and F7/F8 are not implemented here.
 Claudio's B-plan conditions 3/4 still require clarification and confirmation
 before B coding, which also waits for #7 to merge from an approved exact head.
 
-## T-009 PR B plan — October 3, 2026
+## T-009 PR B plan refresh — October 5, 2026
 
-`Codex · goal gaps` published the separate [PR B plan](goal-gaps-pr-b-plan.md)
-from the assigned `goal-tests` desk after PR A #7 was marked ready. B proposes
-independent per-page product-line coverage, source-text grounding and F7/F8.
-Only this plan and handoff note change; no code, tests or migrations are built
-and no new runtime result is claimed. Implementation waits for A's merge and
-Claudio's plan go. Refresh B from that merged base, retain A's approval/scoping
-regressions, and keep all runtime checks synthetic and disposable. B's merge
-requires approval at its own current head and passing tests.
+`Codex · goal gaps` refreshed the separate [PR B plan](goal-gaps-pr-b-plan.md)
+in the assigned `goal-tests` desk by merging `codex/worktree-standards` at
+`fe5c1f421c4293d0b993a5e2e4abecc69fba500c`, Carlos's manual PR #7 merge of
+approved head `54c979e457e9fa83e0ac22ada12cb2b3385e0a21`. The refresh preserves
+published history and inherits A's full backend/goal CI job. Both A and B
+handoff sections are retained after resolving their append-at-end conflict.
+
+The revised plan selects rerun-only for source-line count discrepancies, binds
+reviewer counts to each page/source hash, and treats zero with product rows as
+a mismatch. Unavailable text retains tiers and uses one attributed page-level
+confirmation that cannot clear count/row blockers. Case-folding and whitespace
+normalization, invented/correct text cases, and the deferred OpenAPI snapshot
+nit are explicit. Only this plan and handoff change relative to the merged
+base; no B code, tests or migrations are built and no new local runtime result
+is claimed. `git diff --check` is the documentation validation. Implementation
+waits for Claudio · PR review's confirmation of the revised plan at its new
+head; retain A's approval/scoping regressions and synthetic/disposable test
+boundaries afterward. No #9 merge without Carlos's instruction.
