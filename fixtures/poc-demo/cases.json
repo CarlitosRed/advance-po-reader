@@ -54,6 +54,51 @@
           "description": "Fictional delivery instruction"
         }
       ]
+    },
+    {
+      "id": "demo-all-tabs",
+      "title": "Every kind of line: sure, check and not products",
+      "rows": [
+        {
+          "product": 10,
+          "mode": "certain"
+        },
+        {
+          "product": 11,
+          "mode": "certain"
+        },
+        {
+          "product": 12,
+          "mode": "certain"
+        },
+        {
+          "product": 20,
+          "mode": "probable"
+        },
+        {
+          "product": 30,
+          "mode": "embedded"
+        },
+        {
+          "mode": "uncertain",
+          "description": "Fictional unlisted accessory"
+        },
+        {
+          "mode": "uncertain",
+          "kind": "note",
+          "description": "Deliver to dock 4 before noon"
+        },
+        {
+          "mode": "uncertain",
+          "kind": "charge",
+          "description": "Freight and handling"
+        },
+        {
+          "mode": "uncertain",
+          "kind": "total",
+          "description": "Order total"
+        }
+      ]
     }
   ]
 }

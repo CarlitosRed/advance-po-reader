@@ -4,7 +4,8 @@ const pocElement = id => document.getElementById(id);
 const POC_SAMPLE_LABELS = {
   "demo-three-tiers": "Order with clear codes",
   "demo-description": "Order with codes inside descriptions",
-  "demo-three-answers": "Order with unclear lines"
+  "demo-three-answers": "Order with unclear lines",
+  "demo-all-tabs": "Order with every kind of line"
 };
 const POC_MESSAGES = {
   poc_unknown_fixture_bytes: "This free preview can only read the sample orders. Open one under “Try a sample order”.",

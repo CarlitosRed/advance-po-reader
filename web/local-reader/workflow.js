@@ -1,4 +1,104 @@
 "use strict";
+/* tabs:start */
+// Pure helpers for the three-tab review page: no DOM, no network, no global state.
+// A row belongs to exactly one tab. Only `approve` events ever reach the spreadsheet.
+const TAB_IDS = ["sure", "check", "not"];
+const EXCLUDING_ACTIONS = ["not_a_product", "not_product"];
+const BINDING_ACTIONS_UI = ["this_is_product", "new_product"];
+const KIND_LABELS = {charge: "Charge", tax: "Tax", subtotal: "Subtotal", total: "Total", note: "Note"};
+
+function rowRoleOf(row, schemaVersion) {
+  if (schemaVersion === "1.2") return row.row_role;
+  if (row.row_kind === "product") return "product_item";
+  if (["charge", "tax", "subtotal", "total", "note"].includes(row.row_kind)) return "document_detail";
+  return "unknown";
+}
+function rowStatusOf(row, events, suggestion) {
+  const own = events.filter(e => e.row_id === row.row_id);
+  const event = own.length ? own[own.length - 1] : null;
+  if (event?.action === "no_match" && (row.row_kind === "unknown" || suggestion?.tier === "uncertain")) return "unresolved";
+  return event && ["approve", "no_match", "not_a_product", "not_product"].includes(event.action) ? event.action : "unresolved";
+}
+function candidatesOf(rowId, suggestions, events) {
+  const original = suggestions.find(s => s.row_id === rowId)?.candidates || [];
+  const proposals = events.filter(e => e.row_id === rowId && ["propose_candidate", "this_is_product", "new_product"].includes(e.action))
+    .flatMap(e => e.new_value.candidates);
+  return [...new Map([...original, ...proposals].map(c => [c.candidate_id, c])).values()];
+}
+function boundCandidateOf(rowId, events) {
+  const last = events.filter(e => e.row_id === rowId && [...BINDING_ACTIONS_UI, ...EXCLUDING_ACTIONS].includes(e.action)).at(-1);
+  return last && BINDING_ACTIONS_UI.includes(last.action) ? (last.new_value?.candidates?.[0]?.candidate_id ?? null) : null;
+}
+function emptyMarks() { return {agreed: [], flagged: [], moved: []}; }
+function assignTabs(payload, suggestions, events, marks) {
+  const kept = {...emptyMarks(), ...(marks || {})};
+  const groups = {sure: [], check: [], not: []};
+  let lineIndex = 0;
+  for (const row of payload.rows) {
+    const role = rowRoleOf(row, payload.schema_version);
+    if (role === "continuation") continue;
+    const suggestion = suggestions.find(s => s.row_id === row.row_id) || null;
+    const entry = {row, role, suggestion, tier: suggestion?.tier || "uncertain", lineIndex: -1, kind: "product",
+      status: "unresolved", candidates: [], boundId: null, agreed: false, flagged: false, done: false, tab: "check"};
+    if (role === "document_detail") {
+      entry.kind = "system";
+      entry.tab = "not";
+      entry.agreed = kept.agreed.includes(row.row_id);
+      entry.flagged = kept.flagged.includes(row.row_id);
+      entry.done = entry.agreed || entry.flagged;
+    } else {
+      entry.lineIndex = lineIndex++;
+      entry.status = rowStatusOf(row, events, suggestion);
+      entry.candidates = candidatesOf(row.row_id, suggestions, events);
+      entry.boundId = boundCandidateOf(row.row_id, events);
+      const excluded = ["not_a_product", "not_product", "no_match"].includes(entry.status);
+      if (kept.moved.includes(row.row_id)) entry.tab = "check";
+      else if (excluded) { entry.tab = "not"; entry.kind = "person"; }
+      else if (entry.boundId) entry.tab = "check";
+      else entry.tab = entry.tier === "certain" ? "sure" : "check";
+      entry.done = entry.tab === "not" ? true : entry.status === "approve";
+    }
+    groups[entry.tab].push(entry);
+  }
+  return groups;
+}
+function tabCounts(groups) {
+  return Object.fromEntries(TAB_IDS.map(id => [id, {total: groups[id].length, todo: groups[id].filter(e => !e.done).length}]));
+}
+function bulkTargets(entries, visibleIds) {
+  const visible = new Set(visibleIds);
+  return entries.filter(e => e.tab === "sure" && e.status === "unresolved" && visible.has(e.row.row_id) &&
+    e.suggestion?.suggested_candidate_id).map(e => ({rowId: e.row.row_id, candidateId: e.suggestion.suggested_candidate_id}));
+}
+function regionBox(payload, row) {
+  const ref = row.evidence?.[0];
+  if (!ref) return null;
+  const page = payload.pages.find(p => p.page_number === ref.page_number);
+  const region = page?.regions.find(r => r.region_reference === ref.region_reference);
+  return region?.bbox || null;
+}
+// Crop rectangle (in image pixels) around a normalized row box, plus the highlight inside the crop.
+function snapshotGeometry(bbox, width, height, options = {}) {
+  const whole = {sx: 0, sy: 0, sw: width, sh: height, highlight: null};
+  if (!bbox || !(width > 0) || !(height > 0)) return whole;
+  const clamp = value => Math.min(1, Math.max(0, Number(value)));
+  const [x0, y0, x1, y1] = [bbox.x0, bbox.y0, bbox.x1, bbox.y1].map(clamp);
+  if (![x0, y0, x1, y1].every(Number.isFinite) || !(x1 > x0) || !(y1 > y0)) return whole;
+  const box = {x: Math.round(x0 * width), y: Math.round(y0 * height), w: Math.max(1, Math.round((x1 - x0) * width)), h: Math.max(1, Math.round((y1 - y0) * height))};
+  if (options.page) return {...whole, highlight: box};
+  const padY = options.padY ?? Math.min(0.04, Math.max(0.012, (y1 - y0) * 0.5));
+  const minWidth = options.minWidth ?? 0.6;
+  let left = Math.max(0, x0 - 0.012), right = Math.min(1, x1 + 0.012);
+  if (right - left < minWidth) {
+    left = Math.max(0, Math.min(1 - minWidth, (x0 + x1) / 2 - minWidth / 2));
+    right = left + minWidth;
+  }
+  const top = Math.max(0, y0 - padY), bottom = Math.min(1, y1 + padY);
+  const sx = Math.round(left * width), sy = Math.round(top * height);
+  const sw = Math.max(1, Math.round((right - left) * width)), sh = Math.max(1, Math.round((bottom - top) * height));
+  return {sx, sy, sw, sh, highlight: {x: box.x - sx, y: box.y - sy, w: box.w, h: box.h}};
+}
+/* tabs:end */
 let statusPollTimer = null;
 let pollGeneration = 0;
 
@@ -129,10 +229,10 @@ function renderSummary() {
     `<details class="more"><summary>Details</summary><dl class="detail-grid"><div><dt>Source file</dt><dd>${escapeHTML(state.name)}</dd></div><div><dt>SHA-256</dt><dd>${escapeHTML(state.source.sha256)}</dd></div><div><dt>Run id</dt><dd>${escapeHTML(state.run.id)}</dd></div></dl>${auditHTML()}</details>`;
   if (pending.length) {
     const done = lines.length - pending.length;
-    $("view").innerHTML = `${bar}<section class="panel summary-left"><p class="eyebrow">ALMOST THERE</p><h1>${pending.length} ${pending.length === 1 ? "line" : "lines"} left to check</h1><p class="hint">${done} of ${lines.length} checked. Products are listed here once every line has an answer.</p><progress max="${lines.length}" value="${done}" aria-label="${done} of ${lines.length} lines checked"></progress><div class="line-list">${pending.map(id => { const index = lines.findIndex(row => row.row_id === id); return index < 0 ? "" : `<button class="queue-button" data-row="${index}"><span>Line ${index + 1} · ${escapeHTML(lineTitle(lines[index]))}</span><small>${pillHTML(lineModel(lines[index]))}</small></button>`; }).join("")}</div><div class="stack"><button id="back-review" class="button primary big">Continue checking</button><button id="finish-review" class="button secondary big" disabled>Finish review</button></div></section>${details}`;
+    $("view").innerHTML = `${bar}<section class="panel summary-left"><p class="eyebrow">ALMOST THERE</p><h1>${pending.length} ${pending.length === 1 ? "line" : "lines"} left to check</h1><p class="hint">${done} of ${lines.length} checked. Products are listed here once every line has an answer.</p><progress max="${lines.length}" value="${done}" aria-label="${done} of ${lines.length} lines checked"></progress><div class="line-list">${pending.map(id => { const index = lines.findIndex(row => row.row_id === id); return index < 0 ? "" : `<button class="queue-button" data-row="${index}"><span>Line ${index + 1} · ${escapeHTML(lineTitle(lines[index]))}</span><small>${pillHTML(lineModel(lines[index]))}</small></button>`; }).join("")}</div><div class="stack"><button id="back-review" class="button primary big">Continue checking</button><button id="finish-review" class="button secondary big" disabled>Finish review</button></div></section>${flaggedNoticeHTML()}${details}`;
     wireReviewerBar(() => renderSummary());
-    $("back-review").onclick = () => { state.row = Math.max(0, lines.findIndex(row => row.row_id === pending[0])); renderDocument(); };
-    for (const button of document.querySelectorAll("[data-row]")) button.onclick = () => { state.row = Number(button.dataset.row); renderDocument(); };
+    $("back-review").onclick = () => { state.mode = "tabs"; renderDocument(); };
+    for (const button of document.querySelectorAll("[data-row]")) button.onclick = () => { state.mode = "line"; state.row = Number(button.dataset.row); renderDocument(); };
     return;
   }
   const filled = value => value !== null && value !== undefined && String(value).trim() !== "";
@@ -151,10 +251,10 @@ function renderSummary() {
   const table = items.length ? `<div class="table-wrap"><table class="result-table"><thead><tr><th scope="col">ID</th><th scope="col">Product</th><th scope="col">Qty</th><th scope="col">Price</th></tr></thead><tbody>${items.map(item => `<tr><td class="cell-id">${escapeHTML(item.id)}</td><td>${escapeHTML(item.name)}${item.printed ? `<small>As printed: ${escapeHTML(item.printed)}</small>` : ""}</td><td>${escapeHTML(item.shown.text)}${item.shown.check ? ' <span class="check-flag">Check</span>' : ""}</td><td>${escapeHTML(item.price)}</td></tr>`).join("")}</tbody></table></div>` : '<div class="panel empty">No line was confirmed as a product.</div>';
   $("view").innerHTML = `${bar}<section class="done-head"><span class="check big-check" aria-hidden="true">✓</span><h1>${items.length} ${items.length === 1 ? "product" : "products"} confirmed</h1><p class="hint">${excluded ? `${excluded} ${excluded === 1 ? "line was" : "lines were"} marked “not a product”. ` : ""}${resolved ? "Review saved." : "Every line has an answer."}</p></section>
     ${resolved ? "" : '<section class="panel finish"><h2>One last step</h2><p>Finish the review to lock your answers. They cannot be changed afterwards.</p><div id="document-acknowledgements"></div><button id="finish-review" class="button primary big"' + (summary.can_finish_review ? "" : " disabled") + '>Finish review</button></section>'}
-    ${table}
-    <div class="stack"><button id="download-csv" class="button ${resolved ? "primary" : "secondary"} big" ${items.length ? "" : "disabled"}>Download as spreadsheet</button><button id="back-review" class="button secondary big">← Back to the lines</button></div>${details}`;
+    ${flaggedNoticeHTML()}${table}
+    <div class="stack"><button id="download-csv" class="button ${resolved ? "primary" : "secondary"} big" ${items.length ? "" : "disabled"}>Download as spreadsheet</button><button id="back-review" class="button secondary big">← Back to the tabs</button></div>${details}`;
   wireReviewerBar(() => renderSummary());
-  $("back-review").onclick = () => renderDocument();
+  $("back-review").onclick = () => { state.mode = "tabs"; renderDocument(); };
   $("download-csv").onclick = () => downloadCSV(items);
   if (resolved) return;
   const partial = payload.pages.filter(page => page.state === "partial" && !state.events.some(event =>
@@ -250,6 +350,392 @@ function enhancePending() {
       fail(error);
     } finally { state.busy = false; }
   };
+}
+
+/* ---------- Three-tab review page ---------- */
+const TAB_INFO = {
+  sure: {title: "Sure", tone: "green", color: "#167055",
+    intro: "The printed code matches exactly one product. Look at the picture, then confirm."},
+  check: {title: "Check", tone: "amber", color: "#c27a00",
+    intro: "Likely or unclear matches. Confirm a suggestion, pick another product, or mark the line as not a product."},
+  not: {title: "Not products", tone: "gray", color: "#4d5f70",
+    intro: "Totals, notes, charges, and lines marked as not a product. Agree, or say if one is really a product."}
+};
+const pageImages = new Map();
+
+function marksKey() { return "advance-po-reader.marks." + (state.run?.id || ""); }
+function loadMarks() {
+  if (state.marks?.runId === state.run.id) return state.marks.value;
+  let value = emptyMarks();
+  try { value = {...emptyMarks(), ...JSON.parse(localStorage.getItem(marksKey()) || "{}")}; } catch {}
+  state.marks = {runId: state.run.id, value};
+  return value;
+}
+function saveMarks() {
+  try { localStorage.setItem(marksKey(), JSON.stringify(state.marks.value)); } catch {}
+}
+function toggleMark(list, rowId, on) {
+  const marks = loadMarks();
+  marks[list] = marks[list].filter(id => id !== rowId);
+  if (on) marks[list].push(rowId);
+  saveMarks();
+}
+
+/* A page is fetched once and kept decoded; every row on it is cropped from that one picture. */
+function pageImage(page) {
+  const key = state.source.id + ":" + page;
+  if (!pageImages.has(key)) {
+    const loading = (async () => {
+      const blob = await api("/documents/" + state.source.id + "/pages/" + page, {binary: true});
+      if (!(blob.type || "").startsWith("image/")) throw new Error("preview_unavailable");
+      return createImageBitmap(blob);
+    })();
+    loading.catch(() => pageImages.delete(key));
+    pageImages.set(key, loading);
+    if (pageImages.size > 12) pageImages.delete(pageImages.keys().next().value);
+  }
+  return pageImages.get(key);
+}
+function drawSnapshot(canvas, image, bbox, color, options = {}) {
+  const g = snapshotGeometry(bbox, image.width, image.height, options);
+  canvas.width = g.sw; canvas.height = g.sh;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, g.sx, g.sy, g.sw, g.sh, 0, 0, g.sw, g.sh);
+  if (g.highlight) {
+    const {x, y, w, h} = g.highlight;
+    // Quiet everything except the row, then outline the row in the tab color.
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillRect(0, 0, g.sw, Math.max(0, y));
+    ctx.fillRect(0, y + h, g.sw, Math.max(0, g.sh - y - h));
+    ctx.fillRect(0, y, Math.max(0, x), h);
+    ctx.fillRect(x + w, y, Math.max(0, g.sw - x - w), h);
+    ctx.fillStyle = color + "22";
+    ctx.fillRect(x, y, w, h);
+    ctx.lineWidth = Math.max(3, Math.round(g.sw / 300));
+    ctx.strokeStyle = color;
+    ctx.strokeRect(x, y, w, h);
+  }
+  canvas.dataset.drawn = "1";
+}
+async function paintSnapshot(canvas) {
+  const frame = canvas.closest(".snap-frame");
+  frame.classList.remove("failed"); frame.classList.add("loading");
+  try {
+    const image = await pageImage(Number(canvas.dataset.page));
+    if (!canvas.isConnected) return;
+    drawSnapshot(canvas, image, canvas.dataset.bbox ? JSON.parse(canvas.dataset.bbox) : null, canvas.dataset.color);
+    frame.classList.remove("loading");
+  } catch {
+    if (!canvas.isConnected) return;
+    frame.classList.remove("loading"); frame.classList.add("failed");
+  }
+}
+function watchSnapshots(root) {
+  state.snapObserver?.disconnect();
+  const canvases = [...root.querySelectorAll("canvas.snap")];
+  if (!("IntersectionObserver" in window)) { canvases.forEach(paintSnapshot); return; }
+  state.snapObserver = new IntersectionObserver(items => {
+    for (const item of items) if (item.isIntersecting) { state.snapObserver.unobserve(item.target); paintSnapshot(item.target); }
+  }, {rootMargin: "600px 0px"});
+  canvases.forEach(canvas => state.snapObserver.observe(canvas));
+}
+
+function entryText(entry) {
+  const row = entry.row;
+  return [rowCode(row), row.description?.raw_value, ...entry.candidates.flatMap(c => [c.sku, c.description])].filter(Boolean).join(" ").toLowerCase();
+}
+function entryTitle(entry) {
+  const n = entry.lineIndex >= 0 ? "Line " + (entry.lineIndex + 1) : "Printed line";
+  return n + " · " + (entry.kind === "system" ? (KIND_LABELS[entry.row.row_kind] || "Not a product") : lineTitle(entry.row));
+}
+function snapshotHTML(entry, tab) {
+  const row = entry.row, ref = row.evidence?.[0], box = regionBox(state.result.extraction, row);
+  const page = ref?.page_number || 1;
+  return '<div class="snap-frame loading"><canvas class="snap" role="img" aria-label="Snapshot of ' + escapeHTML(entryTitle(entry)) + ' on page ' + page +
+    '" data-page="' + page + '" data-color="' + TAB_INFO[tab].color + '"' + (box ? ' data-bbox="' + escapeHTML(JSON.stringify(box)) + '"' : "") + '></canvas>' +
+    '<div class="snap-skeleton">Loading the picture…</div><div class="snap-fallback"><span>The picture did not load.</span> <button type="button" class="link-button" data-act="retry-snap">Try again</button></div></div>';
+}
+function productCardHTML(c, label, tone) {
+  return '<div class="proposal ' + tone + '"><span class="guess-label">' + label + '</span><strong class="guess-code">' + escapeHTML(c.sku) + '</strong><span class="guess-desc">' + escapeHTML(c.description) + '</span>' + (c.origin === "review" ? '<small>Added by a reviewer</small>' : "") + '</div>';
+}
+function editPanelHTML() {
+  const vendors = (state.catalogs || []).filter(v => !state.run.catalog_pool_id || (state.catalog?.vendor_ids || []).includes(v.id));
+  const vendorField = state.run.catalog_pool_id ? '<div class="field"><label>Which catalog<select name="vendor" required><option value="">Choose catalog</option>' + vendors.map(v => '<option value="' + escapeHTML(v.id) + '">' + escapeHTML(v.name) + '</option>').join("") + '</select></label></div>' : "";
+  return '<div class="answer-panel edit-panel"><form data-form="search" class="search-bar"><label class="sr-only">Search the catalog by code or name</label><input name="q" class="search-input" maxlength="120" placeholder="Search the catalog by code or name"><button class="button secondary">Search</button></form>' +
+    '<div class="search-results" data-results></div>' +
+    '<details class="more-inline"><summary>Not in the catalog? Add a new product</summary><form data-form="new" data-key="' + escapeHTML(crypto.randomUUID()) + '"><div class="field"><label>Product code<input name="sku" maxlength="200" required></label></div><div class="field"><label>Product description<input name="description" maxlength="4000" required></label></div>' + vendorField + '<button class="button secondary">Save new product</button></form></details></div>';
+}
+// Returns the pieces of one card: pill, printed facts, proposed product(s), action buttons and the optional edit panel.
+function cardParts(entry, tab, resolved) {
+  const row = entry.row, payload = state.result.extraction;
+  const open = Boolean(state.tabs.edit[row.row_id]);
+  const finished = '<p class="hint">This review is finished.</p>';
+  if (tab === "not") {
+    if (entry.kind === "system") {
+      const amount = effectiveValue(row, "line_total");
+      const body = '<dl class="facts">' + fact("Read as", escapeHTML(KIND_LABELS[row.row_kind] || "Not a product")) +
+        fact("Printed text", row.description?.raw_value ? escapeHTML(row.description.raw_value) : '<span class="none">Nothing printed</span>') +
+        (filledValue(amount) ? fact("Amount", escapeHTML(amount)) : "") + '</dl>';
+      const pill = entry.flagged ? '<span class="pill amber">Flagged as a product</span>'
+        : entry.agreed ? '<span class="pill gray">You agreed</span>' : '<span class="pill gray">Not a product</span>';
+      let actions;
+      if (resolved) actions = finished;
+      else if (entry.flagged) actions = '<p class="hint">Flagged on this device only. The server cannot reclassify this kind of line yet, so it is not in the spreadsheet.</p><button class="button secondary" data-act="unflag">Undo flag</button>';
+      else if (entry.agreed) actions = '<button class="button secondary" data-act="unagree">Undo</button>';
+      else actions = '<button class="button primary" data-act="agree">Agree, not a product</button><button class="button secondary" data-act="flag">Actually a product</button>';
+      return {pill, body, actions};
+    }
+    const who = state.events.filter(e => e.row_id === row.row_id && EXCLUDING_ACTIONS.includes(e.action)).at(-1)?.reviewer;
+    return {pill: '<span class="pill gray">Marked not a product</span>', body: factsHTML(row, payload, entry.role),
+      actions: (who ? '<p class="hint">Marked by ' + escapeHTML(who) + '.</p>' : "") + (resolved ? finished : '<button class="button secondary" data-act="edit">Actually a product</button>')};
+  }
+  const body = factsHTML(row, payload, entry.role);
+  if (entry.status === "approve" && !open) {
+    const approved = state.summary?.approved_products?.find(a => a.row_id === row.row_id)?.candidate;
+    return {pill: '<span class="pill green">Confirmed</span>', body,
+      proposal: approved ? '<div class="decided"><span class="check" aria-hidden="true">✓</span><p>Confirmed <strong>' + escapeHTML(approved.sku) + '</strong> · ' + escapeHTML(approved.description) + '</p></div>' : "",
+      actions: resolved ? finished : '<button class="button secondary" data-act="edit">Change</button>'};
+  }
+  const pill = tab === "sure" ? '<span class="pill green">Sure</span>' : '<span class="pill amber">' + (entry.tier === "probable" ? "Probably right" : "Needs a look") + '</span>';
+  const shown = entry.boundId ? entry.candidates.filter(c => c.candidate_id === entry.boundId)
+    : tab === "sure" ? entry.candidates.filter(c => c.candidate_id === entry.suggestion?.suggested_candidate_id).slice(0, 1)
+    : entry.candidates.slice(0, 3);
+  const label = entry.boundId ? "Your choice · please confirm" : tab === "sure" ? "Matches the printed code" : entry.tier === "probable" ? "Best guess · please check" : "Possible match";
+  let proposal = shown.map((c, i) => productCardHTML(c, i === 0 ? label : "Also possible", tab === "sure" ? "green" : "amber") +
+    (resolved ? "" : '<button class="button primary confirm-button" data-act="confirm" data-cid="' + escapeHTML(c.candidate_id) + '">' + (shown.length > 1 ? "Confirm this one" : "Confirm") + '</button>')).join("");
+  if (!shown.length) proposal = '<p class="hint">No suggestion. Search the catalog, or mark the line as not a product.</p>';
+  let actions;
+  if (resolved) actions = finished;
+  else if (tab === "sure") actions = '<button class="link-button" data-act="move">Not right? Check it</button>';
+  else actions = '<button class="button secondary" data-act="edit">' + (shown.length ? "Change product" : "Find the product") + '</button><button class="button secondary" data-act="not-product">Not a product</button>';
+  const panel = !resolved && tab === "check" && (open || !shown.length) ? editPanelHTML() : "";
+  return {pill, body, proposal, actions, panel};
+}
+function tabCardHTML(entry, tab, resolved) {
+  const parts = cardParts(entry, tab, resolved);
+  return '<article class="tab-card ' + TAB_INFO[tab].tone + '" data-row-id="' + escapeHTML(entry.row.row_id) + '" data-pending="' + (entry.done ? "0" : "1") + '" data-search="' + escapeHTML(entryText(entry)) + '">' +
+    '<div class="card-head"><h3 class="line-title">' + escapeHTML(entryTitle(entry)) + '</h3>' + parts.pill + '</div>' +
+    snapshotHTML(entry, tab) +
+    '<div class="snap-tools"><button type="button" class="link-button" data-act="enlarge">Enlarge</button>' + (entry.lineIndex >= 0 ? '<button type="button" class="link-button" data-act="open-line">Open line</button>' : "") + '</div>' +
+    '<div class="tab-card-body"><div class="tab-facts">' + parts.body + '</div><div class="tab-decision">' + (parts.proposal || "") + '<div class="tab-actions">' + parts.actions + '</div></div></div>' + (parts.panel || "") + '</article>';
+}
+function flaggedNoticeHTML() {
+  if (!state.result?.extraction || !state.run) return "";
+  const ids = loadMarks().flagged;
+  const rows = state.result.extraction.rows.filter(row => ids.includes(row.row_id));
+  if (!rows.length) return "";
+  return '<div class="callout">' + rows.length + (rows.length === 1 ? " line was" : " lines were") + ' flagged as a possible product on this device: ' + rows.map(row => escapeHTML(row.description?.raw_value || "printed line")).join("; ") + '. The server cannot add them yet, so they are not in the spreadsheet.</div>';
+}
+
+function renderTabs() {
+  stopStatusPolling(); revokeImages(); rememberDocument();
+  const payload = state.result.extraction;
+  if (!state.reviewer.trim()) { renderReviewerGate(() => renderDocument()); return; }
+  const resolved = state.run.review_state === "resolved";
+  const groups = assignTabs(payload, state.suggestions, state.events, loadMarks());
+  const counts = tabCounts(groups);
+  const ui = state.tabs;
+  if (!TAB_IDS.includes(ui.tab)) ui.tab = TAB_IDS.find(id => counts[id].todo > 0) || "sure";
+  const tab = ui.tab;
+  const lines = Object.values(groups).flat().filter(e => e.lineIndex >= 0);
+  const left = lines.filter(e => e.status === "unresolved").length;
+  const total = lines.length;
+  const show = ui.show[tab];
+  const list = groups[tab].filter(e => show === "all" || !e.done);
+  const tabs = TAB_IDS.map(id => '<button role="tab" id="tab-' + id + '" class="tab ' + TAB_INFO[id].tone + '" aria-selected="' + (id === tab) + '" aria-controls="tab-panel" data-tab="' + id + '" tabindex="' + (id === tab ? 0 : -1) + '"><span class="tab-name">' + TAB_INFO[id].title + '</span><strong class="tab-count">' + counts[id].total + '</strong><small>' + (counts[id].todo ? counts[id].todo + " to do" : (counts[id].total ? "all done" : "none")) + '</small></button>').join("");
+  const bulk = tab === "sure" && !resolved ? '<button id="bulk-confirm" class="button primary">Confirm all visible</button>' : "";
+  const toolbar = '<div class="tab-toolbar"><label class="sr-only" for="tab-filter">Filter lines</label><input id="tab-filter" class="search-input" type="search" maxlength="80" placeholder="Filter lines" value="' + escapeHTML(ui.query) + '"><div class="segmented" role="group" aria-label="Which lines"><button type="button" data-show="todo" aria-pressed="' + (show === "todo") + '">To do</button><button type="button" data-show="all" aria-pressed="' + (show === "all") + '">All</button></div>' + bulk + '</div>';
+  const empty = !groups[tab].length ? "Nothing here for this document." : (!list.length ? "Everything in this tab is done." : "");
+  $("view").innerHTML = reviewerBarHTML() +
+    '<section class="progress-block"><div class="progress-text"><strong>' + (left ? left + (left === 1 ? " line" : " lines") + " left to check" : "All lines checked") + '</strong> · ' + (total - left) + ' of ' + total + ' done</div><button id="reviewed-products" class="link-button">' + (resolved ? "Results" : "Summary") + '</button></section>' +
+    '<progress id="review-progress" max="' + Math.max(total, 1) + '" value="' + (total - left) + '" aria-label="' + (total - left) + ' of ' + total + ' lines checked"></progress>' +
+    '<div class="tablist" role="tablist" aria-label="Lines by confidence">' + tabs + '</div>' +
+    '<section id="tab-panel" class="tab-panel ' + TAB_INFO[tab].tone + '" role="tabpanel" aria-labelledby="tab-' + tab + '"><p class="tab-intro">' + TAB_INFO[tab].intro + '</p>' + toolbar +
+    '<p class="hint" id="tab-empty"' + (empty ? "" : " hidden") + '>' + empty + '</p><div id="tab-cards">' + list.map(e => tabCardHTML(e, tab, resolved)).join("") + '</div></section>';
+  wireReviewerBar(() => renderDocument());
+  $("reviewed-products").onclick = () => renderSummary();
+  wireTabs(groups, tab);
+  applyFilter();
+  watchSnapshots($("tab-cards"));
+}
+function applyFilter() {
+  const query = state.tabs.query.trim().toLowerCase();
+  let visible = 0;
+  const cards = [...document.querySelectorAll("#tab-cards .tab-card")];
+  for (const card of cards) {
+    const match = !query || card.dataset.search.includes(query);
+    card.hidden = !match;
+    if (match) visible++;
+  }
+  const empty = $("tab-empty");
+  if (empty && cards.length) {
+    empty.hidden = visible > 0;
+    if (!visible) empty.textContent = "No line matches the filter.";
+  }
+  const bulk = $("bulk-confirm");
+  if (bulk) {
+    const n = document.querySelectorAll('#tab-cards .tab-card:not([hidden])[data-pending="1"]').length;
+    bulk.textContent = n ? "Confirm all visible (" + n + ")" : "Confirm all visible";
+    bulk.disabled = !n;
+  }
+}
+function wireTabs(groups, tab) {
+  const entries = Object.values(groups).flat();
+  const find = id => entries.find(e => e.row.row_id === id);
+  for (const button of document.querySelectorAll("[data-tab]")) button.onclick = () => { state.tabs.tab = button.dataset.tab; renderDocument(); };
+  $("view").querySelector(".tablist").onkeydown = event => {
+    const step = {ArrowRight: 1, ArrowLeft: -1}[event.key];
+    if (!step) return;
+    event.preventDefault();
+    state.tabs.tab = TAB_IDS[(TAB_IDS.indexOf(tab) + step + TAB_IDS.length) % TAB_IDS.length];
+    renderDocument();
+    $("tab-" + state.tabs.tab)?.focus();
+  };
+  for (const button of document.querySelectorAll("[data-show]")) button.onclick = () => { state.tabs.show[tab] = button.dataset.show; renderDocument(); };
+  $("tab-filter").oninput = event => { state.tabs.query = event.target.value; applyFilter(); };
+  if ($("bulk-confirm")) $("bulk-confirm").onclick = () => bulkConfirm(groups);
+  const cards = $("tab-cards");
+  cards.onclick = event => {
+    const button = event.target.closest("[data-act]");
+    const card = event.target.closest(".tab-card");
+    if (!button || !card) return;
+    const entry = find(card.dataset.rowId);
+    if (entry) handleTabAction(button, card, entry, tab);
+  };
+  cards.onsubmit = event => {
+    event.preventDefault();
+    const form = event.target.closest("[data-form]");
+    const card = event.target.closest(".tab-card");
+    const entry = card && find(card.dataset.rowId);
+    if (form && entry) handleTabForm(form, card, entry);
+  };
+}
+async function reviewAction(work) {
+  if (state.busy) return;
+  state.busy = true; clearMessages();
+  try { await work(); }
+  catch (error) {
+    try { await refreshAfterReview(); } catch {}
+    fail(error);
+    if (state.result?.extraction && state.mode === "tabs") renderDocument();
+  } finally { state.busy = false; }
+}
+async function postReview(action, extra = {}, row = null) {
+  const body = {action, ...readAttribution(), evidence_reference: row?.evidence || [], ...(row ? {row_id: row.row_id} : {}), ...extra};
+  return api("/runs/" + state.run.id + "/reviews", {method: "POST", json: body});
+}
+async function refreshAfterReview() {
+  state.run = await api("/runs/" + state.run.id);
+  await loadRun();
+  state.reason = "";
+}
+// One click on a suggestion is the human choice. An unclear line first records that exact choice, as the backend requires.
+async function confirmEntry(entry, candidateId) {
+  if (entry.tier === "uncertain" && entry.boundId !== candidateId) await postReview("this_is_product", {catalog_id: candidateId}, entry.row);
+  await postReview("approve", {selected_candidate_id: candidateId}, entry.row);
+}
+function bulkConfirm(groups) {
+  const visible = [...document.querySelectorAll("#tab-cards .tab-card:not([hidden])")].map(card => card.dataset.rowId);
+  const targets = bulkTargets(groups.sure, visible);
+  if (!targets.length) return;
+  reviewAction(async () => {
+    let saved = 0;
+    try {
+      for (const target of targets) {
+        const entry = groups.sure.find(e => e.row.row_id === target.rowId);
+        await postReview("approve", {selected_candidate_id: target.candidateId}, entry.row);
+        saved++;
+      }
+    } finally {
+      if (saved) await refreshAfterReview();
+    }
+    toast(saved + (saved === 1 ? " line confirmed." : " lines confirmed."));
+    renderDocument();
+  });
+}
+function handleTabAction(button, card, entry, tab) {
+  const rowId = entry.row.row_id, act = button.dataset.act;
+  if (act === "retry-snap") { pageImages.delete(state.source.id + ":" + (entry.row.evidence?.[0]?.page_number || 1)); paintSnapshot(card.querySelector("canvas.snap")); return; }
+  if (act === "enlarge") { openSnapshot(entry, tab); return; }
+  if (act === "open-line") { state.mode = "line"; state.row = entry.lineIndex; state.page = entry.row.evidence?.[0]?.page_number || state.page; renderDocument(); return; }
+  if (act === "agree") { toggleMark("agreed", rowId, true); renderDocument(); return; }
+  if (act === "unagree") { toggleMark("agreed", rowId, false); renderDocument(); return; }
+  if (act === "flag") { toggleMark("flagged", rowId, true); renderDocument(); return; }
+  if (act === "unflag") { toggleMark("flagged", rowId, false); renderDocument(); return; }
+  if (act === "move") { toggleMark("moved", rowId, true); state.tabs.tab = "check"; renderDocument(); return; }
+  if (act === "edit") { toggleMark("moved", rowId, true); state.tabs.edit[rowId] = true; state.tabs.tab = "check"; renderDocument(); return; }
+  if (act === "confirm") {
+    reviewAction(async () => {
+      await confirmEntry(entry, button.dataset.cid);
+      await refreshAfterReview();
+      delete state.tabs.edit[rowId];
+      toast("Confirmed.");
+      renderDocument();
+    });
+    return;
+  }
+  if (act === "not-product") {
+    reviewAction(async () => {
+      await postReview("not_a_product", {}, entry.row);
+      await refreshAfterReview();
+      toggleMark("moved", rowId, false);
+      delete state.tabs.edit[rowId];
+      toast("Moved to Not products.");
+      renderDocument();
+    });
+    return;
+  }
+  if (act === "choose") {
+    reviewAction(async () => {
+      await postReview("this_is_product", {catalog_id: button.dataset.cid}, entry.row);
+      await refreshAfterReview();
+      delete state.tabs.edit[rowId];
+      toast("Choice saved. Confirm it to finish this line.");
+      renderDocument();
+    });
+  }
+}
+function handleTabForm(form, card, entry) {
+  const row = entry.row;
+  if (form.dataset.form === "search") {
+    const target = card.querySelector("[data-results]");
+    const runId = state.run.id;
+    const query = state.run.catalog_pool_id ? "pool_id=" + state.run.catalog_pool_id : "vendor_id=" + state.run.vendor_id;
+    api("/website/catalog?" + query + "&q=" + encodeURIComponent(form.elements.q.value)).then(result => {
+      if (!target.isConnected || state.run.id !== runId) return;
+      target.innerHTML = result.products.map(p => '<div class="product-row"><div class="product-copy"><span class="product-id">' + escapeHTML(p.sku) + '</span><strong>' + escapeHTML(p.description) + '</strong></div><button class="button secondary" data-act="choose" data-cid="' + escapeHTML(p.id) + '">Choose</button></div>').join("") || '<p class="hint">No products found. Try fewer letters, or add it as a new product.</p>';
+    }).catch(fail);
+    return;
+  }
+  const vendor = form.elements.vendor?.value;
+  if (state.run.catalog_pool_id && !vendor) { fail(new Error("choose_catalog_vendor")); return; }
+  reviewAction(async () => {
+    await postReview("new_product", {product: {sku: form.elements.sku.value, description: form.elements.description.value}, decision_key: form.dataset.key, ...(vendor ? {vendor_id: vendor} : {})}, row);
+    await refreshAfterReview();
+    delete state.tabs.edit[row.row_id];
+    toast("New product saved. Confirm it to finish this line.");
+    renderDocument();
+  });
+}
+async function openSnapshot(entry, tab) {
+  const page = entry.row.evidence?.[0]?.page_number || 1;
+  const box = regionBox(state.result.extraction, entry.row);
+  $("dialog-title").textContent = entryTitle(entry);
+  $("dialog-content").innerHTML = '<div class="segmented zoom-switch" role="group" aria-label="View"><button type="button" data-zoom="row" aria-pressed="true">This line</button><button type="button" data-zoom="page" aria-pressed="false">Whole page ' + page + '</button></div><div class="enlarged-source"><div class="snap-frame loading"><canvas class="snap zoom" role="img" aria-label="Enlarged snapshot"></canvas><div class="snap-skeleton">Loading the picture…</div><div class="snap-fallback"><span>The picture did not load.</span></div></div></div>';
+  $("detail-dialog").showModal();
+  const canvas = $("dialog-content").querySelector("canvas"), frame = canvas.closest(".snap-frame");
+  const paint = async mode => {
+    try {
+      const image = await pageImage(page);
+      drawSnapshot(canvas, image, box, TAB_INFO[tab].color, mode === "page" ? {page: true} : {padY: 0.07, minWidth: 0.85});
+      frame.classList.remove("loading", "failed");
+    } catch { frame.classList.remove("loading"); frame.classList.add("failed"); }
+  };
+  for (const button of $("dialog-content").querySelectorAll("[data-zoom]")) button.onclick = () => {
+    for (const other of $("dialog-content").querySelectorAll("[data-zoom]")) other.setAttribute("aria-pressed", String(other === button));
+    paint(button.dataset.zoom);
+  };
+  paint("row");
 }
 
 window.addEventListener("pagehide", stopStatusPolling);

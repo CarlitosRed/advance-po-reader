@@ -33,7 +33,7 @@ fs.mkdirSync(output, {recursive:true});
   };
   const openCase = async index => {
     await page.goto(base + "/poc-demo");
-    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 3);
+    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 4);
     const caseIDs = ["demo-three-tiers", "demo-description", "demo-three-answers"];
     await page.setInputFiles("#poc-file", path.join(process.cwd(), "data", "poc-demo", "generated", caseIDs[index] + ".pdf"));
     await page.click("#poc-submit");
@@ -43,7 +43,7 @@ fs.mkdirSync(output, {recursive:true});
   };
   try {
     await page.goto(base + "/poc-demo");
-    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 3);
+    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 4);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     await screenshot("phone-entry.png");
     await openCase(0);
@@ -138,7 +138,7 @@ fs.mkdirSync(output, {recursive:true});
 
     for (const suffix of ["pdf","png","jpg"]) {
       await page.goto(base + "/poc-demo");
-      await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 3);
+      await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 4);
       await page.setInputFiles("#poc-file", path.join(process.cwd(),"data","poc-demo","generated","demo-three-tiers." + suffix));
       await page.click("#poc-submit"); await page.waitForSelector("#approve-row");
       assert.equal(await page.evaluate(() => state.run.provider), "synthetic");

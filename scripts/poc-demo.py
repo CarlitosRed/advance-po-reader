@@ -189,7 +189,7 @@ def main():
         app, provider, settings, scope, files, info = prepare_app(engine, args.port, args.catalog_file)
         write_json(OUTPUT / 'runtime.json', {'desk': str(ROOT), 'port': args.port, 'database': owner['database'],
                    'database_port': owner['port'], 'live_processing_enabled': False, 'provider_key_present': False})
-        print(f"Free POC ready: {scope['product_count']} {'products from the private catalog file' if args.catalog_file else 'fictional products'}; three review cases; zero external calls.", flush=True)
+        print(f"Free POC ready: {scope['product_count']} {'products from the private catalog file' if args.catalog_file else 'fictional products'}; four review cases; zero external calls.", flush=True)
         print(f"Open http://127.0.0.1:{args.port}/poc-demo", flush=True)
         if args.prepare_only:
             return
