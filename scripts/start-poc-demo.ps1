@@ -1,6 +1,7 @@
 param(
     [string]$Python,
     [string]$PostgresBin,
+    [string]$CatalogFile,
     [int]$Port = 8020,
     [switch]$FreshDatabase,
     [switch]$PrepareOnly
@@ -30,6 +31,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Install requirements.backend.lock.txt into .venv-backend first.' }
     $taskArguments = @('scripts/poc-demo.py', '--port', "$Port")
     if ($PostgresBin) { $taskArguments += @('--postgres-bin', $PostgresBin) }
+    if ($CatalogFile) { $taskArguments += @('--catalog-file', $CatalogFile) }
     if ($FreshDatabase) { $taskArguments += '--fresh-database' }
     if ($PrepareOnly) { $taskArguments += '--prepare-only' }
     & $taskPython @taskArguments

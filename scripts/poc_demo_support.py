@@ -157,22 +157,69 @@ def local_database(postgres_bin=None, fresh=False):
             run([ctl, "-D", cluster, "-m", "fast", "-w", "stop"])
 
 
-def seed_catalog(engine):
+FICTIONAL_NAMESPACE = "poc-demo-fictional-v1"
+EXTERNAL_LIMIT_BYTES = 5 * 1024 * 1024
+
+
+def load_catalog(catalog_file=None):
+    """Return the catalog to seed: the bundled 150 invented products, or one explicit private file.
+
+    The private file must live outside this repository so it can never be committed. Only the
+    explicit external mode relaxes the "exactly 150" rule; the namespace stays synthetic.
+    """
+    if catalog_file is None:
+        catalog = json.loads((FIXTURES / "catalog.json").read_text(encoding="utf-8"))
+        products = catalog["products"]
+        if len(products) != 150 or len({item["sku"] for item in products}) != 150:
+            raise RuntimeError("Expected exactly 150 unique fictional catalog products")
+        return {"products": products, "namespace": FICTIONAL_NAMESPACE, "filename": "Invented POC fixtures",
+                "adapter": "poc-demo.v1", "external": False}
+    path = Path(catalog_file).expanduser().resolve()
+    if path.name.casefold().startswith(".env"):
+        raise RuntimeError("POC forbids dotenv access")
+    if ROOT.resolve() == path or ROOT.resolve() in path.parents:
+        raise RuntimeError("The private catalog file must be outside the repository so it cannot be committed")
+    if path.suffix.casefold() != ".json" or not path.is_file():
+        raise RuntimeError("Catalog file must be an existing .json file")
+    if path.stat().st_size > EXTERNAL_LIMIT_BYTES:
+        raise RuntimeError("Catalog file is larger than 5 MB")
+    data = path.read_bytes()
+    try:
+        catalog = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise RuntimeError("Catalog file must be UTF-8 JSON") from None
+    products = catalog.get("products") if isinstance(catalog, dict) else None
+    if (not isinstance(catalog.get("version"), str) or not catalog["version"].strip() or
+            not isinstance(products, list) or not 1 <= len(products) <= 5000):
+        raise RuntimeError("Catalog file needs a version string and 1-5000 products")
+    clean = []
+    for item in products:
+        if (not isinstance(item, dict) or not isinstance(item.get("sku"), str) or not item["sku"].strip() or
+                not isinstance(item.get("description"), str) or not item["description"].strip()):
+            raise RuntimeError("Every catalog product needs a sku and a description")
+        clean.append({"sku": item["sku"], "description": item["description"]})
+    if len({item["sku"] for item in clean}) != len(clean):
+        raise RuntimeError("Catalog file contains duplicate sku values")
+    return {"products": clean, "namespace": "poc-demo-external-" + sha256(data).hexdigest()[:12],
+            "filename": "Private catalog file (outside repository)", "adapter": "poc-demo.external.v1",
+            "external": True}
+
+
+def seed_catalog(engine, catalog_file=None):
     from sqlalchemy import select
     from sqlalchemy.orm import Session
     from backend.catalog import ProductInput, import_products
     from backend.models import CatalogNamespace, Vendor
     from gate_a.models import Tenant
 
-    catalog = json.loads((FIXTURES / "catalog.json").read_text(encoding="utf-8"))
+    catalog = load_catalog(catalog_file)
     products = [ProductInput.model_validate(item) for item in catalog["products"]]
-    if len(products) != 150 or len({item.sku for item in products}) != 150:
-        raise RuntimeError("Expected exactly 150 unique fictional catalog products")
     with Session(engine) as session:
         namespaces = session.scalars(select(CatalogNamespace)).all()
         if namespaces:
-            if len(namespaces) != 1 or namespaces[0].source_catalog_id != "poc-demo-fictional-v1" or not namespaces[0].synthetic:
-                raise RuntimeError("Refusing a database containing other catalogs")
+            if len(namespaces) != 1 or namespaces[0].source_catalog_id != catalog["namespace"] or not namespaces[0].synthetic:
+                raise RuntimeError("Refusing a database containing other catalogs; use a fresh database "
+                                   "(-FreshDatabase) when switching or changing the catalog file")
             namespace = namespaces[0]
             tenant, vendor = session.get(Tenant, namespace.tenant_id), session.get(Vendor, namespace.vendor_id)
         else:
@@ -183,13 +230,14 @@ def seed_catalog(engine):
             tenant = Tenant(name="POC fictional workspace")
             session.add(tenant)
             session.flush()
-            vendor = Vendor(tenant_id=tenant.id, name="POC fictional catalog (150 products)")
+            vendor = Vendor(tenant_id=tenant.id, name=(f"POC private catalog ({len(products)} products)"
+                            if catalog["external"] else "POC fictional catalog (150 products)"))
             session.add(vendor)
             session.flush()
             namespace = CatalogNamespace(tenant_id=tenant.id, vendor_id=vendor.id,
-                source_catalog_id="poc-demo-fictional-v1", source_filename="Invented POC fixtures",
+                source_catalog_id=catalog["namespace"], source_filename=catalog["filename"],
                 workbook_sha256="0" * 64, database_sha256="0" * 64, source_sheet="Fictional",
-                adapter_version="poc-demo.v1", assigned_by="Codex POC synthetic setup", synthetic=True)
+                adapter_version=catalog["adapter"], assigned_by="Codex POC synthetic setup", synthetic=True)
             session.add(namespace)
         imported = import_products(session, tenant.id, vendor.id, products)
         session.commit()
@@ -203,9 +251,9 @@ def field(value, page, region, label=None):
             "evidence": [{"page_number": page, "region_reference": region}] if value is not None else []}
 
 
-def payload_for(case, page_rows=None):
+def payload_for(case, page_rows=None, catalog=None):
     """Author fixed observations for invented rows; never infer from source text."""
-    catalog = json.loads((FIXTURES / "catalog.json").read_text(encoding="utf-8"))["products"]
+    catalog = catalog or json.loads((FIXTURES / "catalog.json").read_text(encoding="utf-8"))["products"]
     pages, rows = [], []
     groups = page_rows if page_rows is not None else [case["rows"]]
     for page_number, descriptors in enumerate(groups, 1):
@@ -213,7 +261,7 @@ def payload_for(case, page_rows=None):
         spacing = min(.12, .76 / max(len(descriptors), 1))
         for index, descriptor in enumerate(descriptors):
             region = f"p{page_number}-line-{index + 1}"
-            item = catalog[descriptor.get("product", 0)]
+            item = catalog[descriptor.get("product", 0) % len(catalog)]
             mode = descriptor.get("mode", "certain")
             code = item["sku"] if mode == "certain" else item["sku"].replace("-", "") if mode == "probable" else None
             description = descriptor.get("description", item["description"])
@@ -247,7 +295,7 @@ def render_source(payload, media_type="application/pdf"):
     image = Image.new("RGB", (900, 1100), "white") if canvas is None else None
     draw = ImageDraw.Draw(image) if image else None
     for page in payload["pages"]:
-        lines = [(.07, "FICTIONAL POC - FIXED JSON, NO MODEL READING"),
+        lines = [(.07, "SAMPLE PURCHASE ORDER - FOR DEMONSTRATION"),
                  (.11, "PO " + payload["document_number"]["raw_value"] + f" / page {page['page_number']}")]
         regions = {region["region_reference"]: region["bbox"] for region in page["regions"]}
         for row in payload["rows"]:

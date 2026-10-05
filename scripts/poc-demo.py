@@ -7,24 +7,25 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from poc_demo_support import (DATA, FIXTURES, OUTPUT, ROOT, FixedProvider, app_settings,
-    local_database, offline_boundary, payload_for, process_fixture, render_source, seed_catalog, write_json)
+    load_catalog, local_database, offline_boundary, payload_for, process_fixture, render_source, seed_catalog, write_json)
 
 
-def prepare_app(engine, port):
+def prepare_app(engine, port, catalog_file=None):
     from backend.app import create_app
     import backend.website as website
     from fastapi import Request
     from fastapi.responses import FileResponse, JSONResponse
     from fastapi.testclient import TestClient
 
-    scope = seed_catalog(engine)
+    scope = seed_catalog(engine, catalog_file)
+    products = load_catalog(catalog_file)['products']
     provider = FixedProvider()
     cases = json.loads((FIXTURES / 'cases.json').read_text(encoding='utf-8'))['cases']
     generated = DATA / 'generated'
     generated.mkdir(parents=True, exist_ok=True)
     files = {}
     for case in cases:
-        payload = payload_for(case)
+        payload = payload_for(case, catalog=products)
         for media, extension in [('application/pdf', 'pdf'), ('image/png', 'png'), ('image/jpeg', 'jpg')]:
             data = render_source(payload, media)
             key = case['id'] + '.' + extension
@@ -95,6 +96,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--postgres-bin')
     parser.add_argument('--port', type=int, default=8020)
+    parser.add_argument('--catalog-file', help='Optional private catalog JSON stored OUTSIDE the repository (same shape as fixtures/poc-demo/catalog.json); use with --fresh-database')
     parser.add_argument('--fresh-database', action='store_true', help='Select a new demo DB; preserve all previous evidence')
     parser.add_argument('--prepare-only', action='store_true', help='Prepare and verify without retaining a server')
     args = parser.parse_args()
@@ -104,10 +106,10 @@ def main():
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', args.port))  # Refuse occupied ports; never stop another service.
     with local_database(args.postgres_bin, fresh=args.fresh_database) as (engine, owner):
-        app, provider, settings, scope, files, info = prepare_app(engine, args.port)
+        app, provider, settings, scope, files, info = prepare_app(engine, args.port, args.catalog_file)
         write_json(OUTPUT / 'runtime.json', {'desk': str(ROOT), 'port': args.port, 'database': owner['database'],
                    'database_port': owner['port'], 'live_processing_enabled': False, 'provider_key_present': False})
-        print(f"Free POC ready: {scope['product_count']} fictional products; three review cases; zero external calls.", flush=True)
+        print(f"Free POC ready: {scope['product_count']} {'products from the private catalog file' if args.catalog_file else 'fictional products'}; three review cases; zero external calls.", flush=True)
         print(f"Open http://127.0.0.1:{args.port}/poc-demo", flush=True)
         if args.prepare_only:
             return
