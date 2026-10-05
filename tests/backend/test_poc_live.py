@@ -333,6 +333,34 @@ def test_diagnose_names_failed_rules_without_printing_document_text(clean_enviro
     assert len(saved) == 1 and "SECRET-DOCUMENT-TEXT" in saved[0].read_text(encoding="utf-8")
 
 
+def test_diagnose_redacts_an_unexpected_property_name_from_stdout(clean_environment, capsys):
+    # extra_forbidden puts the model's own property name in the error path; that name can be
+    # document text. Fictional marker only; fake transport, nothing leaves the machine.
+    clean_environment.setenv("OPENAI_API_KEY", FAKE_KEY)
+    marker = "FICTIONAL-PRIVATE-MARKER-7Q2"
+    payload = live.v12_payload(_case_payload())
+    payload["rows"][0]["description"][marker] = "x"
+    body = {"id": "resp_x", "model": "gpt-6-luna", "status": "completed", "usage": {"input_tokens": 100, "output_tokens": 50},
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps(payload)}]}]}
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=body))
+    folder, path = _outside_pdf()
+    assert _diagnose_module().main(["--confirm", "--file", str(path)], transport=transport, env_file=None,
+                                   output_directory=folder / "out") == 1
+    output = capsys.readouterr().out
+    assert marker not in output and marker.casefold() not in output.casefold()
+    report = json.loads(output)
+    assert "rows[0].description.<unexpected field>: extra_forbidden" in report["validation_failures"]
+
+
+def test_printable_path_keeps_only_contract_names_and_indices():
+    known = live.contract_field_names()
+    assert {"rows", "pages", "description", "evidence", "region_reference"} <= known
+    assert live.printable_path(("rows", 2, "evidence", 0, "region_reference"), known) == "rows[2].evidence[0].region_reference"
+    assert live.printable_path(("rows", 0, "Acme invoice text"), known) == "rows[0].<unexpected field>"
+    assert live.printable_path(("not a field",), known) == "<unexpected field>"
+    assert live.printable_path((True,), known) == "<unexpected field>"
+
+
 def test_diagnose_output_folder_is_git_ignored():
     import subprocess
     result = subprocess.run(["git", "check-ignore", "output/poc-demo/diagnostics/x.json"], cwd=ROOT, capture_output=True, text=True)

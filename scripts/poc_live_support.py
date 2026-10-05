@@ -262,12 +262,47 @@ def capturing_transport(inner):
     return CapturingTransport()
 
 
+UNEXPECTED_FIELD = "<unexpected field>"
+
+
+def contract_field_names():
+    """Every property name the extraction contract declares (the only names safe to print)."""
+    from backend.contracts import ExtractionPayload
+    names = set()
+
+    def walk(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("properties"), dict):
+                names.update(node["properties"])
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(ExtractionPayload.model_json_schema())
+    return frozenset(names)
+
+
+def printable_path(loc, known):
+    """Pydantic loc -> path text. For extra_forbidden a loc part is the model's own property
+    name (untrusted, may be document text), so only declared field names and indices pass."""
+    parts = []
+    for part in loc:
+        if type(part) is int:
+            parts.append(f"[{part}]")
+        else:
+            parts.append(("." if parts else "") + (part if isinstance(part, str) and part in known else UNEXPECTED_FIELD))
+    return "".join(parts)
+
+
 def validation_findings(body_bytes, page_count):
     """Re-run the adapter's decoding and validate_payload; return rule names and paths only."""
     from pydantic import ValidationError
     from backend.contracts import validate_payload
     from backend.providers import _unique_json_keys
     findings = {"failures": [], "pages": None, "rows": None}
+    known = contract_field_names()
     try:
         body = json.loads(body_bytes)
         texts = [part["text"] for item in body.get("output", []) if isinstance(item, dict) and item.get("type") == "message"
@@ -290,7 +325,7 @@ def validation_findings(body_bytes, page_count):
         validate_payload(decoded, page_count)
     except ValidationError as error:
         for item in error.errors(include_input=False, include_url=False):
-            path = ".".join(f"[{part}]" if isinstance(part, int) else str(part) for part in item["loc"]).replace(".[", "[")
+            path = printable_path(item["loc"], known)
             rule = str(item["msg"]).removeprefix("Value error, ") if item["type"] == "value_error" else ""
             findings["failures"].append(f"{path or '(payload)'}: {item['type']}" + (f" - {rule}" if rule else ""))
     except ValueError as error:
