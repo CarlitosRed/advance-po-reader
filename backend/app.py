@@ -251,7 +251,8 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             tenant = tenant_for(request, session)
             vendor_for(session, tenant, vendor_id)
             records = session.scalars(select(CatalogProduct).where(CatalogProduct.tenant_id == tenant,
-                                     CatalogProduct.vendor_id == vendor_id).order_by(CatalogProduct.sku)
+                                     CatalogProduct.vendor_id == vendor_id,
+                                     CatalogProduct.review_pool_id.is_(None)).order_by(CatalogProduct.sku)
                                      .offset(offset).limit(limit + 1)).all()
             products = records[:limit]
             aliases = session.scalars(select(CatalogAlias).where(CatalogAlias.tenant_id == tenant,

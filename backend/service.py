@@ -323,7 +323,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                     CatalogProduct.active.is_(True)))
                 if product is None or (run.catalog_pool_id is not None and not validate_pool_candidate(
                         session, tenant, run.catalog_pool_id, product.vendor_id, product.id)) or (
-                        run.catalog_pool_id is None and product.vendor_id != run.vendor_id):
+                        run.catalog_pool_id is None and (product.vendor_id != run.vendor_id or product.review_pool_id is not None)):
                     raise BackendError("selected_candidate_outside_run_pool", 422)
                 new_value = {"resolution": "approved", "candidate": candidate}
             else:
@@ -340,7 +340,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                 products = [product for product in products if validate_pool_candidate(
                     session, tenant, run.catalog_pool_id, product.vendor_id, product.id)]
             else:
-                products = [product for product in products if product.vendor_id == run.vendor_id]
+                products = [product for product in products if product.vendor_id == run.vendor_id and product.review_pool_id is None]
             if len(products) != len(request.candidate_ids):
                 raise BackendError("proposed_candidate_outside_catalog", 422)
             by_id = {product.id: product for product in products}

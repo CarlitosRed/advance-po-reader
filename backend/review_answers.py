@@ -15,7 +15,7 @@ def scoped_product(session, tenant, run, catalog_id):
         CatalogProduct.id == catalog_id, CatalogProduct.active.is_(True)))
     if product is None or (run.catalog_pool_id is not None and not validate_pool_candidate(
             session, tenant, run.catalog_pool_id, product.vendor_id, product.id)) or (
-            run.catalog_pool_id is None and product.vendor_id != run.vendor_id):
+            run.catalog_pool_id is None and (product.vendor_id != run.vendor_id or product.review_pool_id is not None)):
         raise BackendError("proposed_candidate_outside_catalog", 422)
     return product
 

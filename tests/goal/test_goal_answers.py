@@ -6,8 +6,9 @@ from alembic.config import Config
 import pytest
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
-from backend.models import CatalogProduct, CatalogNamespace, CatalogPool, CatalogPoolMember
+from backend.models import CatalogProduct, CatalogNamespace, CatalogPool, CatalogPoolMember, ReviewEvent
 from conftest import ROOT, PRODUCTS, ok, process, product_row, review_body
 
 pytestmark = pytest.mark.goal
@@ -175,3 +176,34 @@ def test_goal_6_review_product_preserves_pool_scope_and_visible_origin(desk, goa
     assert pool_summary["product_count"] == 1 and pool_summary["vendor_ids"] == [str(vendor)]
     next_run = process(desk, [product_row(1, code="GOAL-REVIEW-003", description="Synthetic new accessory", quantity="1")], use_default_pool=True)
     assert next_run.suggestions[0]["candidates"][0]["candidate_id"] == candidate["candidate_id"]
+
+    # A pool-created product stays in its pool even when the same vendor is
+    # explicitly selected for a later run without a pool.
+    vendor_row = product_row(1, code="GOAL-REVIEW-003", description="Synthetic new accessory", quantity="1")
+    vendor_run = process(desk, [vendor_row], use_default_pool=False)
+    assert vendor_run.run["catalog_pool_id"] is None
+    assert vendor_run.suggestions[0]["candidates"] == []
+    reviews = f"/runs/{vendor_run.run['id']}/reviews"
+    for action, kwargs in [("this_is_product", {"catalog_id": candidate["candidate_id"]}),
+                           ("propose_candidate", {"candidate_ids": [candidate["candidate_id"]]}),
+                           ("approve", {"selected_candidate_id": candidate["candidate_id"]})]:
+        assert desk.client.post(reviews, json=review_body(vendor_row, action, **kwargs)).status_code == 422
+    for endpoint in ("/catalog", "/website/catalog"):
+        listed = ok(desk.client.get(endpoint, params={"vendor_id": str(vendor)}))["products"]
+        assert not any(p.get("id", p.get("candidate_id")) == candidate["candidate_id"] for p in listed)
+    assert desk.client.get(f"/website/catalog/{candidate['candidate_id']}",
+                           params={"vendor_id": str(vendor)}).status_code == 404
+    # Bypass the HTTP service: the database enforces the same scope for both
+    # explicit bindings and selected IDs, including old snapshot approvals.
+    with Session(goal_engine) as session:
+        for action in ("this_is_product", "propose_candidate", "new_product", "approve"):
+            with pytest.raises(IntegrityError) as rejected:
+                with session.begin_nested():
+                    session.add(ReviewEvent(tenant_id=tenant, run_id=UUID(vendor_run.run["id"]),
+                        row_id="line-1", action=action, reviewer="Fictional reviewer",
+                        reason="Pool isolation regression", evidence_reference=vendor_row["evidence"],
+                        new_value={"candidates": [candidate]},
+                        selected_candidate_id=UUID(candidate["candidate_id"]) if action == "approve" else None))
+                    session.flush()
+            assert rejected.value.orig.sqlstate == "23514"
+            assert "run catalog pool" in str(rejected.value.orig)

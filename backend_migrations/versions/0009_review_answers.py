@@ -50,7 +50,7 @@ GUARD = """CREATE OR REPLACE FUNCTION backend_review_candidate_guard() RETURNS t
           WHERE NOT EXISTS (SELECT 1 FROM catalog_products p JOIN processing_runs r
             ON r.tenant_id=p.tenant_id AND r.id=NEW.run_id
             WHERE r.tenant_id=NEW.tenant_id AND p.id::text=c->>'candidate_id'
-              AND ((r.catalog_pool_id IS NULL AND p.vendor_id=r.vendor_id)
+              AND ((r.catalog_pool_id IS NULL AND p.vendor_id=r.vendor_id AND p.review_pool_id IS NULL)
                 OR (r.catalog_pool_id IS NOT NULL AND p.origin='review' AND p.review_pool_id=r.catalog_pool_id AND EXISTS (SELECT 1 FROM catalog_pool_members rm WHERE rm.tenant_id=r.tenant_id AND rm.pool_id=r.catalog_pool_id AND rm.vendor_id=p.vendor_id))
                 OR (r.catalog_pool_id IS NOT NULL AND EXISTS (
                   SELECT 1 FROM catalog_source_products sp JOIN catalog_pool_members m
@@ -59,6 +59,19 @@ GUARD = """CREATE OR REPLACE FUNCTION backend_review_candidate_guard() RETURNS t
                     AND m.tenant_id=r.tenant_id AND m.pool_id=r.catalog_pool_id)))))
       ) THEN
         RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='Proposed candidates must belong to the run catalog pool';
+      END IF;
+      IF NEW.selected_candidate_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM catalog_products p JOIN processing_runs r ON r.tenant_id=p.tenant_id AND r.id=NEW.run_id
+        WHERE r.tenant_id=NEW.tenant_id AND p.id=NEW.selected_candidate_id AND p.active
+          AND ((r.catalog_pool_id IS NULL AND p.vendor_id=r.vendor_id AND p.review_pool_id IS NULL)
+            OR (r.catalog_pool_id IS NOT NULL AND p.origin='review' AND p.review_pool_id=r.catalog_pool_id
+              AND EXISTS (SELECT 1 FROM catalog_pool_members m WHERE m.tenant_id=r.tenant_id AND m.pool_id=r.catalog_pool_id AND m.vendor_id=p.vendor_id))
+            OR (r.catalog_pool_id IS NOT NULL AND EXISTS (
+              SELECT 1 FROM catalog_source_products sp JOIN catalog_pool_members m
+                ON m.tenant_id=sp.tenant_id AND m.vendor_id=sp.vendor_id AND m.namespace_id=sp.namespace_id
+              WHERE sp.tenant_id=p.tenant_id AND sp.vendor_id=p.vendor_id AND sp.product_id=p.id
+                AND m.tenant_id=r.tenant_id AND m.pool_id=r.catalog_pool_id)))) THEN
+        RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='Review candidate must belong to the run catalog pool';
       END IF;
       IF NEW.selected_candidate_id IS NOT NULL AND NOT (
         EXISTS (SELECT 1 FROM suggestions s WHERE s.tenant_id=NEW.tenant_id AND s.run_id=NEW.run_id

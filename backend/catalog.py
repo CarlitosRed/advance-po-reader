@@ -261,6 +261,8 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID | Non
              CatalogProduct.active.is_(True)]
     if pool_id is not None:
         scope.append(pool_product_scope(tenant_id, pool_id))
+    else:
+        scope.append(CatalogProduct.review_pool_id.is_(None))
     alias_scope = [CatalogAlias.tenant_id == tenant_id, CatalogAlias.vendor_id.in_(vendors)]
 
     def scoped_candidate(product, method, score=None):

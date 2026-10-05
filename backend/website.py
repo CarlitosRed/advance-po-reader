@@ -157,7 +157,8 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
             for tenant, vendor, namespace in rows:
                 scope = result.setdefault(str(tenant.id), {"id": str(tenant.id), "name": tenant.name, "catalogs": []})
                 count = session.scalar(select(func.count()).select_from(CatalogProduct).where(
-                    CatalogProduct.tenant_id == tenant.id, CatalogProduct.vendor_id == vendor.id))
+                    CatalogProduct.tenant_id == tenant.id, CatalogProduct.vendor_id == vendor.id,
+                    CatalogProduct.review_pool_id.is_(None)))
                 scope["catalogs"].append({"id": str(vendor.id), "name": vendor.name, "product_count": count,
                     "synthetic": namespace.synthetic, "source_filename": namespace.source_filename,
                     "adapter_version": namespace.adapter_version, "assigned_by": namespace.assigned_by})
@@ -227,7 +228,7 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
                 conditions.append(pool_product_scope(tenant, pool_id))
             else:
                 vendor_for(session, tenant, vendor_id)
-                conditions.append(CatalogProduct.vendor_id == vendor_id)
+                conditions.extend([CatalogProduct.vendor_id == vendor_id, CatalogProduct.review_pool_id.is_(None)])
             if q.strip():
                 conditions.append(or_(CatalogProduct.sku.icontains(q.strip(), autoescape=True),
                     CatalogProduct.description.icontains(q.strip(), autoescape=True)))
@@ -278,7 +279,7 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
                 product_conditions.append(pool_product_scope(tenant, pool_id))
             else:
                 vendor_for(session, tenant, vendor_id)
-                product_conditions.append(CatalogProduct.vendor_id == vendor_id)
+                product_conditions.extend([CatalogProduct.vendor_id == vendor_id, CatalogProduct.review_pool_id.is_(None)])
             product = session.scalar(select(CatalogProduct).where(*product_conditions))
             if product is None:
                 raise BackendError("catalog_product_not_found", 404)
