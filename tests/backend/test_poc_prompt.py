@@ -17,7 +17,11 @@ RULE_PHRASES = [
     'row_kind "unknown", row_role',                           # exact continuation marking
     "continuation_of =",
     "no identifiers, and quantity, unit,",
-    "within 0.08 of the product region's bottom",
+    "Give EVERY row its own tight region",                    # no shared table-wide region
+    "never cite one shared table-wide region",
+    "y0 >= product y1",                                       # continuation adjacency numbers
+    "y0 - product y1 <= 0.08",
+    "x-range must overlap the product region's x-range",
     "exactly one",                                            # one root per item group
     "region of the same row and page",                                # quantity/unit evidence containment
     "observed = literal raw_value plus evidence",             # observation states
@@ -31,7 +35,7 @@ def test_prompt_states_every_contract_rule():
     flat = " ".join(EXTRACTION_PROMPT.split())
     missing = [phrase for phrase in RULE_PHRASES if " ".join(phrase.split()) not in flat]
     assert not missing, missing
-    assert PROMPT_VERSION == "po-literal-evidence-v4"
+    assert PROMPT_VERSION == "po-literal-evidence-v5"
 
 
 def test_prompt_keeps_the_literal_evidence_instructions():
