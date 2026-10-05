@@ -23,8 +23,10 @@ OUTPUT = ROOT / "output" / "poc-demo"
 FIXTURES = ROOT / "fixtures" / "poc-demo"
 
 
-def offline_boundary():
-    """Guard the entire demo process before Settings or providers are imported."""
+def offline_boundary(block_providers=True):
+    """Guard the entire demo process before Settings or providers are imported.
+
+    The live rehearsal keeps the OpenAI adapter (it talks to a fake transport) but still blocks real HTTP."""
     for name in list(os.environ):
         if name == "OPENAI_API_KEY" or name.startswith(("PO_BACKEND_", "PG")):
             os.environ.pop(name)
@@ -53,7 +55,8 @@ def offline_boundary():
     def forbidden(*args, **kwargs):
         raise RuntimeError("POC forbids built-in providers and external HTTP")
 
-    OpenAIProvider.extract = SyntheticProvider.extract = forbidden
+    if block_providers:
+        OpenAIProvider.extract = SyntheticProvider.extract = forbidden
     httpx.HTTPTransport.handle_request = httpx.AsyncHTTPTransport.handle_async_request = forbidden
 
 

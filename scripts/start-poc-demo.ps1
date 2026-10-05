@@ -4,7 +4,9 @@ param(
     [string]$CatalogFile,
     [int]$Port = 8020,
     [switch]$FreshDatabase,
-    [switch]$PrepareOnly
+    [switch]$PrepareOnly,
+    [switch]$Live,
+    [switch]$LiveRehearsal
 )
 $ErrorActionPreference = 'Stop'
 $taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -34,8 +36,19 @@ try {
     if ($CatalogFile) { $taskArguments += @('--catalog-file', $CatalogFile) }
     if ($FreshDatabase) { $taskArguments += '--fresh-database' }
     if ($PrepareOnly) { $taskArguments += '--prepare-only' }
+    if ($Live -and $LiveRehearsal) { throw 'Choose -Live or -LiveRehearsal, not both.' }
+    if ($Live) {
+        # Explicit, per-process: nothing is written to disk and free mode stays the default.
+        $taskArguments += '--live'
+        $env:PO_BACKEND_LIVE_PROCESSING_ENABLED = 'true'
+        if (-not $env:PO_BACKEND_PROVIDER_TIMEOUT_SECONDS) { $env:PO_BACKEND_PROVIDER_TIMEOUT_SECONDS = '180' }
+    }
+    if ($LiveRehearsal) { $taskArguments += '--live-rehearsal' }
     & $taskPython @taskArguments
     if ($LASTEXITCODE -ne 0) { throw 'POC stopped with an error; inspect output/poc-demo privately.' }
 } finally {
+    if ($Live) {
+        Remove-Item Env:PO_BACKEND_LIVE_PROCESSING_ENABLED -ErrorAction SilentlyContinue
+    }
     Pop-Location
 }
