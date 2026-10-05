@@ -121,20 +121,31 @@ def install_live_guard(app, guard):
     from fastapi.responses import JSONResponse
     from starlette.concurrency import run_in_threadpool
 
+    import asyncio
+    # One live processing request at a time: the cap check and the attempt row (written by the backend
+    # before the provider call) cannot interleave, so two requests can never share the last slot.
+    admission = asyncio.Lock()
+
     @app.middleware("http")
     async def live_spend_cap(request: Request, call_next):
         path = request.url.path
         creates = path.startswith("/documents/") and path.endswith("/runs")
-        if request.method == "POST" and (creates or (path.startswith("/runs/") and path.endswith("/process"))):
-            if creates:
-                try:
-                    if (await request.json()).get("provider") != "openai":
-                        return JSONResponse({"error": "poc_live_openai_only"}, status_code=409)
-                except ValueError:
-                    return JSONResponse({"error": "invalid_request"}, status_code=422)
+        processes = path.startswith("/runs/") and path.endswith("/process")
+        if request.method != "POST" or not (creates or processes):
+            return await call_next(request)
+        if creates:
+            try:
+                if (await request.json()).get("provider") != "openai":
+                    return JSONResponse({"error": "poc_live_openai_only"}, status_code=409)
+            except ValueError:
+                return JSONResponse({"error": "invalid_request"}, status_code=422)
             if (await run_in_threadpool(guard.status))["blocked"]:
                 return JSONResponse({"error": "poc_spend_cap_reached"}, status_code=409)
-        return await call_next(request)
+            return await call_next(request)
+        async with admission:
+            if (await run_in_threadpool(guard.status))["blocked"]:
+                return JSONResponse({"error": "poc_spend_cap_reached"}, status_code=409)
+            return await call_next(request)
 
 
 # ---- rehearsal: the live path with a fake transport (no key, no network) --------------------
@@ -231,3 +242,92 @@ def run_probe(settings, transport=None, images=False):
             "error": result.error_code, "latency_ms": result.latency_ms or int((perf_counter() - started) * 1000),
             "usage": usage, "estimated_cost_usd": None if cost is None else round(cost, 4),
             "input_accepted": accepted}
+
+
+# ---- diagnosis of one failed reading -----------------------------------------------------------
+
+def capturing_transport(inner):
+    """Wrap a transport and keep the raw response body (never printed)."""
+    import httpx
+
+    class CapturingTransport(httpx.BaseTransport):
+        body = b""
+
+        def handle_request(self, request):
+            response = inner.handle_request(request)
+            response.read()
+            self.body = response.content
+            return response
+
+    return CapturingTransport()
+
+
+def validation_findings(body_bytes, page_count):
+    """Re-run the adapter's decoding and validate_payload; return rule names and paths only."""
+    from pydantic import ValidationError
+    from backend.contracts import validate_payload
+    from backend.providers import _unique_json_keys
+    findings = {"failures": [], "pages": None, "rows": None}
+    try:
+        body = json.loads(body_bytes)
+        texts = [part["text"] for item in body.get("output", []) if isinstance(item, dict) and item.get("type") == "message"
+                 for part in item.get("content", []) if isinstance(part, dict) and part.get("type") == "output_text"]
+    except (ValueError, AttributeError, TypeError, KeyError):
+        findings["failures"].append("response_body: not a readable Responses object")
+        return findings, None
+    if len(texts) != 1:
+        findings["failures"].append(f"output: expected exactly one output_text part, found {len(texts)}")
+        return findings, None
+    try:
+        decoded = json.loads(texts[0], object_pairs_hook=_unique_json_keys)
+    except ValueError as error:
+        findings["failures"].append("output_text: " + ("duplicate JSON key" if "duplicate" in str(error) else "not valid JSON"))
+        return findings, texts[0]
+    if isinstance(decoded, dict):
+        findings["pages"] = len(decoded["pages"]) if isinstance(decoded.get("pages"), list) else None
+        findings["rows"] = len(decoded["rows"]) if isinstance(decoded.get("rows"), list) else None
+    try:
+        validate_payload(decoded, page_count)
+    except ValidationError as error:
+        for item in error.errors(include_input=False, include_url=False):
+            path = ".".join(f"[{part}]" if isinstance(part, int) else str(part) for part in item["loc"]).replace(".[", "[")
+            rule = str(item["msg"]).removeprefix("Value error, ") if item["type"] == "value_error" else ""
+            findings["failures"].append(f"{path or '(payload)'}: {item['type']}" + (f" - {rule}" if rule else ""))
+    except ValueError as error:
+        findings["failures"].append("(payload): value_error - " + str(error))
+    return findings, texts[0]
+
+
+def source_media(path):
+    suffix = Path(path).suffix.lower()
+    media = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(suffix)
+    if media is None:
+        raise LiveRefusal("The file must be a .pdf, .png or .jpg. Nothing was sent.")
+    return media
+
+
+def source_page_count(data, media):
+    if media != "application/pdf":
+        return 1
+    import pymupdf
+    with pymupdf.open(stream=data, filetype="pdf") as document:
+        return document.page_count
+
+
+def run_diagnosis(settings, data, media, page_count, transport=None):
+    """One request through the same adapter; returns sanitized facts and the raw model JSON text."""
+    import httpx
+    from backend.providers import OpenAIProvider
+    capture = capturing_transport(transport or httpx.HTTPTransport())
+    provider = OpenAIProvider(api_key=settings.openai_api_key.get_secret_value(), enabled=True,
+                              model=settings.extraction_model, store=settings.provider_store,
+                              timeout_seconds=settings.provider_timeout_seconds, transport=capture)
+    result = provider.extract(data, media, page_count)
+    findings, raw_text = validation_findings(capture.body, page_count) if capture.body else ({"failures": [], "pages": None, "rows": None}, None)
+    usage = {key: value for key, value in result.usage.items() if isinstance(value, (int, dict))}
+    cost = estimate_cost(usage, price_rates())
+    report = {"model": settings.extraction_model, "answered_by": result.actual_model, "adapter_state": result.state,
+              "adapter_error": result.error_code, "latency_ms": result.latency_ms, "source_pages": page_count,
+              "model_pages": findings["pages"], "model_rows": findings["rows"], "usage": usage,
+              "estimated_cost_usd": None if cost is None else round(cost, 4), "validation_failures": findings["failures"]}
+    return report, (capture.body.decode("utf-8", "replace") if capture.body else None), raw_text

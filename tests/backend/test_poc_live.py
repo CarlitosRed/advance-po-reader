@@ -230,3 +230,110 @@ def test_authorization_is_bound_to_the_file_and_the_cap_stops_new_runs(live_engi
         other = client.post(f"/documents/{source['id']}/runs", headers={"Idempotency-Key": uuid4().hex},
                             json={"provider": "synthetic"})
         assert other.status_code == 409
+
+
+# ---- concurrency: the last slot goes to exactly one request ---------------------------------------
+
+@pytest.mark.postgresql
+def test_two_simultaneous_requests_cannot_share_the_last_slot(live_engine):
+    from threading import Barrier, Thread
+    from time import sleep
+    from backend.app import create_app
+    from backend.config import Settings
+    from backend.providers import OpenAIProvider
+
+    calls = []
+    inner = _success_transport()
+
+    def slow(request):
+        calls.append(1)
+        sleep(0.6)  # wide window: both requests are in flight together
+        return inner.handle_request(request)
+
+    settings = Settings(_env_file=None, database_url=SecretStr(live_engine.url.render_as_string(hide_password=False)),
+                        storage_directory=ROOT / "data" / "demo-agent" / "tests" / uuid4().hex, local_api_token=SecretStr(TOKEN),
+                        live_processing_enabled=True, openai_api_key=SecretStr(FAKE_KEY))
+    app = create_app(settings, engine=live_engine,
+                     provider=OpenAIProvider(api_key=FAKE_KEY, enabled=True, transport=httpx.MockTransport(slow)))
+    before = live.SpendGuard(live_engine, {}).status()["runs"]
+    live.install_live_guard(app, live.SpendGuard(live_engine, {"PO_POC_MAX_LIVE_RUNS": str(before + 1)}))
+    document, _ = live.probe_document()
+    digest = sha256(document).hexdigest()
+    confirmed = {"authorized": True, "source_sha256": digest, "authorized_by": "Test owner",
+                 "policy_reference": "Owner confirmation in the local live POC", "reason": "Confirmed in the test"}
+    products = json.loads((FIXTURES / "catalog.json").read_text(encoding="utf-8"))["products"][:12]
+    with TestClient(app, base_url="http://127.0.0.1:8014", headers={"X-Local-Token": TOKEN}) as client:
+        tenant = client.post("/tenants", json={"name": "Live POC tenant " + uuid4().hex}).json()
+        client.headers["X-Tenant-ID"] = tenant["id"]
+        vendor = client.post("/vendors", json={"name": "Live POC vendor"}).json()
+        client.post("/catalog/import", json={"vendor_id": vendor["id"], "products": products})
+        source = client.post("/documents", headers={"Idempotency-Key": uuid4().hex}, data={"vendor_id": vendor["id"]},
+                             files={"file": ("sample.pdf", document, "application/pdf")}).json()
+        runs = [client.post(f"/documents/{source['id']}/runs", headers={"Idempotency-Key": uuid4().hex},
+                            json={"provider": "openai", "external_authorization": confirmed}).json()["id"] for _ in range(2)]
+        barrier, codes = Barrier(2), []
+
+        def go(run_id):
+            barrier.wait()
+            codes.append(client.post(f"/runs/{run_id}/process").status_code)
+
+        threads = [Thread(target=go, args=(run_id,)) for run_id in runs]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    assert sorted(codes) == [200, 409] and len(calls) == 1
+
+
+# ---- diagnosis: rule names and paths only ------------------------------------------------------------
+
+def _diagnose_module():
+    spec = importlib.util.spec_from_file_location("poc_diagnose_live", ROOT / "scripts" / "poc-diagnose-live.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _outside_pdf():
+    import tempfile
+    folder = Path(tempfile.mkdtemp(prefix="poc-diagnose-"))
+    document, _ = live.probe_document()
+    path = folder / "private.pdf"
+    path.write_bytes(document)
+    return folder, path
+
+
+def test_diagnose_refuses_without_confirm_and_for_files_inside_the_repo(capsys):
+    def never(request):
+        pytest.fail("nothing may be sent")
+    module = _diagnose_module()
+    assert module.main(["--file", str(ROOT / "README.md")], transport=httpx.MockTransport(never)) == 2
+    assert module.main(["--confirm", "--file", str(ROOT / "README.md")], transport=httpx.MockTransport(never)) == 2
+    assert "outside this repository" in capsys.readouterr().out
+
+
+def test_diagnose_names_failed_rules_without_printing_document_text(clean_environment, capsys):
+    clean_environment.setenv("OPENAI_API_KEY", FAKE_KEY)
+    payload = live.v12_payload(_case_payload())
+    payload["rows"][0]["evidence"][0]["region_reference"] = "no-such-region"
+    payload["rows"][0]["description"]["raw_value"] = "SECRET-DOCUMENT-TEXT"
+    body = {"id": "resp_x", "model": "gpt-6-luna", "status": "completed", "usage": {"input_tokens": 100, "output_tokens": 50},
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": json.dumps(payload)}]}]}
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=body))
+    folder, path = _outside_pdf()
+    assert _diagnose_module().main(["--confirm", "--file", str(path)], transport=transport, env_file=None,
+                                   output_directory=folder / "out") == 1
+    output = capsys.readouterr().out
+    report = json.loads(output)
+    assert report["adapter_error"] == "provider_payload_validation_failed"
+    assert report["source_pages"] == 1 and report["model_pages"] == 1 and report["model_rows"] == 3
+    assert any("evidence references must identify declared source regions" in item for item in report["validation_failures"])
+    assert "SECRET-DOCUMENT-TEXT" not in output and FAKE_KEY not in output
+    saved = list((folder / "out").glob("*-model-answer.json"))
+    assert len(saved) == 1 and "SECRET-DOCUMENT-TEXT" in saved[0].read_text(encoding="utf-8")
+
+
+def test_diagnose_output_folder_is_git_ignored():
+    import subprocess
+    result = subprocess.run(["git", "check-ignore", "output/poc-demo/diagnostics/x.json"], cwd=ROOT, capture_output=True, text=True)
+    assert result.returncode == 0
