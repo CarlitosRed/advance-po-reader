@@ -52,7 +52,7 @@ const { chromium } = require(require.resolve("playwright", {
     await page.locator("#new-product-form button").click();
     await waitSaved("new_product");
     assert.equal(await page.evaluate(() => state.events.at(-1).new_value.candidates[0].origin), "review");
-    assert.equal(await page.locator('input[name="candidate"]:checked').count(), 0);
+    assert.equal(await page.locator('input[name="candidate"]:checked').count(), 1);
     assert.match(await page.locator(".candidate").innerText(), /Customer review/);
     await page.waitForFunction(() => document.getElementById("row-preview")?.naturalWidth > 0);
     await page.screenshot({path: path.join(path.dirname(fixture), "review-controls.png"), fullPage: true});
@@ -63,7 +63,8 @@ const { chromium } = require(require.resolve("playwright", {
     await page.click("#answer-product");
     await waitSaved("this_is_product");
     assert.equal(await page.evaluate(() => state.summary.pending_row_ids.includes("line-3")), true);
-    await page.locator('input[name="candidate"]').check();
+    assert.equal(await page.locator('input[name="candidate"]:checked').count(), 1);
+    assert.equal(await page.evaluate(() => errorText(new Error("selected_candidate_outside_current_binding"))), "Select the product bound to this line, or save a new product binding before approving.");
     await page.click("#approve-row");
     await waitSaved("approve");
     await page.click("#reviewed-products");
