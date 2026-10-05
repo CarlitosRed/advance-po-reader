@@ -23,7 +23,7 @@ Wait for “Free POC ready”, then open [the local demo](http://127.0.0.1:8020/
 
 An answer that only chooses or adds a product is a binding; it still needs **Yes, this one**. **Pick another** and **Change my answer** reopen the three answers. When every line has an answer the done screen shows “N products confirmed” and a table (ID, Product, Qty, Price, with the printed description underneath). **Finish review** locks the review; **Download as spreadsheet** saves a UTF-8 CSV (Product ID, Product name, Description, Quantity, Unit, Price). Reload to show the saved review. Unprinted values stay blank; nothing is invented.
 
-**Private catalog (optional):** `start-poc-demo.ps1 -CatalogFile C:\path\outsideepo\catalog.json -FreshDatabase` loads your own catalog (same shape as `fixtures/poc-demo/catalog.json`) instead of the 150 invented products; the sample lines then use products from that file.
+**Private catalog (optional):** `start-poc-demo.ps1 -CatalogFile C:\private\catalog.json -FreshDatabase` loads your own catalog (same shape as `fixtures/poc-demo/catalog.json`) instead of the 150 invented products; the sample lines then use products from that file.
 Keep the file outside this repository (the loader refuses paths inside it); `seed-poc-demo.py --catalog-file PATH` does the same for seeding, and switching catalogs needs `-FreshDatabase`.
 
 **Reset:** stop with Ctrl+C, then run from the same desk:
