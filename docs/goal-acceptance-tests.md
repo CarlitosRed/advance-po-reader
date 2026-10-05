@@ -126,6 +126,14 @@ No secrets or live provider connection are needed. Dotenv opens and real HTTP
 transports are blocked; the backend suite permits its generated synthetic
 provider and injected mock transports, while goal tests permit only fixed JSON.
 
+PR B item 3 expands `pytest.backend.ini` to collect `tests/backend` and
+`tests/goal` with importlib collection. Every new B acceptance case therefore
+runs in both commands in the same `backend-goal` job. The first command's
+totals include the goal cases, while the separate goal command measures that
+suite again and generates its scorecard. Each command gets fresh databases.
+Local browser tooling enables the website check in both commands; CI omits
+it, so both commands report that browser case as a blocked skip.
+
 CI deliberately does not install the optional Node/Playwright/browser tools.
 `test_goal_9_website_three_answers_and_explicit_approval` is therefore a visible
 skip, counted as blocked in the CI scorecard. It is run locally with the tools

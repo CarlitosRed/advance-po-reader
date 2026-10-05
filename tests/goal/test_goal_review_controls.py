@@ -9,7 +9,7 @@ from threading import Thread
 
 import pytest
 
-from conftest import ROOT, PRODUCTS, process, product_row
+from tests.goal.conftest import ROOT, PRODUCTS, process, product_row
 
 pytestmark = pytest.mark.goal
 
@@ -54,7 +54,7 @@ def test_goal_9_website_three_answers_and_explicit_approval(desk, tmp_path):
             self.send(200, value, mime)
 
         def do_POST(self):
-            if self.path != f"/runs/{result.run['id']}/reviews":
+            if self.path not in {f"/runs/{result.run['id']}/reviews", f"/runs/{result.run['id']}/page-counts"}:
                 return self.send(404, b"", "text/plain")
             body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             response = desk.client.post(self.path, content=body, headers={"Content-Type": "application/json"})

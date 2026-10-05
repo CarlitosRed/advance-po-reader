@@ -157,3 +157,51 @@ is claimed. `git diff --check` is the documentation validation. Implementation
 waits for Claudio · PR review's confirmation of the revised plan at its new
 head; retain A's approval/scoping regressions and synthetic/disposable test
 boundaries afterward. No #9 merge without Carlos's instruction.
+
+## T-009 PR B item 3 — October 5, 2026
+
+`Codex · goal gaps 3` rebuilt the clean desk from the checkpoint, task card,
+branch plan and signed PR comments. Claudio confirmed the plan at `7438183`
+at 17:55:42 UTC and Carlos gave GO to code B. No prior uncommitted or unpushed
+implementation existed. This commit implements only item 3; items 4 and 6
+remain separately scoped work.
+
+Every PO run initially remains partial until each source page has an
+independent reviewer count. `/runs/{run_id}/page-counts` verifies the actual
+source hash and appends a named, reasoned page count in existing immutable
+`review_events`; no new table or migration is needed. Comparisons expose
+provider/independent counts and matched/mismatch/unavailable status. Product
+items are counted from original observations, without description
+continuations, document details or human exclusions. Zero with products is
+a mismatch; an empty source page requires its own zero check. Matching counts
+do not approve products or clear other blockers.
+
+A correction names the latest count event and attests `independent_count_error`,
+preserving its old value and sequence. A reviewer-confirmed source discrepancy
+keeps that old run blocked; the website can prepare a fresh run of the same
+source without starting processing or copying authorization/counts/approvals.
+Only a coverage-held outcome transitions partial -> completed after matching
+checks. A later mismatch can return completed -> partial before resolution;
+other extraction/retrieval partial outcomes remain partial. Resolved reviews
+reject further count changes.
+
+The first B contract-changing commit regenerates the local backend OpenAPI
+snapshot and adds comparison with `app.openapi()`. `pytest.backend.ini`
+collects backend and goal cases, so each new B case runs in both backend-goal
+commands. Goal 8's original assertion now passes and its marker is removed.
+Goal 7 remains strict xfail with a grounding-specific assertion, so a
+coverage-induced partial state cannot masquerade as a grounding fix.
+
+Verification uses fixed JSON and generated fictional source bytes on owned
+throwaway PostgreSQL clusters. The separate local goal run reports **76
+passed, 1 strict xfail in 34.01s**, no skips or failures; the actual browser
+check includes mismatch blocking, attributed count correction and explicit
+product approval. The final combined backend/goal command reports **344
+passed, 1 strict xfail in 121.13s**, no skips or failures; its 345 collected
+cases include every new B case and the actual local browser check. `pip check`
+and `git diff --check` pass. CI measurements are recorded separately in the
+delivery comment and external checkpoint after publication.
+CI deliberately lacks browser tooling and reports its browser skips separately.
+No `.env*`, real PO, paid/live provider, application DB migration or main push
+is involved. Code approval still requires `Approved at <current head>`; no
+merge is authorized in this chat.

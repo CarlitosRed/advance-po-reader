@@ -8,7 +8,7 @@ import pytest
 
 from backend.contracts import ExtractionPayload, validate_payload
 from backend.providers import ProviderResult
-from conftest import ok, payload, process, product_row, review_body, source_bytes
+from tests.goal.conftest import ok, payload, process, product_row, review_body, source_bytes
 
 pytestmark = pytest.mark.goal
 

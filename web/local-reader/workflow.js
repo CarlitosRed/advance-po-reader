@@ -106,11 +106,12 @@ function renderSummary() {
     <section class="panel field"><h2>${resolved ? "Review complete" : "Finish the source review"}</h2><p class="field">Product rows require candidate approval or a no-match decision. Ambiguous item rows require clarification. Typed charges, totals and notes remain inspectable under document details.</p>
     ${pending.length ? `<div class="callout">${pending.length} row(s) remain unresolved. Return to the source review to decide them.</div>` : ""}
     ${summary.excluded_rows.length ? `<p class="hint">${summary.excluded_rows.length} non-product or no-match line(s) are retained in the audit history.</p>` : ""}
-    ${resolved ? '<span class="badge green">Saved · review resolved</span>' : attributionHTML() + '<div id="document-acknowledgements"></div><div class="button-row"><button id="finish-review" class="button primary" ' + (summary.can_finish_review ? "" : "disabled") + '>Finish review</button></div>'}
+    ${resolved ? '<span class="badge green">Saved · review resolved</span>' : attributionHTML() + '<div id="page-count-checks"></div><div id="document-acknowledgements"></div><div class="button-row"><button id="finish-review" class="button primary" ' + (summary.can_finish_review ? "" : "disabled") + '>Finish review</button></div>'}
     ${auditHTML()}</section>`;
   $("back-review").onclick = () => renderDocument();
   wireAttribution();
   if (resolved) return;
+  renderPageCounts();
   const partial = payload.pages.filter(page => page.state === "partial" && !state.events.some(event =>
     event.action === "acknowledge_page" && event.evidence_reference.some(ref => ref.page_number === page.page_number)));
   const needsWarnings = payload.warnings.length && !state.events.some(event => event.action === "acknowledge_document");
@@ -122,6 +123,48 @@ function renderSummary() {
   if ($("ack-warnings")) $("ack-warnings").onclick = () => saveReview("acknowledge_document", {
     evidence_reference: [{page_number: payload.pages[0].page_number, region_reference: null}]}).then(renderSummary).catch(fail);
   $("finish-review").onclick = () => saveReview("resolve").then(renderSummary).catch(fail);
+}
+
+function renderPageCounts() {
+  $("page-count-checks").innerHTML = (state.summary.page_coverage || []).map(check => `
+    <div class="callout" data-coverage-page="${check.page_number}"><h3>Page ${check.page_number} · product count ${escapeHTML(check.status)}</h3>
+    <p>Extracted product items: ${check.provider_product_count}. Independent source count: ${check.independent_product_count ?? "not yet counted"}.</p>
+    ${check.reviewer ? `<p class="hint">Counted by ${escapeHTML(check.reviewer)} · ${escapeHTML(check.reason)}</p>` : ""}
+    <button class="button secondary" data-count-source="${check.page_number}">Inspect this source page</button>
+    ${check.status === "mismatch" ? '<p>A source line discrepancy requires a new run of this same saved document, with fresh page checks and product approvals. Keep this run and its evidence. Do not lower the count to hide a missing line.</p><button class="button secondary" data-new-count-run>Prepare a new run of this source</button>' : ""}
+    ${check.source_discrepancy ? '<p>The reviewer confirmed a source discrepancy. This run stays blocked.</p>' : `
+    <form data-page-count="${check.page_number}"><label>Products on this source page <input name="product_count" type="number" min="0" max="100000" step="1" required value="${check.independent_product_count ?? ""}"></label>
+    <p class="hint">Count each source product once; omit description continuations, charges, totals and notes. This count does not approve any product.</p>
+    ${check.latest_event_id ? '<label><input name="count_error" type="checkbox" required> My prior independent count was mistaken. I rechecked the source; this corrects count evidence only.</label>' : '<label><input name="source_discrepancy" type="checkbox"> The source still has missing or extra product lines in this extraction; a new run is required.</label>'}
+    <button class="button secondary">${check.latest_event_id ? "Save attributed count correction" : "Confirm independent source count"}</button></form>`}</div>`).join("");
+  for (const button of document.querySelectorAll("[data-count-source]")) button.onclick = () => {
+    state.page = Number(button.dataset.countSource); renderDocument();
+  };
+  for (const button of document.querySelectorAll("[data-new-count-run]")) button.onclick = async () => {
+    if (state.busy) return;
+    state.busy = true;
+    try {
+      state.run = await api("/documents/" + state.source.id + "/runs", {method: "POST",
+        json: {provider: state.run.provider}, headers: {"Idempotency-Key": crypto.randomUUID()}});
+      await loadRun(); renderDocument();
+    } catch (error) { fail(error); } finally { state.busy = false; }
+  };
+  for (const form of document.querySelectorAll("[data-page-count]")) form.onsubmit = async event => {
+    event.preventDefault();
+    if (state.busy) return;
+    try {
+      const attribution = readAttribution();
+      const page = Number(form.dataset.pageCount);
+      const check = state.summary.page_coverage.find(value => value.page_number === page);
+      state.busy = true;
+      await api("/runs/" + state.run.id + "/page-counts", {method: "POST", json: {
+        ...attribution, page_number: page, source_sha256: state.source.sha256,
+        product_count: Number(form.elements.product_count.value),
+        source_discrepancy: form.elements.source_discrepancy?.checked || false,
+        ...(check.latest_event_id ? {corrects_event_id: check.latest_event_id, correction_kind: "independent_count_error"} : {})}});
+      state.run = await api("/runs/" + state.run.id); await loadRun(); renderSummary();
+    } catch (error) { fail(error); } finally { state.busy = false; }
+  };
 }
 
 function agentHandoffHTML() {

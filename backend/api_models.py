@@ -1,12 +1,37 @@
 """Strict request boundaries, separate from immutable model observations."""
 from typing import Annotated, Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, StrictInt, StrictBool, field_validator, model_validator
 from backend.catalog import ProductInput
 
 
 class RequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+
+class PageSourceEvidence(RequestModel):
+    scope: Literal["page"] = "page"
+    page_number: StrictInt = Field(ge=1)
+    source_sha256: StrictStr = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class PageCountRequest(PageSourceEvidence):
+    product_count: StrictInt = Field(ge=0, le=100000)
+    reviewer: StrictStr = Field(min_length=1, max_length=120)
+    reason: StrictStr = Field(min_length=1, max_length=500)
+    source_discrepancy: StrictBool
+    corrects_event_id: UUID | None = None
+    correction_kind: Literal["independent_count_error"] | None = None
+
+    @model_validator(mode="after")
+    def attributed_count(self):
+        if not self.reviewer.strip() or not self.reason.strip():
+            raise ValueError("reviewer and reason required")
+        if (self.corrects_event_id is None) != (self.correction_kind is None):
+            raise ValueError("a count correction must identify the prior event and attest an independent count error")
+        if self.corrects_event_id and self.source_discrepancy:
+            raise ValueError("a source discrepancy requires a new run, not a count correction")
+        return self
 
 
 class NameRequest(RequestModel):

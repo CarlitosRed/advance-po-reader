@@ -15,7 +15,7 @@ def effective_row_role(row, schema_version):
     return "unknown"
 
 
-def resolution_blockers(payload, events, tiers=None):
+def resolution_blockers(payload, events, tiers=None, coverage=None):
     latest = {event["row_id"]: event["action"] for event in events if event.get("row_id")}
     decided = {row_id for row_id, action in latest.items()
                if action in {"approve", "no_match", "not_a_product", "not_product"}}
@@ -25,7 +25,7 @@ def resolution_blockers(payload, events, tiers=None):
     blockers = []
     required = [row for row in payload.rows if effective_row_role(row, payload.schema_version)
                 in {"product_item", "unknown"}]
-    if not required or any(row.row_id not in decided for row in required):
+    if any(row.row_id not in decided for row in required):
         blockers.append("unresolved_rows_remain")
     if any(page.state == "failed" for page in payload.pages):
         blockers.append("failed_pages_require_new_processing_run")
@@ -36,6 +36,8 @@ def resolution_blockers(payload, events, tiers=None):
         blockers.append("partial_pages_require_explicit_acknowledgement")
     if payload.warnings and not any(event["action"] == "acknowledge_document" for event in events):
         blockers.append("document_warnings_require_explicit_acknowledgement")
+    from backend.coverage import coverage_blockers
+    blockers.extend(coverage_blockers(coverage or []))
     return blockers
 
 
@@ -44,11 +46,11 @@ def legacy_no_match_requires_answer(row, action, tiers):
                                     (tiers or {}).get(row.row_id) == "uncertain")
 
 
-def reviewed_summary(run, events, tiers=None):
+def reviewed_summary(run, events, tiers=None, source=None):
     result = {"run_id": str(run.id), "state": run.state, "review_state": run.review_state,
               "summary_policy_version": SUMMARY_POLICY_VERSION,
               "approved_products": [], "pending_row_ids": [], "excluded_rows": [], "document_details": [],
-              "review_event_count": len(events), "blockers": [],
+              "review_event_count": len(events), "blockers": [], "page_coverage": [],
               "can_finish_review": False, "source_observations_unchanged": True}
     if run.state not in {"completed", "partial"} or not run.result:
         result["blockers"] = ["run_has_no_reviewable_purchase_order"]
@@ -102,6 +104,8 @@ def reviewed_summary(run, events, tiers=None):
         else:
             result["excluded_rows"].append({"row_id": row.row_id, "row_kind": row.row_kind,
                                            "decision": event["action"]})
-    result["blockers"] = resolution_blockers(payload, events, tiers)
+    from backend.coverage import page_coverage
+    result["page_coverage"] = page_coverage(payload, events, source) if source else []
+    result["blockers"] = resolution_blockers(payload, events, tiers, result["page_coverage"])
     result["can_finish_review"] = not result["blockers"] and run.review_state != "resolved"
     return result

@@ -58,12 +58,12 @@ def pytest_sessionfinish(session, exitstatus):
     destination = session.config.getoption("--goal-scorecard")
     if not destination:
         return
-    lines = ["# Goal acceptance scorecard — rerun October 4, 2026", "",
+    lines = ["# Goal acceptance scorecard — rerun October 5, 2026", "",
              "Execution: " + os.environ.get("GOAL_TEST_EXECUTION", "local isolated run") + ". "
              "Suite: `python -m pytest -m goal`. Skips count as blocked; strict xfails are separate.", "",
-             "T-007 acceptance suite; T-009 PR A (tiers, three answers, same-row evidence). "
+             "T-007 acceptance suite; T-009 PR A plus PR B item 3 (independent page counts). "
              "Base `codex/worktree-standards` at "
-             "`c06b4e9994277997e6ec8b828317cb5942e0daf6`. "
+             "`fe5c1f421c4293d0b993a5e2e4abecc69fba500c` (merged PR A). "
              "The original PR #5 baseline was 10 passed and 8 strict xfail.", "",
              "Measured with generated fictional PDFs/PNG/JPG, fixed JSON from an injected fake "
              "provider, actual upload/processing/catalog/review HTTP routes, and a disposable "
@@ -78,12 +78,10 @@ def pytest_sessionfinish(session, exitstatus):
               for status in ("passed", "xfail", "blocked", "failed")}
     lines += ["", f"Total: {counts['passed']} passed, {counts['xfail']} xfail, "
               f"{counts['blocked']} blocked, {counts['failed']} failed. Pytest exit status: {exitstatus}.", "",
-              "## Top 3 gaps", "",
+              "## Remaining work", "",
               "1. Source grounding: a fabricated product can still use a declared region "
               "without its text being checked against the source (goal 7; `backend/service.py`).",
-              "2. Independent completeness: an omitted printed product is not detected by "
-              "an independent per-page product count (goal 8; `backend/service.py`).",
-              "3. Adjacent F7/F8 repairs remain planned for PR B: label-aware embedded "
+              "2. Adjacent F7/F8 repairs remain planned for PR B: label-aware embedded "
               "codes such as A123/2026, and valid page/document acknowledgment scopes. "
               "These are follow-ups, not additional goal xfails.", "",
               "## PR A behavior verified", "",
@@ -95,6 +93,15 @@ def pytest_sessionfinish(session, exitstatus):
               "the original strings and require fresh approval. Quantity/unit evidence "
               "must reference that row or a fully contained cell on the same page; unlinked shared headers "
               "are rejected. A clean throwaway database passes upgrade/downgrade/upgrade.", "",
+              "## PR B item 3 behavior verified", "",
+              "Each source page requires an independent, attributed reviewer product count "
+              "bound to its exact hash and run. Missing evidence and count mismatches block Finish; "
+              "zero with product rows is a mismatch, and empty pages need their own zero count. "
+              "Original product items are counted without continuations/details or row exclusions. "
+              "Count corrections append evidence and require a latest-event reference, reason and "
+              "independent-count-error attestation. A reported source discrepancy stays blocked in "
+              "the old run; a new run receives no copied count or product approvals. Matching counts "
+              "do not approve products. The local backend OpenAPI snapshot is compared with app.openapi().", "",
               ("Browser check: passed against the real review controls and test-owned API."
                if any(r["status"] == "passed" and "website_three_answers" in r["test"] for r in RECORDS)
                else "Browser check: not passed in this run. CI deliberately omits browser tooling; "
@@ -116,7 +123,7 @@ def pytest_sessionfinish(session, exitstatus):
               "Application configuration and storage path roots are redirected only in the test "
               "harness, so repository `data/` and `output/` stay untouched. Existing services "
               "and databases are not migrated or restarted. This scorecard measures the "
-              "changed PR A source with isolated fixtures; it is not production validation.", "",
+              "changed PR B source with isolated fixtures; it is not production validation.", "",
               "Locally PostgreSQL is initialized on an available loopback port from GOAL_POSTGRES_BIN (or PATH), "
               "with an owned cluster and fresh `gate_a_test_backend_*` database. CI creates fresh databases "
               "on its ephemeral loopback PostgreSQL service, never a preexisting application database. Migrations and pg_trgm "

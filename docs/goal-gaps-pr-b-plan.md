@@ -1,13 +1,16 @@
 # T-009 PR B: completeness, source grounding and F7/F8
 
 Owner: **Codex · goal gaps:**. Reviewer: Claudio · PR review. Updated: 2026-10-05.
-Status: plan-only draft; conditions 3/4 clarified for reviewer confirmation.
+Status: plan confirmed at `7438183`; item 3 implementation is under exact-head review.
 Carlos merged PR A #7 into `codex/worktree-standards` as
 `fe5c1f421c4293d0b993a5e2e4abecc69fba500c` on 2026-10-05 at 07:03 UTC.
-B now includes that merged base through a merge, preserving its existing
-published history without a rebase or force-push. Implementation still waits
-for **Claudio · PR review to confirm this revised plan at its new head**.
-No application code, tests or migrations change in this draft.
+B includes that merged base through a merge, preserving published history
+without a rebase or force-push. Claudio · PR review confirmed the revised
+plan at `7438183646873bdef52f5211357e85e0626b389a` on October 5 at 17:55:42 UTC;
+Carlos gave GO to code B. Item 3 now implements the attributed reviewer-count
+path using the existing append-only review-event storage, so no new migration
+is needed. The first contract-changing commit regenerates OpenAPI and adds its
+application comparison test. Items 4 and 6 still follow the scoped plan below.
 
 PR A's approved head `54c979e457e9fa83e0ac22ada12cb2b3385e0a21` is a parent
 of the merge. A's CI measured backend 268 passed and goal 53 passed,
@@ -175,8 +178,11 @@ browser bridge. Do not reuse an existing application's database or service.
    scorecard when B is ready. Merge requires `Approved at <commit>` matching
    B's current head with passing tests; Carlos's hold stops work.
 
-This publication requests plan review only. No B behavior is implemented,
-no runtime is changed, and no new accuracy or production result is claimed.
-Only documentation is added or changed relative to the merged base. This
-plan update is checked with `git diff --check`; local runtime suites and new
-B tests wait for Claudio's confirmation. No B code starts before that comment.
+The plan gate is satisfied. Each implementation item is committed separately
+and requires re-review at its exact head; final code approval must say
+`Approved at <commit>`. Count corrections explicitly reference the latest
+record and attest `independent_count_error`; a reviewer-confirmed source
+discrepancy permanently keeps that old run blocked. The website can prepare
+a new run of the same source without copying source authorization, counts or
+product approvals, and without automatically starting provider processing.
+No model accuracy or production result is claimed.

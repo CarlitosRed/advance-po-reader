@@ -9,7 +9,7 @@ from io import BytesIO
 from PIL import Image
 import pytest
 
-from conftest import PRODUCTS, ok, process, product_row, review_body
+from tests.goal.conftest import PRODUCTS, ok, process, product_row, review_body
 
 pytestmark = pytest.mark.goal
 
@@ -203,8 +203,8 @@ def test_goal_6_unknown_line_accepts_explicit_not_a_product_answer(desk):
 def test_goal_7_invented_line_in_declared_region_is_rejected_or_flagged(desk):
     rows = two_products()
     baseline = process(desk, rows)
-    if baseline.run["state"] != "completed":
-        pytest.fail("positive grounding baseline must complete before testing invented output")
+    if baseline.result["attempts"][0]["state"] != "succeeded":
+        pytest.fail("positive grounding baseline must process before testing invented output")
     invented = product_row(3, code="GOAL-GHOST-999", description="Invented synthetic ghost product", quantity="99")
     # Cite a real printed row's region: graph validity must not count as source grounding.
     invented["row_id"] = "invented-line"
@@ -217,10 +217,12 @@ def test_goal_7_invented_line_in_declared_region_is_rejected_or_flagged(desk):
     extracted = result.result["extraction"]
     flagged = extracted and (extracted["warnings"] or any(
         row["row_id"] == "invented-line" and row["uncertainty"] for row in extracted["rows"]))
-    assert result.run["state"] in {"failed", "partial"} or flagged, result.run
+    # Coverage alone now makes runs partial; that is not proof of grounding.
+    grounded_flag = any(check.get("row_id") == "invented-line" and check.get("status") == "unsupported"
+                        for check in result.summary.get("source_grounding", []))
+    assert result.run["state"] == "failed" or flagged or grounded_flag, result.run
 
 
-@gap("backend/service.py considers a provider-declared complete page complete if any product remains; no independent source product-line count check")
 def test_goal_8_missing_product_line_triggers_completeness_check(desk):
     rows = two_products()
     # The generated page still contains both products; JSON silently omits line-2.

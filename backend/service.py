@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
-from backend.api_models import RunRequest, ReviewRequest
+from backend.api_models import RunRequest, ReviewRequest, PageCountRequest
 from backend.catalog import retrieve_candidates
 from backend.contracts import ExtractionPayload, validate_payload, parsed_payload
 from backend.errors import BackendError
@@ -208,8 +208,9 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                                             "retrieval_version": "catalog-retrieval-v2", "evidence": [],
                                             "reason": "Retrieval input exceeds the bounded search contract; human review required"}
                     session.add(Suggestion(tenant_id=tenant, run_id=run.id, row_id=row.row_id, **candidate_result))
-                advance(run, "partial" if partial else "completed")
-                run.outcome_code = "review_required" if partial else "ready_for_human_review"
+                # Independent page checks have not been supplied by a human yet.
+                advance(run, "partial")
+                run.outcome_code = "review_required" if partial else "independent_coverage_required"
     run.finished_at = now()
     session.commit()
     return run
@@ -249,7 +250,10 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
     new_value = None
     if request.action == "resolve":
         from backend.review_summary import resolution_blockers
-        blockers = resolution_blockers(payload, [serialize(event) for event in events], tier_by_row)
+        from backend.coverage import page_coverage
+        source = source_for(session, tenant, run.source_document_id)
+        checks = page_coverage(payload, [serialize(event) for event in events], source)
+        blockers = resolution_blockers(payload, [serialize(event) for event in events], tier_by_row, checks)
         if blockers:
             raise BackendError(blockers[0], 409)
         old_value, new_value = {"review_state": run.review_state}, {"review_state": "resolved"}
@@ -388,4 +392,52 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                         created_at=now(), event_sequence=max((e.event_sequence or 0 for e in events), default=0) + 1)
     session.add(event)
     session.flush()
+    return event
+
+
+def record_page_count(session, tenant, run_id, request: PageCountRequest, settings):
+    from backend.coverage import COUNT_ACTION, COUNT_METHOD, page_coverage, synchronize_coverage_state
+    run = run_for(session, tenant, run_id, lock=True)
+    if run.state not in {"completed", "partial"} or not run.result:
+        raise BackendError("run_has_no_reviewable_purchase_order", 409)
+    if run.review_state == "resolved":
+        raise BackendError("resolved_review_is_immutable_create_new_run", 409)
+    payload = ExtractionPayload.model_validate(run.result)
+    if payload.document_type != "purchase_order":
+        raise BackendError("run_has_no_reviewable_purchase_order", 409)
+    source = source_for(session, tenant, run.source_document_id)
+    if request.source_sha256 != source.sha256:
+        raise BackendError("review_source_hash_mismatch", 422)
+    if request.page_number > source.page_count:
+        raise BackendError("page_outside_document", 422)
+    # A saved hash is insufficient if the actual immutable file has been damaged.
+    read_source(settings.storage_directory, source.storage_reference, source.sha256)
+    events = session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant,
+        ReviewEvent.run_id == run_id).order_by(*ReviewEvent.audit_order())).all()
+    history = [event for event in events if event.action == COUNT_ACTION
+               and event.new_value["page_number"] == request.page_number]
+    prior = history[-1] if history else None
+    if any(event.new_value["source_discrepancy"] for event in history):
+        raise BackendError("source_discrepancy_requires_new_run", 409)
+    if prior:
+        if request.corrects_event_id != prior.id:
+            raise BackendError("count_correction_must_reference_latest_event", 409)
+    elif request.corrects_event_id:
+        raise BackendError("count_correction_event_outside_page_or_run", 422)
+    evidence = {"scope": "page", "page_number": request.page_number, "source_sha256": source.sha256}
+    new_value = {**evidence, "method": COUNT_METHOD, "product_count": request.product_count,
+                 "source_discrepancy": request.source_discrepancy,
+                 "corrects_event_id": str(prior.id) if prior else None,
+                 "correction_kind": request.correction_kind}
+    provider_count = page_coverage(payload, [], source)[request.page_number - 1]["provider_product_count"]
+    new_value.update(provider_product_count=provider_count,
+                     status="mismatch" if request.source_discrepancy or provider_count != request.product_count else "matched")
+    event = ReviewEvent(tenant_id=tenant, run_id=run_id, row_id=None, action=COUNT_ACTION,
+        reviewer=request.reviewer, reason=request.reason, evidence_reference=[evidence],
+        old_value=prior.new_value if prior else None, new_value=new_value, created_at=now(),
+        event_sequence=max((event.event_sequence or 0 for event in events), default=0) + 1)
+    session.add(event)
+    session.flush()
+    synchronize_coverage_state(run, page_coverage(payload, [serialize(e) for e in [*events, event]], source))
+    run.review_state = "in_progress"
     return event
