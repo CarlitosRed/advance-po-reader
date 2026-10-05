@@ -1,7 +1,7 @@
 # T-009 PR B: completeness, source grounding and F7/F8
 
 Owner: **Codex · goal gaps:**. Reviewer: Claudio · PR review. Updated: 2026-10-05.
-Status: plan confirmed at `7438183`; item 3 implementation is under exact-head review.
+Status: plan confirmed at `7438183`; item 3 approved at `53a092d`.
 Carlos merged PR A #7 into `codex/worktree-standards` as
 `fe5c1f421c4293d0b993a5e2e4abecc69fba500c` on 2026-10-05 at 07:03 UTC.
 B includes that merged base through a merge, preserving published history
@@ -56,6 +56,11 @@ database, model installation, training, deployment or cart/order actions.
   acknowledgments and unavailable-text confirmations cannot clear coverage
   blockers. Surface the mismatching page, compared counts and the new-run
   remedy in the review controls, so the reviewer has an actionable next step.
+  `partial` therefore also means awaiting independent counts, even when the
+  provider returned a complete payload. A zero-product whole document may
+  finish after every page has an independent matching zero count and all
+  page/document warnings and other review blockers have been addressed;
+  no product approval is required when there are no product rows.
 - A reviewer may correct a genuinely mistaken independent count only by a
   new attributed, reasoned, append-only count record bound to the same page,
   source hash and run; preserve the prior record. The latest source-supported
