@@ -1,5 +1,5 @@
 """Strict request boundaries, separate from immutable model observations."""
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 from backend.catalog import ProductInput
@@ -53,7 +53,8 @@ class RunRequest(RequestModel):
 
 
 class ReviewRequest(RequestModel):
-    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "propose_candidate", "this_is_product", "new_product", "not_a_product", "not_product"]
+    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "propose_candidate", "this_is_product", "new_product", "not_a_product"] | Annotated[Literal["not_product"], Field(json_schema_extra={"deprecated": True})] = Field(
+        description="Use not_a_product for exclusion. not_product is a deprecated legacy alias retained for existing clients and audit events.")
     row_id: StrictStr | None = Field(default=None, max_length=120)
     reviewer: StrictStr = Field(min_length=1, max_length=120)
     reason: StrictStr = Field(min_length=1, max_length=500)
