@@ -136,3 +136,20 @@ application database is migrated or service restarted. PR #9 remains plan-only;
 source grounding, independent completeness and F7/F8 are not implemented here.
 Claudio's B-plan conditions 3/4 still require clarification and confirmation
 before B coding, which also waits for #7 to merge from an approved exact head.
+
+# T-017 free synthetic POC — October 5, 2026
+
+Implemented on `codex/poc-demo-kit` in the new `poc-demo` desk: script-owned
+one-command startup, isolated PostgreSQL/environment, 150 fictional catalog
+fixtures, hash-bound fixed observations, PDF/photo upload entry and unchanged
+human review controls. All 33 original PDFs/45 pages were validated only
+locally under Carlos's explicit authorization; 33 fictional structural
+surrogates were processed without any original-source provider attempt.
+Phone QA at 390×844 and the existing goal suite (54 passed, 2 strict xfailed)
+passed. Reset selects a new owned database and preserves previous evidence.
+Source grounding/completeness remain known gaps; live OpenAI, accuracy,
+real-catalog integration and ordering are not verified. No backend logic,
+migration, CI or existing runtime was changed. Cost is $0. Step 4 still needs
+Carlos's separate go and source-transfer authorization. See
+[runbook](poc-demo-runbook.md), [evidence](poc-demo-verification.md) and
+`audits/handoff-codex-poc-demo-2026-10-05.md`.

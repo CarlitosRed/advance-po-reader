@@ -1,5 +1,11 @@
 # All products catalog pool
 
+October 5 T-017 note: the current backend head is `0009_review_answers`;
+the `0008` migration instructions below describe this pool change's original
+checkpoint. The [free synthetic POC](poc-demo-runbook.md) uses an owned fresh
+database and explicit vendor scope. It does not add synthetic namespaces to
+a pool or migrate the existing live-demo database.
+
 This change adds a persisted, tenant-local pool boundary over existing catalog
 namespaces. It does not copy or combine product rows. A pool member remains an
 original `catalog_namespace`; each product keeps its original ID, vendor, raw

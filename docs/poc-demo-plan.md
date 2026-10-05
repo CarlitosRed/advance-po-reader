@@ -9,7 +9,7 @@ PR base: `codex/worktree-standards`; T-017 assigns the old review rule and Claud
 
 ## Plan
 
-This draft contains the plan only. Implementation, environment creation, database setup, app startup and tests wait for Carlos's go in this chat. After that go, perform T-017 steps 1, 2, 3 and 5. Step 4 requires a separate, explicit live-run go from Carlos in this chat.
+Carlos gave GO for steps 1, 2, 3 and 5 on October 5 and skipped separate plan review: Claudio · PR review reviews the finished PR once. This file retains the original plan and plan-phase evidence below; executed results are in [poc-demo-verification.md](poc-demo-verification.md). Step 4 still requires a separate explicit live-run go and source-transfer authorization from Carlos in this chat.
 
 Milestone 1 demonstrates the existing local application against a synthetic catalog, with a fake provider and explicit human review. There is no real product database. Keep the existing live-demo runtime, other desks, main, customer data and private catalogs untouched. Do not deploy, host, add logins, make paid calls or open any `.env*` file, including examples.
 
