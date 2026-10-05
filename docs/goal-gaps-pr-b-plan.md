@@ -1,7 +1,8 @@
 # T-009 PR B: completeness, source grounding and F7/F8
 
 Owner: **Codex · goal gaps:**. Reviewer: Claudio · PR review. Updated: 2026-10-05.
-Status: plan confirmed at `7438183`; item 3 approved at `53a092d`.
+Status: plan confirmed at `7438183`; item 3 approved at `53a092d`;
+item 4 implemented for exact-head review; item 6 pending.
 Carlos merged PR A #7 into `codex/worktree-standards` as
 `fe5c1f421c4293d0b993a5e2e4abecc69fba500c` on 2026-10-05 at 07:03 UTC.
 B includes that merged base through a merge, preserving published history
@@ -97,6 +98,13 @@ a migration. Define permitted processing/review transitions explicitly.
   it requires an attributed source review/correction through the existing
   audited review flow. Generic acknowledgment cannot clear it. A source-flag
   decision cannot approve a product or clear independent count discrepancies.
+  The audited row action is `confirm_source_text`, requiring attribution and
+  every flagged field's declared region. It records human source review while
+  preserving the independent unsupported status. Corrections remain separate
+  append-only events and require fresh product approval. Grounding evidence is
+  saved once with the run's immutable deterministic parses; page confirmations
+  use existing append-only review events, so no new migration is needed. Legacy
+  runs missing grounding require a new processing run before Finish.
 - **Unavailable-text policy:** a scanned page, photo or empty text layer is
   unavailable evidence, not proof of fabrication. It retains each line's
   existing Certain/Probable/Uncertain tier and its normal selection policy;

@@ -216,6 +216,27 @@ class PageCoverageResponse(ResponseModel):
     remedy: Literal["new_source_bound_run"] | None
 
 
+class SourceTextObservationResponse(ResponseModel):
+    field_name: str
+    page_number: int
+    region_reference: str
+    literal_observed_text: str | None
+    literal_source_text: str
+    normalized_observed_text: str
+    normalized_source_text: str
+    status: Literal["supported", "unsupported", "unavailable"]
+
+
+class SourceGroundingResponse(ResponseModel):
+    row_id: str
+    source_sha256: str
+    method: str
+    status: Literal["supported", "unsupported", "unavailable"]
+    observations: list[SourceTextObservationResponse]
+    unsupported_reviewed: bool
+    unconfirmed_page_numbers: list[int]
+
+
 class ReviewSummaryResponse(ResponseModel):
     run_id: UUID
     state: str
@@ -230,3 +251,4 @@ class ReviewSummaryResponse(ResponseModel):
     can_finish_review: bool
     source_observations_unchanged: bool
     page_coverage: list[PageCoverageResponse]
+    source_grounding: list[SourceGroundingResponse]

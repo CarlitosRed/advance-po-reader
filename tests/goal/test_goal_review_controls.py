@@ -9,12 +9,14 @@ from threading import Thread
 
 import pytest
 
+from copy import deepcopy
 from tests.goal.conftest import ROOT, PRODUCTS, process, product_row
 
 pytestmark = pytest.mark.goal
 
 
-def test_goal_9_website_three_answers_and_explicit_approval(desk, tmp_path):
+@pytest.mark.parametrize("source_mode", ["text", "photo", "unsupported"])
+def test_goal_9_website_three_answers_and_explicit_approval(desk, tmp_path, source_mode):
     node = os.environ.get("GOAL_NODE_BIN") or shutil.which("node")
     browser = os.environ.get("GOAL_BROWSER_BIN")
     if not node or not browser:
@@ -22,12 +24,15 @@ def test_goal_9_website_three_answers_and_explicit_approval(desk, tmp_path):
     rows = [product_row(1, code="GOAL-001", description=PRODUCTS[0]["description"], quantity="2"),
             product_row(2, description=PRODUCTS[1]["description"], quantity="3"),
             product_row(3, description="Synthetic accessory to classify", quantity="1", kind="unknown")]
-    result = process(desk, rows)
+    observed = deepcopy(rows)
+    if source_mode == "unsupported":
+        observed[0]["description"]["raw_value"] = "Fictional fabricated text"
+    result = process(desk, rows, observed=observed, media_type="image/png" if source_mode == "photo" else "application/pdf")
     seed = {"workspace": desk.tenant, "catalog": {**desk.vendor, "synthetic": True},
             "catalogs": [desk.vendor], "source": result.source, "run": result.run,
             "result": result.result, "suggestions": result.suggestions, "summary": result.summary,
             "reviewer": "Fictional browser reviewer", "reason": "Checked generated fixture",
-            "name": "Generated fictional browser fixture", "events": []}
+            "name": "Generated fictional browser fixture", "events": [], "sourceMode": source_mode}
     fixture = tmp_path / "browser-seed.json"
     fixture.write_text(json.dumps(seed), encoding="utf-8")
     allowed = (f"/runs/{result.run['id']}", f"/documents/{result.source['id']}/pages/", "/website/catalog")

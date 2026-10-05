@@ -15,8 +15,8 @@ def effective_row_role(row, schema_version):
     return "unknown"
 
 
-def resolution_blockers(payload, events, tiers=None, coverage=None):
-    latest = {event["row_id"]: event["action"] for event in events if event.get("row_id")}
+def resolution_blockers(payload, events, tiers=None, coverage=None, grounding=None):
+    latest = {event["row_id"]: event["action"] for event in events if event.get("row_id") and event["action"] != "confirm_source_text"}
     decided = {row_id for row_id, action in latest.items()
                if action in {"approve", "no_match", "not_a_product", "not_product"}}
     for row in payload.rows:
@@ -38,6 +38,11 @@ def resolution_blockers(payload, events, tiers=None, coverage=None):
         blockers.append("document_warnings_require_explicit_acknowledgement")
     from backend.coverage import coverage_blockers
     blockers.extend(coverage_blockers(coverage or []))
+    from backend.source_checks import grounding_blockers
+    if grounding is not None and any(row.row_id not in {c["row_id"] for c in grounding}
+            for row in payload.rows if effective_row_role(row, payload.schema_version) == "product_item"):
+        blockers.append("source_grounding_requires_new_processing_run")
+    blockers.extend(grounding_blockers(grounding or []))
     return blockers
 
 
@@ -50,7 +55,7 @@ def reviewed_summary(run, events, tiers=None, source=None):
     result = {"run_id": str(run.id), "state": run.state, "review_state": run.review_state,
               "summary_policy_version": SUMMARY_POLICY_VERSION,
               "approved_products": [], "pending_row_ids": [], "excluded_rows": [], "document_details": [],
-              "review_event_count": len(events), "blockers": [], "page_coverage": [],
+              "review_event_count": len(events), "blockers": [], "page_coverage": [], "source_grounding": [],
               "can_finish_review": False, "source_observations_unchanged": True}
     if run.state not in {"completed", "partial"} or not run.result:
         result["blockers"] = ["run_has_no_reviewable_purchase_order"]
@@ -59,7 +64,7 @@ def reviewed_summary(run, events, tiers=None, source=None):
     if payload.document_type != "purchase_order":
         result["blockers"] = ["run_has_no_reviewable_purchase_order"]
         return result
-    latest = {e["row_id"]: e for e in events if e.get("row_id")}
+    latest = {e["row_id"]: e for e in events if e.get("row_id") and e["action"] != "confirm_source_text"}
     for row in payload.rows:
         role = effective_row_role(row, payload.schema_version)
         if role == "continuation":
@@ -106,6 +111,8 @@ def reviewed_summary(run, events, tiers=None, source=None):
                                            "decision": event["action"]})
     from backend.coverage import page_coverage
     result["page_coverage"] = page_coverage(payload, events, source) if source else []
-    result["blockers"] = resolution_blockers(payload, events, tiers, result["page_coverage"])
+    from backend.source_checks import grounding_projection
+    result["source_grounding"] = grounding_projection(run, events, source) if source else []
+    result["blockers"] = resolution_blockers(payload, events, tiers, result["page_coverage"], result["source_grounding"] if source else None)
     result["can_finish_review"] = not result["blockers"] and run.review_state != "resolved"
     return result

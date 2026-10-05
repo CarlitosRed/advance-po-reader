@@ -205,3 +205,46 @@ CI deliberately lacks browser tooling and reports its browser skips separately.
 No `.env*`, real PO, paid/live provider, application DB migration or main push
 is involved. Code approval still requires `Approved at <current head>`; no
 merge is authorized in this chat.
+
+## T-009 PR B item 4 — Codex · goal gaps 4, 2026-10-05
+
+The separate plan-only commit `042f9d2` resolves item 3's two non-blocking
+notes: zero-product whole documents may Finish after matching per-page zero
+counts and other review requirements; `partial` also means awaiting counts.
+
+Item 4 independently decodes actual hash-checked PDF source text inside each
+description/identifier's declared region. Unicode case-folding, whitespace
+collapse and complete-phrase alphanumeric boundaries preserve punctuation,
+numbers and literal observations. Supported/unsupported/unavailable evidence,
+literal decoded text and separate normalized comparisons are saved once in
+the run's immutable deterministic parses. No new migration is required.
+
+Unsupported text blocks Finish until attributed `confirm_source_text` review
+of every flagged region. Corrections retain original observations and still
+invalidate product approval. Source review preserves the unsupported status
+and cannot approve products. Scanned/empty PDF text and photos retain all tiers
+and normal preselection. One attributed, exact-hash page action
+`confirm_unavailable_page_text` covers every unavailable row on that page;
+the unavailable status, row decisions and independent count blockers remain.
+Generic acknowledgments do not substitute. Every page/new run needs its own
+evidence; preserved legacy runs missing grounding require new processing.
+The website shows row flags and source evidence, with both confirmation
+controls tested through the real isolated API. OpenAPI is regenerated and
+compared with `app.openapi()`. Goal 7's original assertion now passes with its
+strict xfail removed. A zero-product whole-document test is also included.
+
+Final local tests: backend plus goal **367 passed in 100.36s**; separate goal
+**99 passed in 52.69s**. Neither command has skips, xfails or failures. Each
+runs the same 20 new grounding/empty-document cases and three browser modes
+(text PDF, photo/unavailable text and unsupported source text). Tests preserve
+the item 3 count and A's approval/scoping/evidence regressions. `pip check`
+and `git diff --check` pass. The measured scorecard is regenerated from the
+separate goal run. CI for the published item 4 head must be checked separately;
+the reported runner-acquisition outage is not a passing-suite result.
+
+Item 6 (F7/F8) is unstarted. Carlos requested a checkpoint and stop at about
+60% context; the continuation checkpoint is
+`C:\Users\carlo\dev\project-notes\audits\handoff-codex-goal-gaps-4-2026-10-05.md`.
+PR #9 stays draft; item 4 needs exact-head re-review, and no merge is authorized.
+No dotenv file, paid/live provider, real PO data, existing application database,
+deployment, cart/order write or main push is involved.

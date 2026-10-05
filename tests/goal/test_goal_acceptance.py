@@ -199,7 +199,6 @@ def test_goal_6_unknown_line_accepts_explicit_not_a_product_answer(desk):
                for r in summary["excluded_rows"])
 
 
-@gap("backend/contracts.py only validates page/region references; service.process_run never grounds observed products against source pixels/text")
 def test_goal_7_invented_line_in_declared_region_is_rejected_or_flagged(desk):
     rows = two_products()
     baseline = process(desk, rows)

@@ -106,11 +106,12 @@ function renderSummary() {
     <section class="panel field"><h2>${resolved ? "Review complete" : "Finish the source review"}</h2><p class="field">Product rows require candidate approval or a no-match decision. Ambiguous item rows require clarification. Typed charges, totals and notes remain inspectable under document details.</p>
     ${pending.length ? `<div class="callout">${pending.length} row(s) remain unresolved. Return to the source review to decide them.</div>` : ""}
     ${summary.excluded_rows.length ? `<p class="hint">${summary.excluded_rows.length} non-product or no-match line(s) are retained in the audit history.</p>` : ""}
-    ${resolved ? '<span class="badge green">Saved · review resolved</span>' : attributionHTML() + '<div id="page-count-checks"></div><div id="document-acknowledgements"></div><div class="button-row"><button id="finish-review" class="button primary" ' + (summary.can_finish_review ? "" : "disabled") + '>Finish review</button></div>'}
+    ${resolved ? '<span class="badge green">Saved · review resolved</span>' : attributionHTML() + '<div id="source-text-checks"></div><div id="page-count-checks"></div><div id="document-acknowledgements"></div><div class="button-row"><button id="finish-review" class="button primary" ' + (summary.can_finish_review ? "" : "disabled") + '>Finish review</button></div>'}
     ${auditHTML()}</section>`;
   $("back-review").onclick = () => renderDocument();
   wireAttribution();
   if (resolved) return;
+  renderSourceChecks();
   renderPageCounts();
   const partial = payload.pages.filter(page => page.state === "partial" && !state.events.some(event =>
     event.action === "acknowledge_page" && event.evidence_reference.some(ref => ref.page_number === page.page_number)));
@@ -123,6 +124,30 @@ function renderSummary() {
   if ($("ack-warnings")) $("ack-warnings").onclick = () => saveReview("acknowledge_document", {
     evidence_reference: [{page_number: payload.pages[0].page_number, region_reference: null}]}).then(renderSummary).catch(fail);
   $("finish-review").onclick = () => saveReview("resolve").then(renderSummary).catch(fail);
+}
+
+function renderSourceChecks() {
+  const checks = state.summary.source_grounding || [];
+  const pages = [...new Set(checks.flatMap(check => check.unconfirmed_page_numbers))];
+  $("source-text-checks").innerHTML = checks.map(check => `<div class="callout" data-source-row="${escapeHTML(check.row_id)}">
+    <h3>${escapeHTML(check.row_id)} · independent source text ${escapeHTML(check.status)}</h3>
+    ${check.observations.map(observation => `<p>Page ${observation.page_number}, ${escapeHTML(observation.region_reference)} · ${escapeHTML(observation.field_name)}: ${escapeHTML(observation.status)}<br>Observed: ${escapeHTML(observation.literal_observed_text ?? "[unreadable]")}<br>Decoded source: ${escapeHTML(observation.literal_source_text || "[no text]")}</p>`).join("")}
+    <button class="button secondary" data-inspect-grounding="${escapeHTML(check.row_id)}">Inspect source row</button>
+    ${check.status === "unsupported" && !check.unsupported_reviewed ? `<p>Check every flagged observation against its source region. Record corrections in source review when needed. Confirming this source flag does not approve a product.</p><button class="button secondary" data-confirm-source="${escapeHTML(check.row_id)}">Confirm I reviewed the unsupported source text</button>` : ""}
+    ${check.unsupported_reviewed ? '<p>Attributed source review saved; independent text remains unsupported.</p>' : ""}</div>`).join("") + pages.map(page => `<div class="callout"><p>Page ${page} has unavailable independent text. Inspect the visible source once for this page; product decisions and counts are still required.</p><button class="button secondary" data-confirm-unavailable="${page}">Confirm visual review of page ${page} without independent text</button></div>`).join("");
+  for (const button of document.querySelectorAll("[data-inspect-grounding]")) button.onclick = () => {
+    state.row = state.result.extraction.rows.findIndex(row => row.row_id === button.dataset.inspectGrounding);
+    state.page = state.result.extraction.rows[state.row].evidence[0].page_number;
+    renderDocument();
+  };
+  for (const button of document.querySelectorAll("[data-confirm-source]")) button.onclick = () => {
+    const check = checks.find(check => check.row_id === button.dataset.confirmSource);
+    const evidence = check.observations.filter(o => o.status === "unsupported").map(o => ({page_number:o.page_number, region_reference:o.region_reference}));
+    saveReview("confirm_source_text", {row_id:check.row_id, evidence_reference:evidence}).then(renderSummary).catch(fail);
+  };
+  for (const button of document.querySelectorAll("[data-confirm-unavailable]")) button.onclick = () => saveReview("confirm_unavailable_page_text", {
+    evidence_reference:[{scope:"page", page_number:Number(button.dataset.confirmUnavailable), source_sha256:state.source.sha256}]
+  }).then(renderSummary).catch(fail);
 }
 
 function renderPageCounts() {

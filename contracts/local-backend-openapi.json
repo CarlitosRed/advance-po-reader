@@ -1416,6 +1416,8 @@
                   "resolve",
                   "acknowledge_page",
                   "acknowledge_document",
+                  "confirm_source_text",
+                  "confirm_unavailable_page_text",
                   "propose_candidate",
                   "this_is_product",
                   "new_product",
@@ -1779,6 +1781,13 @@
             "title": "Run Id",
             "type": "string"
           },
+          "source_grounding": {
+            "items": {
+              "$ref": "#/components/schemas/SourceGroundingResponse"
+            },
+            "title": "Source Grounding",
+            "type": "array"
+          },
           "source_observations_unchanged": {
             "title": "Source Observations Unchanged",
             "type": "boolean"
@@ -1805,7 +1814,8 @@
           "blockers",
           "can_finish_review",
           "source_observations_unchanged",
-          "page_coverage"
+          "page_coverage",
+          "source_grounding"
         ],
         "title": "ReviewSummaryResponse",
         "type": "object"
@@ -2085,6 +2095,61 @@
         "title": "RunsResponse",
         "type": "object"
       },
+      "SourceGroundingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/SourceTextObservationResponse"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "row_id": {
+            "title": "Row Id",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "unsupported",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unconfirmed_page_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unconfirmed Page Numbers",
+            "type": "array"
+          },
+          "unsupported_reviewed": {
+            "title": "Unsupported Reviewed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "row_id",
+          "source_sha256",
+          "method",
+          "status",
+          "observations",
+          "unsupported_reviewed",
+          "unconfirmed_page_numbers"
+        ],
+        "title": "SourceGroundingResponse",
+        "type": "object"
+      },
       "SourceResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2182,6 +2247,67 @@
           "created_at"
         ],
         "title": "SourceResponse",
+        "type": "object"
+      },
+      "SourceTextObservationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "field_name": {
+            "title": "Field Name",
+            "type": "string"
+          },
+          "literal_observed_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Literal Observed Text"
+          },
+          "literal_source_text": {
+            "title": "Literal Source Text",
+            "type": "string"
+          },
+          "normalized_observed_text": {
+            "title": "Normalized Observed Text",
+            "type": "string"
+          },
+          "normalized_source_text": {
+            "title": "Normalized Source Text",
+            "type": "string"
+          },
+          "page_number": {
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "region_reference": {
+            "title": "Region Reference",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "unsupported",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field_name",
+          "page_number",
+          "region_reference",
+          "literal_observed_text",
+          "literal_source_text",
+          "normalized_observed_text",
+          "normalized_source_text",
+          "status"
+        ],
+        "title": "SourceTextObservationResponse",
         "type": "object"
       },
       "SuggestionResponse": {

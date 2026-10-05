@@ -191,6 +191,8 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                 advance(run, "failed")
                 run.outcome_code = "unsupported_document_type" if payload.document_type == "unsupported" else "needs_classification"
             else:
+                from backend.source_checks import source_grounding
+                run.parses = {**run.parses, "source_grounding": source_grounding(payload, data, source)}
                 partial = payload.partial or not any(row.row_kind == "product" for row in payload.rows)
                 for row in payload.rows:
                     if row.row_kind != "product":
@@ -228,7 +230,7 @@ def cancel_run(session, tenant, run_id):
     return run
 
 
-def review_run(session, tenant, run_id, request: ReviewRequest):
+def review_run(session, tenant, run_id, request: ReviewRequest, settings=None):
     run = run_for(session, tenant, run_id, lock=True)
     if run.state not in {"completed", "partial"} or run.result is None:
         raise BackendError("run_has_no_reviewable_purchase_order", 409)
@@ -253,11 +255,36 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
         from backend.coverage import page_coverage
         source = source_for(session, tenant, run.source_document_id)
         checks = page_coverage(payload, [serialize(event) for event in events], source)
-        blockers = resolution_blockers(payload, [serialize(event) for event in events], tier_by_row, checks)
+        from backend.source_checks import grounding_projection
+        grounding = grounding_projection(run, [serialize(event) for event in events], source)
+        blockers = resolution_blockers(payload, [serialize(event) for event in events], tier_by_row, checks, grounding)
         if blockers:
             raise BackendError(blockers[0], 409)
         old_value, new_value = {"review_state": run.review_state}, {"review_state": "resolved"}
         run.review_state = "resolved"
+    elif request.action == "confirm_unavailable_page_text":
+        from backend.api_models import PageSourceEvidence
+        from backend.source_checks import grounding_projection
+        source = source_for(session, tenant, run.source_document_id)
+        try:
+            references = [PageSourceEvidence.model_validate(ref) for ref in request.evidence_reference]
+        except Exception:
+            raise BackendError("invalid_page_source_evidence", 422) from None
+        if len(references) != 1:
+            raise BackendError("confirm_one_page_per_event", 422)
+        ref = references[0]
+        if ref.source_sha256 != source.sha256:
+            raise BackendError("review_source_hash_mismatch", 422)
+        if ref.page_number > source.page_count:
+            raise BackendError("page_outside_document", 422)
+        read_source(settings.storage_directory, source.storage_reference, source.sha256)
+        checks = grounding_projection(run, [serialize(e) for e in events], source)
+        if not any(o["page_number"] == ref.page_number and o["status"] == "unavailable"
+                   for c in checks for o in c["observations"]):
+            raise BackendError("page_text_is_not_unavailable", 422)
+        old_value = {"independent_text_status": "unavailable"}
+        new_value = {**ref.model_dump(), "independent_text_status": "unavailable", "human_confirmed_source": True}
+        run.review_state = "in_progress"
     elif request.action in {"acknowledge_page", "acknowledge_document"}:
         try:
             references = [EvidenceReference.model_validate(reference) for reference in request.evidence_reference]
@@ -288,13 +315,30 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
         except Exception:
             raise BackendError("invalid_review_evidence_reference", 422) from None
         row_references = {(ref.page_number, ref.region_reference) for ref in row.evidence}
+        if request.action == "confirm_source_text":
+            row_references.update((ref.page_number, ref.region_reference)
+                                  for field in [row.description, *row.identifiers] for ref in field.evidence)
         if not references or not all((ref.page_number, ref.region_reference) in row_references for ref in references):
             raise BackendError("review_evidence_outside_row", 422)
         if row.row_role == "continuation" and request.action in {"approve", "no_match", "acknowledge", "propose_candidate"}:
             raise BackendError("continuation_is_grouped_source_evidence", 422)
         if payload.schema_version == "1.2" and row.row_role == "document_detail" and request.action in {"approve", "no_match", "acknowledge", "propose_candidate"}:
             raise BackendError("document_detail_does_not_require_product_review", 422)
-        if request.action in {"this_is_product", "new_product", *EXCLUSION_ACTIONS}:
+        if request.action == "confirm_source_text":
+            source = source_for(session, tenant, run.source_document_id)
+            read_source(settings.storage_directory, source.storage_reference, source.sha256)
+            check = next((c for c in (run.parses or {}).get("source_grounding", [])
+                          if c["row_id"] == row.row_id and c["status"] == "unsupported"), None)
+            if not check:
+                raise BackendError("row_has_no_unsupported_source_text", 422)
+            unsupported_refs = {(o["page_number"], o["region_reference"]) for o in check["observations"]
+                                if o["status"] == "unsupported"}
+            if not unsupported_refs.issubset({(r.page_number, r.region_reference) for r in references}):
+                raise BackendError("source_review_requires_all_flagged_regions", 422)
+            old_value = check
+            new_value = {"source_sha256": source.sha256, "human_reviewed_unsupported_text": True,
+                         "independent_text_status": "unsupported"}
+        elif request.action in {"this_is_product", "new_product", *EXCLUSION_ACTIONS}:
             new_value = explicit_answer(session, tenant, run, row, request)
             if request.action == "new_product":
                 new_value.update(decision_key=request.decision_key, request_hash=request_hash)

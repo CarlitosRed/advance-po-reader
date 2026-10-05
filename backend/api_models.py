@@ -78,7 +78,7 @@ class RunRequest(RequestModel):
 
 
 class ReviewRequest(RequestModel):
-    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "propose_candidate", "this_is_product", "new_product", "not_a_product"] | Annotated[Literal["not_product"], Field(json_schema_extra={"deprecated": True})] = Field(
+    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "confirm_source_text", "confirm_unavailable_page_text", "propose_candidate", "this_is_product", "new_product", "not_a_product"] | Annotated[Literal["not_product"], Field(json_schema_extra={"deprecated": True})] = Field(
         description="Use not_a_product for exclusion. not_product is a deprecated legacy alias retained for existing clients and audit events.")
     row_id: StrictStr | None = Field(default=None, max_length=120)
     reviewer: StrictStr = Field(min_length=1, max_length=120)
@@ -102,7 +102,7 @@ class ReviewRequest(RequestModel):
         if self.action == "resolve":
             if self.row_id or self.selected_candidate_id or self.field_name or self.evidence_reference:
                 raise ValueError("resolve applies to the complete run")
-        elif self.action in {"acknowledge_page", "acknowledge_document"}:
+        elif self.action in {"acknowledge_page", "acknowledge_document", "confirm_unavailable_page_text"}:
             if self.row_id is not None or not self.evidence_reference:
                 raise ValueError("page/document acknowledgment requires source evidence and no row")
         elif not self.row_id or not self.evidence_reference:

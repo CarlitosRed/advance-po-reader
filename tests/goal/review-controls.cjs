@@ -30,6 +30,19 @@ const { chromium } = require(require.resolve("playwright", {
     assert.equal(await page.locator("#finish-review").isDisabled(), true);
     await page.evaluate(() => renderDocument());
 
+    if (seed.sourceMode === "photo") {
+      await page.click("#reviewed-products");
+      assert.equal(await page.locator("[data-confirm-unavailable]").count(), 1);
+      await page.click('[data-confirm-unavailable="1"]');
+      await page.waitForFunction(() => !state.busy && state.events.at(-1)?.action === "confirm_unavailable_page_text");
+      assert.equal(await page.locator("[data-confirm-unavailable]").count(), 0);
+      assert.equal(await page.locator("#finish-review").isDisabled(), true);
+      assert.equal(await page.evaluate(() => state.summary.source_grounding.every(check => check.status === "unavailable")), true);
+      assert.equal(await page.evaluate(() => state.summary.blockers.includes("independent_page_product_counts_required")), true);
+      await page.evaluate(() => renderDocument());
+    }
+    const initialEventCount = await page.evaluate(() => state.events.length);
+
     const waitSaved = action => page.waitForFunction(action =>
       !state.busy && state.events.at(-1)?.action === action, action);
     await page.click("#approve-row");
@@ -38,7 +51,7 @@ const { chromium } = require(require.resolve("playwright", {
     assert.equal(await page.locator('input[name="candidate"]:checked').count(), 0);
     await page.locator('input[name="candidate"]').check();
     await page.click("#approve-row");
-    await page.waitForFunction(() => !state.busy && state.events.length === 2);
+    await page.waitForFunction(initial => !state.busy && state.events.length === initial + 2, initialEventCount);
 
     await page.click('[data-row="2"]');
     assert.equal(await page.locator('input[name="candidate"]:checked').count(), 0);
@@ -82,6 +95,14 @@ const { chromium } = require(require.resolve("playwright", {
     await page.locator('[data-page-count="1"] button').click();
     await page.waitForFunction(() => !state.busy && state.summary.page_coverage[0].status === "matched");
     assert.equal(await page.evaluate(() => state.summary.page_coverage[0].status), "matched");
+    if (seed.sourceMode === "unsupported") {
+      assert.equal(await page.locator("#finish-review").isDisabled(), true);
+      assert.match(await page.locator('[data-source-row="line-1"]').innerText(), /Fictional fabricated text/);
+      await page.click('[data-confirm-source="line-1"]');
+      await waitSaved("confirm_source_text");
+      assert.equal(await page.evaluate(() => state.summary.source_grounding[0].status), "unsupported");
+      assert.equal(await page.evaluate(() => state.summary.approved_products.length), 3);
+    }
     assert.equal(await page.locator("#finish-review").isDisabled(), false);
     await page.click("#finish-review");
     await waitSaved("resolve");

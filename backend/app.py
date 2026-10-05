@@ -406,7 +406,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
     @app.post("/runs/{run_id}/reviews", status_code=201, response_model=ReviewResponse)
     def review(run_id: UUID, body: ReviewRequest, request: Request):
         with Session(app.state.engine, expire_on_commit=False) as session:
-            event = review_run(session, tenant_for(request, session), run_id, body)
+            event = review_run(session, tenant_for(request, session), run_id, body, configuration)
             session.commit()
             return serialize(event)
 
