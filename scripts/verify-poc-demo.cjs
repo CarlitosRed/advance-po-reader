@@ -20,7 +20,9 @@ fs.mkdirSync(output, {recursive:true});
   });
   const page = await context.newPage();
   const screenshot = async name => {
+    await page.waitForFunction(() => !document.getElementById("toast") || document.getElementById("toast").hidden);
     await page.evaluate(() => { document.activeElement?.blur(); window.scrollTo(0, 0); });
+    await page.waitForFunction(() => window.scrollY === 0);
     await page.screenshot({path:path.join(output,name),fullPage:true});
   };
   page.on("pageerror", error => errors.push(error.message));
@@ -81,6 +83,36 @@ fs.mkdirSync(output, {recursive:true});
     await page.reload(); await page.waitForFunction(() => state.run?.review_state === "resolved" && state.summary);
     assert.equal(await page.evaluate(() => state.summary.approved_products.length), 2);
 
+    await openCase(1);
+    assert.deepEqual(await page.evaluate(() => state.suggestions.map(item => item.tier)), ["probable","probable","uncertain"]);
+    const embeddedDescription = await page.evaluate(() => state.result.extraction.rows[0].description.raw_value);
+    assert.match(embeddedDescription, / code POC-/);
+    assert.deepEqual(await page.evaluate(() => state.result.extraction.rows[0].identifiers), []);
+    await page.locator('input[name="candidate"]').first().check();
+    await page.click("#approve-row"); await waitSaved("approve");
+    await page.locator("#correction-form").evaluate(form => form.closest("details").open = true);
+    await page.selectOption("#correction-field", "quantity");
+    await page.fill("#correction-value", "002.50");
+    await page.locator("#correction-form button").click(); await waitSaved("correct");
+    assert.equal(await page.evaluate(() => state.summary.pending_row_ids.includes(state.result.extraction.rows[0].row_id)), true);
+    await page.reload(); await page.waitForSelector("#approve-row"); await reviewer();
+    assert.equal(await page.evaluate(() => state.result.extraction.rows[0].description.raw_value), embeddedDescription);
+    assert.deepEqual(await page.evaluate(() => state.result.extraction.rows[0].identifiers), []);
+    assert.equal(await page.evaluate(() => state.result.extraction.rows[0].quantity.raw_value), "002.00");
+    assert.equal(await page.evaluate(() => effectiveValue(state.result.extraction.rows[0], "quantity")), "002.50");
+    await page.locator('input[name="candidate"]').first().check();
+    await page.click("#approve-row"); await waitSaved("approve");
+    await page.click('[data-row="1"]');
+    await page.locator('input[name="candidate"]').first().check();
+    await page.click("#approve-row"); await waitSaved("approve");
+    await page.click('[data-row="2"]');
+    await page.click("#answer-not-product"); await waitSaved("not_a_product");
+    await page.click("#reviewed-products");
+    assert.equal(await page.locator("#finish-review").isDisabled(), false);
+    await page.click("#finish-review"); await waitSaved("resolve");
+    await page.reload(); await page.waitForFunction(() => state.run?.review_state === "resolved" && state.summary);
+    assert.equal(await page.evaluate(() => state.summary.approved_products.length), 2);
+
     await openCase(2);
     await page.locator("#manual-search").evaluate(form => form.closest("details").open = true);
     await page.fill("#manual-query", "POC-0101");
@@ -116,7 +148,8 @@ fs.mkdirSync(output, {recursive:true});
     assert.deepEqual(errors, []);
     assert.deepEqual(external, []);
     const result = {viewport:[390,844],entry_no_horizontal_overflow:true,review_no_horizontal_overflow:true,
-      all_three_tiers:true,all_three_answers:true,source_enlargement:true,explicit_approval:true,correction_reopens_approval:true,
+      all_three_tiers:true,all_three_answers:true,all_three_cases:true,embedded_code_observation_preserved:true,
+      source_enlargement:true,explicit_approval:true,correction_reopens_approval:true,
       original_and_corrected_literals_persist:true,finish_blocker:true,resolved_reload:true,
       uploads:["PDF","PNG","JPG"],external_browser_requests:0,page_errors:0,
       attribution:"Synthetic QA (Codex simulation)"};

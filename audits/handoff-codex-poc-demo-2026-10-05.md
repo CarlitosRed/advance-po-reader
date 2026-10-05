@@ -39,3 +39,28 @@ Step 5's runbook draft and evidence document exist; polish remains. Carlos reque
 3. Keep step 4 blocked until Carlos separately authorizes both a live run and which POs may leave this PC. Only then use his privately set key/token, the normal source-bound path, and the $3 cumulative cap.
 
 If resumed, inspect Git status and this desk's port ownership before any runtime action. Never open `.env*`. Use outside-sandbox `gh` for this repository as global AGENTS.md directs; do not use browser/connector comment fallbacks.
+
+## Continuation — Codex · poc demo 2, October 5
+
+Rebuilt state from the project-notes checkpoint, task, desk plan/runbook and PR
+#12. Starting local/remote head was `802e35d`, desk clean. No uncommitted work
+was discarded; the final enlargement/screenshot assertions were already tracked.
+
+The phone rerun passed source enlargement. Final QA then passed all three
+fictional walkthroughs, embedded-code observation preservation, quantity
+correction/reapproval and reload, all three answers, Finish blockers/resolution
+and PDF/PNG/JPG uploads at 390×844. Zero page errors or external browser requests.
+Screenshots wait for the toast to clear and scroll to settle; final summary
+visually verified unobstructed. Attribution is Synthetic QA (Codex simulation).
+
+Carlos reported execution-policy refusal and administrator PowerShell. Commit
+`e9dbcfc` adds a pre-setup elevation guard and normal-PowerShell/process-only
+bypass instructions for start/reset/setup verification/seed. Bypass setup and
+seed passed; syntax and simulated elevated-role refusal passed. No Windows
+settings changed. A later full start refused occupied port 8020; another POC
+process returned HTTP 200 from its fictional entry and was left running.
+
+Step 5 runbook is finished. Earlier corpus/goal results remain prior verified
+evidence, not continuation reruns. Final publication updates PR #12 and requests
+Claudio · PR review once for the finished head. No merge or step 4 authorized.
+Private evidence remains ignored; cost $0, zero external provider calls.

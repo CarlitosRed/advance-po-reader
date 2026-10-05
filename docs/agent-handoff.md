@@ -153,3 +153,10 @@ migration, CI or existing runtime was changed. Cost is $0. Step 4 still needs
 Carlos's separate go and source-transfer authorization. See
 [runbook](poc-demo-runbook.md), [evidence](poc-demo-verification.md) and
 `audits/handoff-codex-poc-demo-2026-10-05.md`.
+
+Continuation: step 5 runbook finished; source enlargement and all three case
+walkthroughs passed at phone width. The launcher now rejects administrator
+sessions before setup. Use normal PowerShell and the documented process-only
+execution-policy bypass; no Windows policy setting changed. Bypass setup/seed
+verification passed. A later full start safely refused already occupied port
+8020; the other running demo was left intact. Step 4 and merge remain gated.
