@@ -1,0 +1,59 @@
+{
+  "version": "poc-fixed-json-v1",
+  "cases": [
+    {
+      "id": "demo-three-tiers",
+      "title": "Clear code, similar code, ambiguous row",
+      "rows": [
+        {
+          "product": 0,
+          "mode": "certain"
+        },
+        {
+          "product": 5,
+          "mode": "probable"
+        },
+        {
+          "mode": "uncertain",
+          "description": "Fictional item needing a human answer"
+        }
+      ]
+    },
+    {
+      "id": "demo-description",
+      "title": "Codes inside descriptions and similar products",
+      "rows": [
+        {
+          "product": 50,
+          "mode": "embedded"
+        },
+        {
+          "product": 100,
+          "mode": "probable"
+        },
+        {
+          "mode": "uncertain",
+          "description": "Fictional unlisted accessory"
+        }
+      ]
+    },
+    {
+      "id": "demo-three-answers",
+      "title": "Existing product, new product, not a product",
+      "rows": [
+        {
+          "mode": "uncertain",
+          "description": "Fictional unidentified item A"
+        },
+        {
+          "mode": "uncertain",
+          "description": "Fictional unidentified item B"
+        },
+        {
+          "mode": "uncertain",
+          "description": "Fictional delivery instruction"
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,13 @@
 # Local website and real catalogs
 
+For the October 5 T-017 **free synthetic POC**, use
+[poc-demo-runbook.md](poc-demo-runbook.md) and `scripts/start-poc-demo.ps1`.
+That kit owns a fresh database, bypasses dotenv and injects fixed fictional
+observations; it uses a separate vendor-scoped entry because synthetic
+namespaces cannot join the all-products pool. The historical real-catalog
+setup below does not prepare that fresh demo. No live call is authorized by
+the free kit; see [its verification](poc-demo-verification.md).
+
 Implemented October 2, 2026 in the dedicated managed worktree
 `C:\Users\carlo\.codex\worktrees\local-website-catalogs\Advance PO Reader`,
 branch `codex/local-website-catalogs`, based on backend checkpoint `ce1a025`.
