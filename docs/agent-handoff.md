@@ -70,6 +70,7 @@ Current desk: `C:\Users\carlo\dev\advance-po-reader.worktrees\codex`, branch `co
 Recreated this desk's isolated Gate A environment with Python 3.12.14. Dependency installation and `pip check` passed. The post-rebase local suite passed 133 tests with 2 explicit PostgreSQL skips. Pytest required a fresh `--basetemp` under this desk's ignored `tmp/` because the shared Windows pytest temporary directory was inaccessible. No local PostgreSQL or Docker runtime was available in this desk; the PR's PostgreSQL 17 CI run supplies the separate live database verification. The PR check results and review handoff identify the final HEAD and its CI status; older remote-CI-unverified statements above describe the October 2 run.
 
 Only documentation conflict resolution and this handoff note changed during the continuation; no new Gate A behavior was implemented. Claudio must review the PR's exact HEAD before any merge. Stop after opening the PR and reporting its number and HEAD. Carlos retains the veto.
+OneDrive mockup reconciled, 21 files match main, OneDrive repo archived to `dev\_archive\`.
 
 ## T-010 operating model and merge gate (October 4, 2026)
 
