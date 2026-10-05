@@ -6,6 +6,11 @@ param(
     [switch]$PrepareOnly
 )
 $ErrorActionPreference = 'Stop'
+$taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+$taskPrincipal = [Security.Principal.WindowsPrincipal]::new($taskIdentity)
+if ($taskPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'PostgreSQL cannot run as administrator. Open a NORMAL PowerShell from the Start menu (PowerShell, NOT Run as administrator), then rerun the documented command.'
+}
 $taskRoot = Split-Path -Parent $PSScriptRoot
 Push-Location -LiteralPath $taskRoot
 try {

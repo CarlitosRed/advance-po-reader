@@ -1,25 +1,41 @@
 # Local POC demo — free mode
 
-For Carlos · target Wednesday, October 7, 2026. Everything runs on this PC with a **fictional catalog and fake extraction**. No API key, dotenv file, login or hosting is needed.
+For Carlos · Wednesday, October 7, 2026. **150 fictional products; fake extraction; every decision is explicit.** This mode needs no API key, dotenv file, login or hosting.
 
-**Prerequisites:** Python 3.12, the pinned backend dependencies in this desk's `.venv-backend`, and PostgreSQL 17 binaries. The launcher creates the environment and installs the lock file on first use if it is absent. On this PC it finds the existing binaries automatically; elsewhere pass `-Python PATH_TO_PYTHON -PostgresBin PATH_TO_PG_BIN`. Run in an ordinary PowerShell terminal as Carlos; the restricted agent sandbox cannot start PostgreSQL. Port 8020 must be free.
+**Prerequisites:** open a **NORMAL PowerShell** (Start menu → PowerShell, **NOT Run as administrator**). PostgreSQL refuses administrator sessions; the launcher stops before setup if elevated. This desk has Python 3.12, pinned `.venv-backend` dependencies and PostgreSQL 17 binaries. Port 8020 must be free. The restricted agent sandbox cannot start PostgreSQL.
 
-**Start from the `poc-demo` desk:**
+**Start:** paste both lines in PowerShell and leave that terminal open.
 
 ```powershell
-& .\scripts\start-poc-demo.ps1
+Set-Location -LiteralPath 'C:\Users\carlo\dev\advance-po-reader.worktrees\poc-demo'
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1
 ```
 
-Open [the local demo](http://127.0.0.1:8020/poc-demo). The command seeds 150 invented products, creates three pending review cases and starts the app and its isolated database. Stop with Ctrl+C in that terminal. Restart preserves prior runs and decisions and creates fresh pending demo runs. The seed alone is `& .\.venv-backend\Scripts\python.exe scripts\seed-poc-demo.py`.
+The execution-policy bypass applies only to that one process; no Windows setting changes.
 
-**Show these three fictional POs:**
+Wait for “Free POC ready”, then open [the local demo](http://127.0.0.1:8020/poc-demo). Stop with **Ctrl+C**. Restart preserves earlier runs/decisions and creates fresh pending cases in the owned database.
 
-1. **Clear code, similar code, ambiguous row** (`demo-three-tiers`; local structure reference **PO-04**): inspect/enlarge the source, enter your name and reason, approve the Certain line, select and approve the Probable line, and clarify the Uncertain line. Certain means one clear literal-code candidate; Probable means a normalized code or description suggests a candidate; Uncertain needs clarification. Every tier requires a decision.
-2. **Codes inside descriptions and similar products** (`demo-description`; reference **PO-01**): inspect the embedded code and candidate description before selecting a product. A suggestion never silently changes an observed code. Correct a quantity if needed; its original literal stays saved and approval reopens.
-3. **Existing product, new product, not a product** (`demo-three-answers`; reference **PO-23**): use catalog search to choose an existing product and approve separately; add a fictional new product and approve separately; mark the delivery instruction not a product. **Reviewed products → Finish** stays blocked until all required decisions are saved. Reload to show persistence.
+**Show the three buttons under “Three prepared review cases”.** In each case, click **Enlarge source**, inspect the printed line, then close it. Fill **Your name** and **Decision reason** before saving. Use a reason that identifies this as a fictional demonstration. Return to the local demo link between cases.
 
-For upload, download a fictional PDF/PNG/JPG from the entry page and choose it under **Upload a fictional PDF or photo**. Only recognized fictional bytes receive fixed observations. Return to `/poc-demo` for another upload. The standard landing page requires a real-catalog pool; its “API connection pending” banner is expected in this free kit.
+1. **Clear code, similar code, ambiguous row** (`demo-three-tiers`; opaque reference **PO-04**). Line 1 is **Certain**: one literal-code candidate is selected, but it is pending until **Approve selected product**. Select Line 2, **Probable**, check its candidate and approve. Select Line 3, **Uncertain**; for this demonstration exclude the fictional placeholder with **This is not a product** and explain that choice in the reason. **Reviewed products → Finish review** is enabled only after every required decision is saved.
+2. **Codes inside descriptions and similar products** (`demo-description`; **PO-01**). Line 1 has a code inside its description; inspect the suggested product, select it and approve. Open **Correct a reviewed field**, choose **quantity**, enter `002.50` and **Save correction**. Approval reopens. Reload: the original `002.00` remains in evidence and the reviewed value is saved separately. Select the candidate and approve again. Approve Line 2 after checking its candidate; exclude Line 3's fictional unlisted placeholder with an explicit reason, then finish.
+3. **Existing product, new product, not a product** (`demo-three-answers`; **PO-23**). Line 1: expand **Find another product**, search `POC-0101`, click **Choose product**, then approve separately. Line 2: expand **This is a new product**, use a unique invented code such as `POC-DEMO-NEW-01` and a fictional description, click **Add product and save choice**, then approve separately. Line 3: mark the delivery instruction **This is not a product**. Finish and reload to show the saved review. Unresolved quantity/unit labels remain visible; product decisions do not invent missing values.
 
-**Reset:** stop the app, then run the same command with `-FreshDatabase`. It selects a new owned demo database and preserves the previous database, files and review evidence. It deletes nothing and never targets another desk. `-PrepareOnly` verifies setup and stops without retaining a website.
+**Upload demonstration:** download a fictional PDF/PNG/JPG from `/poc-demo`, choose that unchanged file and click **Upload and open review**. Only recognized fictional bytes receive fixed observations. Use `/poc-demo` for each upload; the standard landing page requires a real-catalog pool. “API connection pending” is expected in free mode.
 
-**Limits:** PO-01/04/23 are opaque private references; the displayed PDFs are invented structural examples, not extraction of those originals. The 33 original PDFs/45 pages were validated locally, and 33 fictional structural cases were dry-run. This proves workflow handling, not model accuracy. Source grounding and independent completeness remain known gaps. This is a review demonstration, with no pricing/stock guarantee or cart/order action. Step 4 is still unauthorized; Carlos must separately approve both a live run and which sources may leave this PC.
+**Reset:** stop with Ctrl+C, then run from the same desk:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1 -FreshDatabase
+```
+
+This preserves all previous databases, files and reviews. With the app stopped, **verify setup** or **seed alone** from the same normal terminal:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1 -PrepareOnly
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& .\.venv-backend\Scripts\python.exe scripts\seed-poc-demo.py"
+```
+
+Verification exits without keeping the website running. Seeding is idempotent and preserves reviews.
+
+**Limits:** Certain suggests a literal-code match; Probable suggests a normalized-code or description match; Uncertain needs clarification. None means approved. PO-01/04/23 refer privately to source structures; displayed files are invented examples. The 33 originals/45 pages were validated locally; 33 fictional structural cases were dry-run. This proves workflow handling. Model accuracy, source grounding and independent completeness remain unverified. There is no real catalog, pricing/stock guarantee or cart/order action. Step 4 needs Carlos's separate go in this chat and his choice of sources allowed to leave this PC.
