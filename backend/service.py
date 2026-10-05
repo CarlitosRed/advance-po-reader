@@ -15,6 +15,8 @@ from backend.models import CatalogProduct, CatalogSourceProduct, CatalogPoolMemb
 from backend.pools import pool_vendor_ids, validate_pool_candidate
 from backend.providers import OpenAIProvider, SyntheticProvider
 from backend.uploads import read_source
+from backend.review_answers import explicit_answer, BINDING_ACTIONS, EXCLUSION_ACTIONS
+from backend.tiers import review_suggestions
 from gate_a.contracts import EvidenceReference, validate_run_transition
 
 
@@ -229,16 +231,25 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
     run = run_for(session, tenant, run_id, lock=True)
     if run.state not in {"completed", "partial"} or run.result is None:
         raise BackendError("run_has_no_reviewable_purchase_order", 409)
-    if run.review_state == "resolved":
-        raise BackendError("resolved_review_is_immutable_create_new_run", 409)
     payload = ExtractionPayload.model_validate(run.result)
     events = session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant, ReviewEvent.run_id == run_id)
                              .order_by(*ReviewEvent.audit_order())).all()
+    request_hash = fingerprint(request.model_dump(mode="json"))
+    if request.action == "new_product":
+        prior = next((event for event in events if event.action == "new_product" and
+            event.new_value.get("decision_key") == request.decision_key), None)
+        if prior:
+            if prior.new_value.get("request_hash") != request_hash:
+                raise BackendError("review_idempotency_payload_conflict", 409)
+            return prior
+    if run.review_state == "resolved":
+        raise BackendError("resolved_review_is_immutable_create_new_run", 409)
+    tier_by_row = {value["row_id"]: value["tier"] for value in review_suggestions(session, tenant, run)}
     old_value = None
     new_value = None
     if request.action == "resolve":
         from backend.review_summary import resolution_blockers
-        blockers = resolution_blockers(payload, [serialize(event) for event in events])
+        blockers = resolution_blockers(payload, [serialize(event) for event in events], tier_by_row)
         if blockers:
             raise BackendError(blockers[0], 409)
         old_value, new_value = {"review_state": run.review_state}, {"review_state": "resolved"}
@@ -279,16 +290,30 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
             raise BackendError("continuation_is_grouped_source_evidence", 422)
         if payload.schema_version == "1.2" and row.row_role == "document_detail" and request.action in {"approve", "no_match", "acknowledge", "propose_candidate"}:
             raise BackendError("document_detail_does_not_require_product_review", 422)
-        if request.action in {"approve", "no_match"}:
-            if row.row_kind != "product" or row.row_role == "continuation":
+        if request.action in {"this_is_product", "new_product", *EXCLUSION_ACTIONS}:
+            new_value = explicit_answer(session, tenant, run, row, request)
+            if request.action == "new_product":
+                new_value.update(decision_key=request.decision_key, request_hash=request_hash)
+            old_value = {"original_row_kind": row.row_kind, "resolution": "unresolved"}
+        elif request.action in {"approve", "no_match"}:
+            if row.row_kind not in {"product", "unknown"} or row.row_role == "continuation":
                 raise BackendError("non_product_row_cannot_match", 422)
+            last_row_event = next((event for event in reversed(events) if event.row_id == row.row_id
+                and event.action in BINDING_ACTIONS | EXCLUSION_ACTIONS), None)
+            if tier_by_row.get(row.row_id) == "uncertain":
+                if request.action == "no_match":
+                    raise BackendError("uncertain_requires_three_way_decision", 422)
+                if not last_row_event or last_row_event.action not in BINDING_ACTIONS or len(last_row_event.new_value.get("candidates", [])) != 1:
+                    raise BackendError("uncertain_requires_explicit_product_binding", 422)
+                if str(request.selected_candidate_id) != last_row_event.new_value["candidates"][0]["candidate_id"]:
+                    raise BackendError("selected_candidate_outside_current_binding", 422)
             if request.action == "approve":
                 suggestion = session.scalar(select(Suggestion).where(Suggestion.tenant_id == tenant, Suggestion.run_id == run_id,
                                                                       Suggestion.row_id == row.row_id))
                 candidate = next((value for value in suggestion.candidates if value["candidate_id"] == str(request.selected_candidate_id)), None) if suggestion else None
                 if candidate is None:
                     candidate = next((value for event in reversed(events)
-                        if event.row_id == row.row_id and event.action == "propose_candidate"
+                        if event.row_id == row.row_id and event.action in BINDING_ACTIONS
                         for value in event.new_value["candidates"]
                         if value["candidate_id"] == str(request.selected_candidate_id)), None)
                 if candidate is None:
@@ -298,7 +323,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                     CatalogProduct.active.is_(True)))
                 if product is None or (run.catalog_pool_id is not None and not validate_pool_candidate(
                         session, tenant, run.catalog_pool_id, product.vendor_id, product.id)) or (
-                        run.catalog_pool_id is None and product.vendor_id != run.vendor_id):
+                        run.catalog_pool_id is None and (product.vendor_id != run.vendor_id or product.review_pool_id is not None)):
                     raise BackendError("selected_candidate_outside_run_pool", 422)
                 new_value = {"resolution": "approved", "candidate": candidate}
             else:
@@ -306,7 +331,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
             previous = next((event for event in reversed(events) if event.row_id == row.row_id and event.action in {"approve", "no_match"}), None)
             old_value = previous.new_value if previous else {"resolution": "unresolved"}
         elif request.action == "propose_candidate":
-            if row.row_kind != "product" or row.row_role == "continuation":
+            if row.row_kind not in {"product", "unknown"} or row.row_role == "continuation":
                 raise BackendError("non_product_row_cannot_match", 422)
             products = session.scalars(select(CatalogProduct).where(
                 CatalogProduct.tenant_id == tenant, CatalogProduct.id.in_(request.candidate_ids),
@@ -315,7 +340,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                 products = [product for product in products if validate_pool_candidate(
                     session, tenant, run.catalog_pool_id, product.vendor_id, product.id)]
             else:
-                products = [product for product in products if product.vendor_id == run.vendor_id]
+                products = [product for product in products if product.vendor_id == run.vendor_id and product.review_pool_id is None]
             if len(products) != len(request.candidate_ids):
                 raise BackendError("proposed_candidate_outside_catalog", 422)
             by_id = {product.id: product for product in products}
@@ -323,7 +348,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
             for id_ in request.candidate_ids:
                 product = by_id[id_]
                 candidate = {"candidate_id": str(product.id), "sku": product.sku,
-                    "description": product.description, "method": "human_catalog_search"}
+                    "description": product.description, "method": "human_catalog_search", "origin": product.origin}
                 if run.catalog_pool_id is not None:
                     source = session.scalar(select(CatalogSourceProduct).join(CatalogPoolMember,
                         (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
@@ -331,9 +356,9 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                         (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
                             CatalogSourceProduct.tenant_id == tenant, CatalogSourceProduct.vendor_id == product.vendor_id,
                             CatalogSourceProduct.product_id == product.id, CatalogPoolMember.pool_id == run.catalog_pool_id))
-                    candidate.update({"origin_vendor_id": str(product.vendor_id), "namespace_id": str(source.namespace_id)})
+                    candidate.update({"origin_vendor_id": str(product.vendor_id), "namespace_id": str(source.namespace_id) if source else None})
                 proposed.append(candidate)
-            new_value = {"candidates": proposed}
+            new_value = {"candidates": proposed, "decision": "this_is_product" if len(proposed) == 1 else "ambiguous", "resolution": "needs_approval"}
         elif request.action == "acknowledge":
             if row.row_kind == "product":
                 raise BackendError("product_requires_approve_or_no_match", 422)

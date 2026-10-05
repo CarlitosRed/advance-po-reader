@@ -255,7 +255,7 @@ def test_partial_uncertainty_is_preserved_and_review_stays_unresolved(api_client
     assert {item["row_id"] for item in suggestions(client, run)} == {"line-1", "line-2"}
 
 
-def test_explicit_no_match_and_sequential_corrections_are_append_only(api_client):
+def test_explicit_exclusion_and_sequential_corrections_are_append_only(api_client):
     client = api_client
     _, vendor, _ = scope(client, "no-match", products=False)
     source = accepted(upload(client, vendor))
@@ -270,7 +270,8 @@ def test_explicit_no_match_and_sequential_corrections_are_append_only(api_client
     assert review(client, run, action="resolve").status_code == 409
     for row in original["extraction"]["rows"]:
         if row["row_kind"] == "product":
-            accepted(review(client, run, action="no_match", row=row))
+            assert review(client, run, action="no_match", row=row).status_code == 422
+            accepted(review(client, run, action="not_a_product", row=row))
     accepted(review(client, run, action="resolve"))
     assert result(client, run) == original
     events = accepted(client.get(f"/runs/{run['id']}/reviews"))["events"]
@@ -383,8 +384,9 @@ def test_continuation_fixture_one_logical_product_blank_quantity_details_and_unk
     assert root["unit_price"]["raw_value"] == "432.2000" and root["line_total"]["raw_value"] == "1728.8000"
     assert blank_quantity["row_role"] == "product_item" and blank_quantity["quantity"]["raw_value"] is None
     suggestions_by_id = {item["row_id"]: item for item in suggestions(client, run)}
-    assert set(suggestions_by_id) == {"item-101", "item-202"}
-    assert all(item["candidates"] for item in suggestions_by_id.values())
+    assert set(suggestions_by_id) == {"item-101", "item-202", "ambiguous-item"}
+    assert all(suggestions_by_id[row_id]["candidates"] for row_id in ("item-101", "item-202"))
+    assert suggestions_by_id["ambiguous-item"]["tier"] == "uncertain"
     events = accepted(client.get(f"/runs/{run['id']}/reviews"))["events"]
     assert not events
     summary = accepted(client.get(f"/runs/{run['id']}/summary"))

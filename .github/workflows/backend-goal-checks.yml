@@ -1,0 +1,44 @@
+name: Backend and goal checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  backend-goal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: backend_checks
+          POSTGRES_PASSWORD: fictional_ci_only
+          POSTGRES_DB: gate_a_test_backend_ci_admin
+        ports:
+          - 55434:5432
+        options: >-
+          --health-cmd "pg_isready -U backend_checks -d gate_a_test_backend_ci_admin"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      CI_TEST_POSTGRES_URL: postgresql+psycopg://backend_checks:fictional_ci_only@127.0.0.1:55434/gate_a_test_backend_ci_admin
+      GOAL_TEST_EXECUTION: GitHub Actions backend-goal job
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.backend.lock.txt
+      - run: python -m pip check
+      - name: Backend suite (all test-owned databases)
+        run: python -m pytest -c pytest.backend.ini --isolated-backend --basetemp=.backend-ci-runtime -q --tb=short --junitxml=backend-results.xml
+      - name: Goal suite (fixed JSON; browser tooling deliberately absent)
+        if: success() || failure()
+        run: python -m pytest -m goal -q --tb=short --goal-scorecard=goal-scorecard-ci.md --junitxml=goal-results.xml
+      - name: Preserve suite results and goal scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-goal-results
+          path: |
+            backend-results.xml
+            goal-results.xml
+            goal-scorecard-ci.md

@@ -1,7 +1,8 @@
 """Strict request boundaries, separate from immutable model observations."""
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
+from backend.catalog import ProductInput
 
 
 class RequestModel(BaseModel):
@@ -52,7 +53,8 @@ class RunRequest(RequestModel):
 
 
 class ReviewRequest(RequestModel):
-    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "propose_candidate"]
+    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "propose_candidate", "this_is_product", "new_product", "not_a_product"] | Annotated[Literal["not_product"], Field(json_schema_extra={"deprecated": True})] = Field(
+        description="Use not_a_product for exclusion. not_product is a deprecated legacy alias retained for existing clients and audit events.")
     row_id: StrictStr | None = Field(default=None, max_length=120)
     reviewer: StrictStr = Field(min_length=1, max_length=120)
     reason: StrictStr = Field(min_length=1, max_length=500)
@@ -63,6 +65,10 @@ class ReviewRequest(RequestModel):
                         "identifier.raw_value", "identifier.source_label", "identifier.source_role"] | None = None
     identifier_index: int | None = Field(default=None, ge=0, le=100)
     new_value: StrictStr | None = Field(default=None, max_length=2000)
+    catalog_id: UUID | None = None
+    product: ProductInput | None = None
+    vendor_id: UUID | None = None
+    decision_key: StrictStr | None = Field(default=None, min_length=16, max_length=200)
 
     @model_validator(mode="after")
     def named_event(self):
@@ -93,4 +99,11 @@ class ReviewRequest(RequestModel):
                 raise ValueError("identifier correction requires an index; other fields cannot use an index")
         elif self.field_name is not None or self.new_value is not None or self.identifier_index is not None:
             raise ValueError("correction values only apply to correct")
+        if (self.action == "this_is_product") != (self.catalog_id is not None):
+            raise ValueError("this_is_product requires a catalog id; other actions cannot supply it")
+        if self.action == "new_product":
+            if self.product is None or not self.decision_key or not self.decision_key.strip():
+                raise ValueError("new_product requires reviewed catalog fields and a stable decision key")
+        elif self.product is not None or self.vendor_id is not None or self.decision_key is not None:
+            raise ValueError("new product fields only apply to new_product")
         return self

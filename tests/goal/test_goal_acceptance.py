@@ -35,7 +35,7 @@ def unknown(desk):
 
 def tier(suggestion):
     # Inspect the public response; never derive a tier from test-side matching rules.
-    return str(suggestion.get("confidence_tier", suggestion["outcome"])).casefold()
+    return str(suggestion.get("tier", suggestion["outcome"])).casefold()
 
 
 def test_goal_1_separate_code_column_preserves_every_product_and_raw_quantity(desk):
@@ -100,7 +100,6 @@ def test_goal_4_exact_code_preselected_but_needs_explicit_human_approval(desk):
     assert summary["review_event_count"] == 1
 
 
-@gap("backend/responses.py:SuggestionResponse and catalog.py:_result expose suggested/ambiguous/no_match; no Certain tier")
 def test_goal_4_exact_code_is_in_certain_tier(desk):
     _, result = exact(desk)
     assert tier(result.suggestions[0]) == "certain", result.suggestions[0]
@@ -116,7 +115,6 @@ def test_goal_5_description_only_match_finds_scoped_product_and_stays_pending(de
     assert result.summary["pending_row_ids"] == ["line-1"]
 
 
-@gap("backend/responses.py:SuggestionResponse has no Probable tier; description-only trigram matches remain generic suggested outcomes")
 def test_goal_5_description_only_match_is_in_probable_tier(desk):
     rows = [product_row(1, description="Synthetic cobalt ladder", quantity="2")]
     result = process(desk, rows, code_column=False)
@@ -138,7 +136,6 @@ def test_goal_6_unknown_line_keeps_source_snippet_and_pending_review(desk):
         assert image.convert("L").getextrema()[0] < 255, "snippet must retain printed ink"
 
 
-@gap("backend/service.py skips unknown rows during retrieval; the public review projection has no Uncertain tier for them")
 def test_goal_6_unknown_line_is_in_uncertain_tier(desk):
     _, result = unknown(desk)
     rows = {s["row_id"]: s for s in result.suggestions}
@@ -146,7 +143,6 @@ def test_goal_6_unknown_line_is_in_uncertain_tier(desk):
     assert tier(rows["line-2"]) == "uncertain"
 
 
-@gap("backend/service.py:review_run rejects propose_candidate for row_kind unknown with non_product_row_cannot_match")
 def test_goal_6_unknown_line_accepts_answer_product_x(desk):
     rows, result = unknown(desk)
     candidate = desk.products[0]["candidate_id"]
@@ -161,7 +157,6 @@ def test_goal_6_unknown_line_accepts_answer_product_x(desk):
                for r in summary["approved_products"])
 
 
-@gap("catalog/import can add products, but backend/service.py cannot bind that new product to an unknown source row")
 def test_goal_6_unknown_line_accepts_new_product_added_to_catalog(desk):
     rows, result = unknown(desk)
     new = ok(desk.client.post("/catalog/import", json={"vendor_id": desk.vendor["id"], "products": [
@@ -179,9 +174,13 @@ def test_goal_6_unknown_line_accepts_new_product_added_to_catalog(desk):
                for r in summary["approved_products"])
 
 
-def test_goal_6_unknown_line_can_be_acknowledged_and_excluded_without_approval(desk):
+def test_goal_6_acknowledgement_needs_explicit_exclusion_answer(desk):
     rows, result = unknown(desk)
     ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json=review_body(rows[1], "acknowledge")))
+    summary = ok(desk.client.get(f"/runs/{result.run['id']}/summary"))
+    assert "line-2" in summary["pending_row_ids"]
+    assert not summary["can_finish_review"]
+    ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json=review_body(rows[1], "not_a_product")))
     summary = ok(desk.client.get(f"/runs/{result.run['id']}/summary"))
     assert "line-2" not in summary["pending_row_ids"]
     assert summary["approved_products"] == []
@@ -190,7 +189,6 @@ def test_goal_6_unknown_line_can_be_acknowledged_and_excluded_without_approval(d
     assert original["row_kind"] == "unknown", "original extraction must remain immutable"
 
 
-@gap("backend/api_models.py:ReviewRequest has no explicit not_product decision; acknowledge only records generic classification review")
 def test_goal_6_unknown_line_accepts_explicit_not_a_product_answer(desk):
     rows, result = unknown(desk)
     response = desk.client.post(f"/runs/{result.run['id']}/reviews",

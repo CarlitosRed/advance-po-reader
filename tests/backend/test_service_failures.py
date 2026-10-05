@@ -111,7 +111,14 @@ class Resource:
 
     def acknowledge_rows(self, run):
         for suggestion in self.suggestions(run):
-            assert self.review(run, "no_match", suggestion["row_id"]).status_code == 201
+            row_id = suggestion["row_id"]
+            if suggestion["candidates"]:
+                chosen = suggestion["candidates"][0]["candidate_id"]
+                if suggestion["tier"] == "uncertain":
+                    assert self.review(run, "this_is_product", row_id, catalog_id=chosen).status_code == 201
+                assert self.review(run, "approve", row_id, selected_candidate_id=chosen).status_code == 201
+            else:
+                assert self.review(run, "not_a_product", row_id).status_code == 201
         for row_id in ("line-3", "line-4"):
             assert self.review(run, "acknowledge", row_id).status_code == 201
 

@@ -41,6 +41,8 @@ class CatalogProduct(Identity, Base):
     __tablename__ = "catalog_products"
     __table_args__ = (
         ForeignKeyConstraint(["tenant_id", "vendor_id"], ["vendors.tenant_id", "vendors.id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["tenant_id", "review_pool_id"], ["catalog_pools.tenant_id", "catalog_pools.id"], ondelete="RESTRICT"),
+        CheckConstraint("origin IN ('import', 'review') AND (origin = 'review' OR review_pool_id IS NULL)", name="ck_products_origin"),
         UniqueConstraint("tenant_id", "vendor_id", "id", name="uq_products_scope_id"),
         UniqueConstraint("tenant_id", "vendor_id", "sku", name="uq_products_scope_sku"),
         CheckConstraint("length(trim(sku)) > 0", name="ck_products_sku"),
@@ -54,6 +56,8 @@ class CatalogProduct(Identity, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_sku: Mapped[str] = mapped_column(String(200), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, default="import", server_default="import")
+    review_pool_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
 
 
 class CatalogAlias(Identity, Base):

@@ -22,3 +22,9 @@ node_modules/
 .venv-orderlens-all-products/
 .venv-goal/
 .goal-test-runtime/
+.goal-review-*/
+.backend-review-*/
+.backend-ci-runtime/
+backend-results.xml
+goal-results.xml
+goal-scorecard-ci.md

@@ -15,10 +15,13 @@ def effective_row_role(row, schema_version):
     return "unknown"
 
 
-def resolution_blockers(payload, events):
+def resolution_blockers(payload, events, tiers=None):
     latest = {event["row_id"]: event["action"] for event in events if event.get("row_id")}
     decided = {row_id for row_id, action in latest.items()
-               if action in {"approve", "no_match", "acknowledge"}}
+               if action in {"approve", "no_match", "not_a_product", "not_product"}}
+    for row in payload.rows:
+        if legacy_no_match_requires_answer(row, latest.get(row.row_id), tiers):
+            decided.discard(row.row_id)
     blockers = []
     required = [row for row in payload.rows if effective_row_role(row, payload.schema_version)
                 in {"product_item", "unknown"}]
@@ -36,7 +39,12 @@ def resolution_blockers(payload, events):
     return blockers
 
 
-def reviewed_summary(run, events):
+def legacy_no_match_requires_answer(row, action, tiers):
+    return action == "no_match" and (row.row_kind == "unknown" or
+                                    (tiers or {}).get(row.row_id) == "uncertain")
+
+
+def reviewed_summary(run, events, tiers=None):
     result = {"run_id": str(run.id), "state": run.state, "review_state": run.review_state,
               "summary_policy_version": SUMMARY_POLICY_VERSION,
               "approved_products": [], "pending_row_ids": [], "excluded_rows": [], "document_details": [],
@@ -65,9 +73,10 @@ def reviewed_summary(run, events):
                 "evidence": [ref.model_dump(mode="json") for ref in row.evidence]})
             continue
         event = latest.get(row.row_id)
-        if not event or event["action"] not in {"approve", "no_match", "acknowledge"}:
+        if (not event or event["action"] not in {"approve", "no_match", "not_a_product", "not_product"}
+                or legacy_no_match_requires_answer(row, event["action"], tiers)):
             result["pending_row_ids"].append(row.row_id)
-        elif row.row_kind == "product" and event["action"] == "approve":
+        elif event["action"] == "approve":
             candidate = event["new_value"]["candidate"]
             values = {}
             for field in ("quantity", "unit"):
@@ -93,6 +102,6 @@ def reviewed_summary(run, events):
         else:
             result["excluded_rows"].append({"row_id": row.row_id, "row_kind": row.row_kind,
                                            "decision": event["action"]})
-    result["blockers"] = resolution_blockers(payload, events)
+    result["blockers"] = resolution_blockers(payload, events, tiers)
     result["can_finish_review"] = not result["blockers"] and run.review_state != "resolved"
     return result
