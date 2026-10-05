@@ -107,6 +107,27 @@ function renderReviewerGate(next,changing=false){
 }
 
 /* ---------- Line helpers ---------- */
+/* quantity:start */
+// Display-only standard format. The printed string is never changed in storage, the API or the audit trail.
+function normalizeQuantity(raw){
+ const printed=raw===null||raw===undefined?"":String(raw).trim();
+ if(!printed)return {ok:false,empty:true,printed};
+ const m=/^([+-]?)(\d{1,12})(?:([.,])(\d+))?(?:\s*([A-Za-z][A-Za-z./]{0,11}))?$/.exec(printed);
+ if(!m)return {ok:false,printed};
+ const [,sign,whole,sep,frac,unit]=m;
+ // One separator followed by exactly three digits could be a thousands mark; extra non-zero decimals would be rounded. Do not guess.
+ if(sep&&(frac.length===3||(frac.length>3&&/[1-9]/.test(frac.slice(2)))))return {ok:false,printed};
+ const value=Number(sign+whole+(sep?"."+frac:""));
+ return {ok:true,value,text:value.toFixed(2),unit:unit||"",printed};
+}
+function filledValue(value){return value!==null&&value!==undefined&&String(value).trim()!=="";}
+// Standardized quantity for display: {text, check} where check marks text that is shown exactly as printed.
+function quantityDisplay(quantity,unit){
+ const n=normalizeQuantity(quantity);const u=filledValue(unit)?String(unit).trim():(n.unit||"");
+ if(n.ok)return {text:n.text+(u?" "+u:""),check:false};
+ return {text:[n.printed,u].filter(Boolean).join(" "),check:!n.empty};
+}
+/* quantity:end */
 function lineList(payload){return payload.rows.filter(r=>["product_item","unknown"].includes(rowRole(r,payload)));}
 function rowCode(row){const id=row.identifiers.find(i=>i.raw_value);return id?id.raw_value:"";}
 function lineTitle(row){const code=rowCode(row);if(code)return code;const words=String(row.description?.raw_value||"").trim().split(/\s+/).filter(Boolean).slice(0,5).join(" ");return words||"Unnamed line";}
@@ -129,11 +150,12 @@ function factsHTML(row,payload,role){
  const continuations=payload.rows.filter(item=>rowRole(item,payload)==="continuation"&&(payload.schema_version==="1.2"?item.continuation_of===row.row_id:item.item_group_id===(row.item_group_id||row.row_id)));
  const quantity=effectiveValue(row,"quantity");const unit=effectiveValue(row,"unit");const price=effectiveValue(row,"unit_price");const total=effectiveValue(row,"line_total");
  const empty='<span class="none">Not printed</span>';
- const quantityText=[quantity,unit].filter(v=>v!==null&&v!==undefined&&String(v).trim()!=="").join(" ");
+ const shown=quantityDisplay(quantity,unit);const printedQuantity=[row.quantity?.raw_value,row.unit?.raw_value].filter(filledValue).join(" ");
+ const quantityNote=quantity!==row.quantity?.raw_value||unit!==row.unit?.raw_value?'<small class="alt">Printed as '+escapeHTML(printedQuantity||"nothing")+' · corrected by you</small>':(shown.text&&shown.text!==printedQuantity&&!shown.check?'<small class="alt muted-note">Printed: '+escapeHTML(printedQuantity)+'</small>':"");
  const priceFact=(price!==null&&price!==undefined&&String(price).trim()!=="")?fact("Price",escapeHTML(price)+alternatives(row.unit_price)+correctedNote(row.unit_price?.raw_value,price)):(total!==null&&total!==undefined&&String(total).trim()!==""?fact("Line total",escapeHTML(total)+correctedNote(row.line_total?.raw_value,total)):"");
  return '<dl class="facts">'+fact("Code",code?escapeHTML(code)+row.identifiers.filter(i=>i.raw_value).map(alternatives).join(""):'<span class="none">No code printed</span>')
   +fact("Description",(description?'<span class="desc-line">'+escapeHTML(description)+'</span>':empty)+continuations.map(item=>'<span class="desc-line">'+escapeHTML(item.description.raw_value)+'</span>').join("")+alternatives(row.description)+correctedNote(printedDescription,description))
-  +fact("Quantity",(quantityText?escapeHTML(quantityText):empty)+alternatives(row.quantity)+correctedNote(row.quantity?.raw_value,quantity))+priceFact+'</dl>';
+  +fact("Quantity",(shown.text?escapeHTML(shown.text)+(shown.check?' <span class="check-flag">Check</span>':""):empty)+alternatives(row.quantity)+quantityNote)+priceFact+'</dl>';
 }
 function imageFrameHTML(id,label,extra=""){return '<div class="img-frame loading '+extra+'" role="img" aria-label="'+escapeHTML(label)+'"><img id="'+id+'" alt=""><div class="img-skeleton">Loading the picture…</div><div class="img-fallback"><span>The picture did not load.</span> <button type="button" class="link-button" data-retry-image>Try again</button></div></div>';}
 function openEnlarged(page){$("dialog-title").textContent="Source page "+page;$("dialog-content").innerHTML='<p class="hint">Scroll to read the printed values.</p><div class="enlarged-source">'+imageFrameHTML("enlarged-page","Enlarged source page "+page)+'</div>';$("detail-dialog").showModal();imageInto($("enlarged-page"),"/documents/"+state.source.id+"/pages/"+page);}

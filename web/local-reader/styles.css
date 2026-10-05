@@ -43,3 +43,4 @@
 @media(max-width:540px){.fact{grid-template-columns:84px minmax(0,1fr)}.line-card{padding:16px}.shell{padding-top:14px}}
 .evidence .img-frame{overflow-x:auto}.evidence .img-frame img{min-width:520px}
 .result-table th{white-space:nowrap}.result-table td:first-child,.result-table td:nth-child(3){white-space:nowrap}.result-table td:nth-child(4){white-space:nowrap}
+.check-flag{font-size:12px;font-weight:600;color:var(--amber);background:var(--amber-soft);border:1px solid #ead3a8;border-radius:999px;padding:1px 7px;white-space:nowrap}.muted-note{color:var(--muted)}

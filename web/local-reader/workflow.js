@@ -103,8 +103,8 @@ function csvCell(value) {
 }
 
 function downloadCSV(items) {
-  const header = ["Product ID", "Product name", "Description", "Quantity", "Unit", "Price"];
-  const rows = items.map(item => [item.id, item.name, item.printed, item.qty, item.unit, item.price]);
+  const header = ["product_id", "product", "description", "quantity", "unit", "quantity_as_printed", "price"];
+  const rows = items.map(item => [item.id, item.name, item.printed, item.quantity, item.unit, item.quantityPrinted, item.price]);
   const text = "﻿" + [header, ...rows].map(row => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
   const url = URL.createObjectURL(new Blob([text], {type: "text/csv;charset=utf-8"}));
   const link = document.createElement("a");
@@ -139,12 +139,16 @@ function renderSummary() {
   const items = approved.map(item => {
     const row = payload.rows.find(candidate => candidate.row_id === item.row_id);
     const price = row ? effectiveValue(row, "unit_price") : null;
-    return {id: item.candidate.sku, name: item.candidate.description,
+    const n = normalizeQuantity(item.quantity);
+    const unit = filled(item.unit) ? String(item.unit).trim() : (n.unit || "");
+    const shown = quantityDisplay(item.quantity, item.unit);
+    return {id: item.candidate.sku, name: item.candidate.description, shown, quantity: n.ok ? n.text : "", unit,
+      quantityPrinted: item.original_quantity ?? "",
       printed: [item.description, ...(item.continuation_descriptions || []).map(part => part.raw_description)].filter(filled).join(" "),
-      qty: item.quantity ?? "", unit: item.unit ?? "", price: filled(price) ? price : ""};
+      price: filled(price) ? price : ""};
   });
   const excluded = summary.excluded_rows.length;
-  const table = items.length ? `<div class="table-wrap"><table class="result-table"><thead><tr><th scope="col">ID</th><th scope="col">Product</th><th scope="col">Qty</th><th scope="col">Price</th></tr></thead><tbody>${items.map(item => `<tr><td class="cell-id">${escapeHTML(item.id)}</td><td>${escapeHTML(item.name)}${item.printed ? `<small>As printed: ${escapeHTML(item.printed)}</small>` : ""}</td><td>${escapeHTML([item.qty, item.unit].filter(filled).join(" "))}</td><td>${escapeHTML(item.price)}</td></tr>`).join("")}</tbody></table></div>` : '<div class="panel empty">No line was confirmed as a product.</div>';
+  const table = items.length ? `<div class="table-wrap"><table class="result-table"><thead><tr><th scope="col">ID</th><th scope="col">Product</th><th scope="col">Qty</th><th scope="col">Price</th></tr></thead><tbody>${items.map(item => `<tr><td class="cell-id">${escapeHTML(item.id)}</td><td>${escapeHTML(item.name)}${item.printed ? `<small>As printed: ${escapeHTML(item.printed)}</small>` : ""}</td><td>${escapeHTML(item.shown.text)}${item.shown.check ? ' <span class="check-flag">Check</span>' : ""}</td><td>${escapeHTML(item.price)}</td></tr>`).join("")}</tbody></table></div>` : '<div class="panel empty">No line was confirmed as a product.</div>';
   $("view").innerHTML = `${bar}<section class="done-head"><span class="check big-check" aria-hidden="true">✓</span><h1>${items.length} ${items.length === 1 ? "product" : "products"} confirmed</h1><p class="hint">${excluded ? `${excluded} ${excluded === 1 ? "line was" : "lines were"} marked “not a product”. ` : ""}${resolved ? "Review saved." : "Every line has an answer."}</p></section>
     ${resolved ? "" : '<section class="panel finish"><h2>One last step</h2><p>Finish the review to lock your answers. They cannot be changed afterwards.</p><div id="document-acknowledgements"></div><button id="finish-review" class="button primary big"' + (summary.can_finish_review ? "" : " disabled") + '>Finish review</button></section>'}
     ${table}
