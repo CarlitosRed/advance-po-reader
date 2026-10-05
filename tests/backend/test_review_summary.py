@@ -1,9 +1,27 @@
 """A saved correction invalidates prior approval without changing source literals."""
 from types import SimpleNamespace
 from uuid import uuid4
+import pytest
 
 from backend.review_summary import reviewed_summary, resolution_blockers
 from backend.synthetic import fixture_payload
+
+
+@pytest.mark.parametrize("unknown", [False, True])
+def test_legacy_no_match_on_unknown_or_uncertain_row_is_pending(unknown):
+    raw = fixture_payload().model_dump(mode="json")
+    row = raw["rows"][0]
+    if unknown:
+        row.update(row_kind="unknown", uncertainty="Legacy ambiguous row")
+    payload = type(fixture_payload()).model_validate(raw)
+    events = decisions(payload)
+    events[0].update(action="no_match", new_value={})
+    tiers = {} if unknown else {row["row_id"]: "uncertain"}
+    summary = reviewed_summary(run(payload), events, tiers)
+    assert summary["pending_row_ids"] == [row["row_id"]]
+    assert summary["excluded_rows"] == []
+    assert "unresolved_rows_remain" in summary["blockers"]
+    assert not summary["can_finish_review"]
 
 
 def run(payload, **extra):

@@ -20,9 +20,7 @@ def resolution_blockers(payload, events, tiers=None):
     decided = {row_id for row_id, action in latest.items()
                if action in {"approve", "no_match", "not_a_product", "not_product"}}
     for row in payload.rows:
-        if row.row_kind == "unknown" and latest.get(row.row_id) == "no_match":
-            decided.discard(row.row_id)
-        if tiers and tiers.get(row.row_id) == "uncertain" and latest.get(row.row_id) == "no_match":
+        if legacy_no_match_requires_answer(row, latest.get(row.row_id), tiers):
             decided.discard(row.row_id)
     blockers = []
     required = [row for row in payload.rows if effective_row_role(row, payload.schema_version)
@@ -39,6 +37,11 @@ def resolution_blockers(payload, events, tiers=None):
     if payload.warnings and not any(event["action"] == "acknowledge_document" for event in events):
         blockers.append("document_warnings_require_explicit_acknowledgement")
     return blockers
+
+
+def legacy_no_match_requires_answer(row, action, tiers):
+    return action == "no_match" and (row.row_kind == "unknown" or
+                                    (tiers or {}).get(row.row_id) == "uncertain")
 
 
 def reviewed_summary(run, events, tiers=None):
@@ -70,7 +73,8 @@ def reviewed_summary(run, events, tiers=None):
                 "evidence": [ref.model_dump(mode="json") for ref in row.evidence]})
             continue
         event = latest.get(row.row_id)
-        if not event or event["action"] not in {"approve", "no_match", "not_a_product", "not_product"}:
+        if (not event or event["action"] not in {"approve", "no_match", "not_a_product", "not_product"}
+                or legacy_no_match_requires_answer(row, event["action"], tiers)):
             result["pending_row_ids"].append(row.row_id)
         elif event["action"] == "approve":
             candidate = event["new_value"]["candidate"]
