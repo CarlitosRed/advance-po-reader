@@ -175,6 +175,19 @@ class ExtractionPayload(Immutable):
                 if any(regions[(ref.page_number, ref.region_reference)] == "failed"
                        for ref in observation.evidence):
                     raise ValueError("failed pages cannot support readable observations")
+        boxes = {(page.page_number, region.region_reference): region.bbox
+                 for page in self.pages for region in page.regions}
+        for row in self.rows:
+            for name in ("quantity", "unit"):
+                for ref in getattr(row, name).evidence:
+                    cell = boxes[(ref.page_number, ref.region_reference)]
+                    if not any(ref.page_number == own.page_number and
+                               boxes[(own.page_number, own.region_reference)].x0 <= cell.x0 and
+                               boxes[(own.page_number, own.region_reference)].y0 <= cell.y0 and
+                               cell.x1 <= boxes[(own.page_number, own.region_reference)].x1 and
+                               cell.y1 <= boxes[(own.page_number, own.region_reference)].y1
+                               for own in row.evidence):
+                        raise ValueError(f"{name} evidence must belong to the same row and page")
         return self
 
     def _validate_item_groups(self, regions: dict) -> None:

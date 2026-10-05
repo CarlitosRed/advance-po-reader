@@ -32,7 +32,7 @@ from gate_a.contracts import ProductDocumentV1
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
 
-EXPECTED_REVISION = "0008_catalog_pools"
+EXPECTED_REVISION = "0009_review_answers"
 
 
 class CatalogImport(RequestModel):
@@ -251,7 +251,8 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             tenant = tenant_for(request, session)
             vendor_for(session, tenant, vendor_id)
             records = session.scalars(select(CatalogProduct).where(CatalogProduct.tenant_id == tenant,
-                                     CatalogProduct.vendor_id == vendor_id).order_by(CatalogProduct.sku)
+                                     CatalogProduct.vendor_id == vendor_id,
+                                     CatalogProduct.review_pool_id.is_(None)).order_by(CatalogProduct.sku)
                                      .offset(offset).limit(limit + 1)).all()
             products = records[:limit]
             aliases = session.scalars(select(CatalogAlias).where(CatalogAlias.tenant_id == tenant,
@@ -339,7 +340,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
     def process(run_id: UUID, request: Request):
         with Session(app.state.engine, expire_on_commit=False) as session:
             run = process_run(session, tenant_for(request, session), run_id, configuration, provider)
-            return serialize(run, ["id", "source_document_id", "state", "review_state", "outcome_code", "created_at", "finished_at"])
+            return serialize(run, ["id", "source_document_id", "vendor_id", "catalog_pool_id", "provider", "state", "review_state", "outcome_code", "created_at", "finished_at"])
 
     @app.get("/runs/{run_id}/readiness", response_model=RunReadinessResponse)
     def run_readiness(run_id: UUID, request: Request):
@@ -373,7 +374,9 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             events = session.scalars(select(ReviewEvent).where(
                 ReviewEvent.tenant_id == tenant, ReviewEvent.run_id == run_id)
                 .order_by(*ReviewEvent.audit_order())).all()
-            return reviewed_summary(run, [serialize(event) for event in events])
+            from backend.tiers import review_suggestions
+            tiers = {value["row_id"]: value["tier"] for value in review_suggestions(session, tenant, run)}
+            return reviewed_summary(run, [serialize(event) for event in events], tiers)
 
     @app.post("/runs/{run_id}/cancel", response_model=RunResponse)
     def cancel(run_id: UUID, request: Request):
@@ -395,16 +398,9 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
     def suggestions(run_id: UUID, request: Request):
         with Session(app.state.engine) as session:
             tenant = tenant_for(request, session)
-            run_for(session, tenant, run_id)
-            records = session.scalars(select(Suggestion).where(Suggestion.tenant_id == tenant,
-                                      Suggestion.run_id == run_id).order_by(Suggestion.row_id)).all()
-            values = []
-            for record in records:
-                value = serialize(record)
-                value["suggested_candidate_id"] = (record.candidates[0]["candidate_id"]
-                                                    if record.outcome == "suggested" and len(record.candidates) == 1 else None)
-                values.append(value)
-            return {"suggestions": values}
+            run = run_for(session, tenant, run_id)
+            from backend.tiers import review_suggestions
+            return {"suggestions": review_suggestions(session, tenant, run)}
 
     @app.post("/runs/{run_id}/reviews", status_code=201, response_model=ReviewResponse)
     def review(run_id: UUID, body: ReviewRequest, request: Request):

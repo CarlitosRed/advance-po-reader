@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.models import CatalogAlias, CatalogProduct, CatalogPoolMember, CatalogSourceProduct, Vendor
+from backend.pools import pool_product_scope
 
 CANONICAL_SKU_ROLES = frozenset({"sku", "vendor_sku", "vendor_product_code"})
 MAX_CANDIDATES = 20
@@ -87,7 +88,7 @@ def _require_vendor(session: Session, tenant_id: UUID, vendor_id: UUID) -> None:
 
 def _candidate(product: CatalogProduct, method: str, score=None) -> dict:
     result = {"candidate_id": str(product.id), "sku": product.sku,
-              "description": product.description, "method": method}
+              "description": product.description, "method": method, "origin": product.origin}
     if score is not None:
         result["score"] = str(Decimal(str(score)).quantize(Decimal("0.000001")))
     return result
@@ -259,12 +260,9 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID | Non
     scope = [CatalogProduct.tenant_id == tenant_id, CatalogProduct.vendor_id.in_(vendors),
              CatalogProduct.active.is_(True)]
     if pool_id is not None:
-        scope.append(CatalogProduct.id.in_(select(CatalogSourceProduct.product_id).join(CatalogPoolMember,
-            (CatalogPoolMember.tenant_id == CatalogSourceProduct.tenant_id) &
-            (CatalogPoolMember.vendor_id == CatalogSourceProduct.vendor_id) &
-            (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
-                CatalogPoolMember.tenant_id == tenant_id, CatalogPoolMember.pool_id == pool_id,
-                CatalogSourceProduct.tenant_id == tenant_id)))
+        scope.append(pool_product_scope(tenant_id, pool_id))
+    else:
+        scope.append(CatalogProduct.review_pool_id.is_(None))
     alias_scope = [CatalogAlias.tenant_id == tenant_id, CatalogAlias.vendor_id.in_(vendors)]
 
     def scoped_candidate(product, method, score=None):
@@ -276,6 +274,9 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID | Non
                 (CatalogPoolMember.namespace_id == CatalogSourceProduct.namespace_id)).where(
                     CatalogSourceProduct.tenant_id == tenant_id, CatalogSourceProduct.vendor_id == product.vendor_id,
                     CatalogSourceProduct.product_id == product.id, CatalogPoolMember.pool_id == pool_id))
+            if source is None and product.origin == "review" and product.review_pool_id == pool_id:
+                result.update({"origin_vendor_id": str(product.vendor_id), "namespace_id": None})
+                return result
             if source is None:
                 raise CatalogScopeError("Pool candidate has no matching source namespace provenance")
             result.update({"origin_vendor_id": str(product.vendor_id), "namespace_id": str(source.namespace_id)})

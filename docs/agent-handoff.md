@@ -46,3 +46,93 @@ provider settings and customer evidence are unchanged. The scorecard documents
 missing confidence tiers, unknown-row decisions, source grounding and product
 line completeness; none of those features is fixed or approved by this task.
 The PR targets `codex/worktree-standards`, not `main`.
+
+## T-009 PR A — October 3, 2026
+
+`Codex · goal gaps` reused the assigned `goal-tests` desk and PR #7 after
+Claudio's four-condition go. Implemented items 1, 2 and 5 in one commit per
+item: deterministic Certain/Probable/Uncertain review tiers; existing-product,
+new-product and not-a-product answers; and same-row/page quantity/unit
+evidence validation. Certain remains pending until an explicit approval.
+New products are created and bound atomically with retry protection,
+`origin=review`, and tenant/vendor/pool scoping. Staff-facing catalog and
+review controls show that origin. Original observations remain immutable;
+corrections require fresh approval. Generic acknowledgment cannot finish an
+Uncertain row. Bounded conflict checks also veto Certain for alternate,
+unreadable or contradictory labeled readings without changing F7 retrieval.
+
+The final goal suite measures **49 passed, 2 strict xfail, 0 blocked, 0 failed**.
+Additional affected checks: 68 extraction contract, 27 catalog/database and
+7 review-summary checks pass under `pytest.backend.ini` with offline guards.
+The goal suite includes a clean upgrade/downgrade/upgrade of migration 0009
+on a separate throwaway database and a headless browser driving the real
+controls against the fixed-provider test API. The database and uploads are
+test-owned; no existing runtime is migrated or restarted. See the updated
+[scorecard](goal-scorecard-2026-10-03.md) and [test guide](goal-acceptance-tests.md).
+
+PR B's independent completeness, source grounding and F7/F8 repairs are only
+planned. Goals 7 and 8 retain their reasoned xfails. No real-document accuracy,
+production validation, provider activation, customer-file use, or deployment
+is claimed. A remains review-gated: merge requires `Approved at <commit>`
+matching its current head and passing tests. B implementation waits for A's
+merge and its own plan go.
+
+## PR #7 review S1 — October 4, 2026
+
+Quantity/unit references may use a declared cell rectangle contained fully in
+one of the same row's rectangles on the same page. Region names alone do not
+establish containment. Shared headers, other rows/pages, and partially
+overlapping rectangles remain invalid. The existing provider prompt and schema
+allow declared field rectangles; this change supports that contract without a
+live provider call.
+
+Reads remain strict. A previously stored payload with borrowed quantity/unit
+evidence can fail validation on review, suggestions or summary reads. This is
+acceptable for the isolated test data on this branch; no stored payload is
+rewritten and no existing application database has been migrated. Before using
+this change on an existing runtime, inventory invalid legacy payloads and
+create new source-bound runs under the applicable human authorization. This
+handoff documents that compatibility limit rather than claiming a data repair.
+
+## PR #7 review fixes and B2 CI — October 4, 2026
+
+Implemented B1 across retrieval, explicit binding/proposal/approval, catalog
+listing/detail/counts and migration 0009's trigger: a run without a pool requires
+`review_pool_id IS NULL`. The regression creates a review product in a pool,
+then verifies a later same-vendor run without a pool retrieves no candidate,
+rejects binding/proposal/approval with 422, omits the product from catalog
+listings, and rejects direct database events outside that scope.
+
+S2 keeps legacy unknown/Uncertain `no_match` rows pending in the shared summary
+and UI. N1 selects an explicitly bound candidate for the separate approval and
+provides the friendly binding-error message; selecting it records no approval.
+N2 keeps `not_a_product` canonical and marks `not_product` deprecated in the API
+schema while preserving legacy clients and stored events.
+
+B2 adds the Tier 3 `.github/workflows/backend-goal-checks.yml` change and shared
+test-owned PostgreSQL provisioning. The full backend suite now runs against
+five fresh databases, including the empty historical-migration database; goal
+tests use a separate fresh database. Older test fixtures were aligned with the
+three-answer contract, and historical migrations seed historical columns.
+See [suite commands and CI limits](goal-acceptance-tests.md).
+
+Local verification on the changed source:
+
+- `pytest -c pytest.backend.ini --isolated-backend`: **268 passed in 45.70s**,
+  no skips, xfails or failures.
+- `pytest -m goal`: **54 passed, 2 strict xfailed in 31.49s**, no skips or
+  failures; includes the real review-control browser check on the test-owned API.
+- `pip check` and `git diff --check` pass.
+
+The tracked [scorecard](goal-scorecard-2026-10-03.md) is the local measurement.
+CI runs backend and goal separately and uploads JUnit results plus its own
+scorecard. Its browser tooling is deliberately absent, so that one goal 9
+browser check is a documented skip. A successful CI job does not prove browser
+coverage; report its named suite summaries and skip count separately from the
+local browser pass.
+
+No `.env*`, credentials, customer PDF or live provider is used. No existing
+application database is migrated or service restarted. PR #9 remains plan-only;
+source grounding, independent completeness and F7/F8 are not implemented here.
+Claudio's B-plan conditions 3/4 still require clarification and confirmation
+before B coding, which also waits for #7 to merge from an approved exact head.
