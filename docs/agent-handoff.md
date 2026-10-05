@@ -76,3 +76,20 @@ production validation, provider activation, customer-file use, or deployment
 is claimed. A remains review-gated: merge requires `Approved at <commit>`
 matching its current head and passing tests. B implementation waits for A's
 merge and its own plan go.
+
+## PR #7 review S1 — October 4, 2026
+
+Quantity/unit references may use a declared cell rectangle contained fully in
+one of the same row's rectangles on the same page. Region names alone do not
+establish containment. Shared headers, other rows/pages, and partially
+overlapping rectangles remain invalid. The existing provider prompt and schema
+allow declared field rectangles; this change supports that contract without a
+live provider call.
+
+Reads remain strict. A previously stored payload with borrowed quantity/unit
+evidence can fail validation on review, suggestions or summary reads. This is
+acceptable for the isolated test data on this branch; no stored payload is
+rewritten and no existing application database has been migrated. Before using
+this change on an existing runtime, inventory invalid legacy payloads and
+create new source-bound runs under the applicable human authorization. This
+handoff documents that compatibility limit rather than claiming a data repair.

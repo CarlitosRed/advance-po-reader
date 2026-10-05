@@ -19,6 +19,30 @@ def two_rows():
 
 
 @pytest.mark.parametrize("field", ["quantity", "unit"])
+@pytest.mark.parametrize("outside", [False, True])
+def test_goal_7_cell_region_requires_containment_in_its_own_row(field, outside):
+    raw = payload(two_rows())
+    raw["pages"][0]["regions"].append({"region_reference": "cell",
+        "bbox": {"x0": .5, "y0": .20, "x1": .6, "y1": .26 if outside else .23}})
+    raw["rows"][0][field]["evidence"] = [{"page_number": 1, "region_reference": "cell"}]
+    if outside:
+        with pytest.raises(ValidationError, match=f"{field} evidence must belong to the same row and page"):
+            validate_payload(raw, 1)
+    else:
+        parsed = validate_payload(raw, 1)
+        assert getattr(parsed.rows[0], field).raw_value == raw["rows"][0][field]["raw_value"]
+
+
+def test_goal_7_region_name_does_not_establish_cell_containment():
+    raw = payload(two_rows())
+    raw["pages"][0]["regions"].append({"region_reference": "line-1.qty",
+        "bbox": {"x0": .5, "y0": .28, "x1": .6, "y1": .30}})
+    raw["rows"][0]["quantity"]["evidence"] = [{"page_number": 1, "region_reference": "line-1.qty"}]
+    with pytest.raises(ValidationError, match="quantity evidence must belong to the same row and page"):
+        validate_payload(raw, 1)
+
+
+@pytest.mark.parametrize("field", ["quantity", "unit"])
 @pytest.mark.parametrize("scope", ["another_row", "another_page", "shared_header", "mixed_refs"])
 def test_goal_7_quantity_and_unit_reject_evidence_outside_same_row(field, scope):
     raw = payload(two_rows())

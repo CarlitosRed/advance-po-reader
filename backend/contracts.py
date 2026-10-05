@@ -108,11 +108,6 @@ class ExtractedRow(Immutable):
     def row_semantics(self) -> ExtractedRow:
         if not self.row_id.strip() or not self.evidence:
             raise ValueError("rows require a nonblank row_id and source evidence")
-        row_refs = {(ref.page_number, ref.region_reference) for ref in self.evidence}
-        for name in ("quantity", "unit"):
-            if any((ref.page_number, ref.region_reference) not in row_refs
-                   for ref in getattr(self, name).evidence):
-                raise ValueError(f"{name} evidence must belong to the same row and page")
         if self.uncertainty is not None and not self.uncertainty.strip():
             raise ValueError("uncertainty must contain text or be null")
         if self.item_group_id is not None and not self.item_group_id.strip():
@@ -180,6 +175,19 @@ class ExtractionPayload(Immutable):
                 if any(regions[(ref.page_number, ref.region_reference)] == "failed"
                        for ref in observation.evidence):
                     raise ValueError("failed pages cannot support readable observations")
+        boxes = {(page.page_number, region.region_reference): region.bbox
+                 for page in self.pages for region in page.regions}
+        for row in self.rows:
+            for name in ("quantity", "unit"):
+                for ref in getattr(row, name).evidence:
+                    cell = boxes[(ref.page_number, ref.region_reference)]
+                    if not any(ref.page_number == own.page_number and
+                               boxes[(own.page_number, own.region_reference)].x0 <= cell.x0 and
+                               boxes[(own.page_number, own.region_reference)].y0 <= cell.y0 and
+                               cell.x1 <= boxes[(own.page_number, own.region_reference)].x1 and
+                               cell.y1 <= boxes[(own.page_number, own.region_reference)].y1
+                               for own in row.evidence):
+                        raise ValueError(f"{name} evidence must belong to the same row and page")
         return self
 
     def _validate_item_groups(self, regions: dict) -> None:
