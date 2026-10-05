@@ -11,6 +11,8 @@ function stopStatusPolling() {
 function renderReadiness() {
   const report = state.readiness;
   if (!report) return;
+  // The free proof of concept never connects a provider, so the pending-connection banner would only confuse.
+  if (state.poc) { $("demo-readiness").hidden = true; return; }
   const databaseReady = report.database === "ready";
   const title = !databaseReady ? "Local database needs to start" :
     report.provider_configured ? "Live document reading is connected" : "API connection pending";
@@ -34,8 +36,8 @@ async function initialize() {
     const session = await api("/website/session");
     state.csrf = session.csrf;
     state.readiness = await api("/website/readiness");
-    renderReadiness();
     if (state.readiness.database !== "ready") {
+      renderReadiness();
       $("view").innerHTML = '<section class="panel"><h1>Your local database is stopped.</h1><p class="field">Start the preserved local database, then use Check connection above. Your documents and catalogs remain saved.</p></section>';
       return;
     }
@@ -51,6 +53,10 @@ async function initialize() {
     state.configuration = configuration;
     state.library = corpus.documents;
     $("library-count").textContent = state.library.length;
+    // Free proof of concept: only synthetic catalogs, no default pool and no provider.
+    state.poc = !state.defaultPool && state.catalogs.length > 0 && state.catalogs.every(c => c.synthetic) && !configuration.provider_configured;
+    if (state.poc) document.querySelector(".main-nav").hidden = true;
+    renderReadiness();
     await restoreRoute();
   } catch (error) {
     fail(error);
@@ -89,34 +95,70 @@ function scheduleStatusPolling() {
   }, 2000);
 }
 
+function csvCell(value) {
+  let text = String(value ?? "");
+  // Spreadsheet programs run text that starts with = + @ as a formula; a leading apostrophe keeps it plain text.
+  if (/^[=+@\t\r]/.test(text) || (/^-/.test(text) && !/^-?[\d.,]+$/.test(text))) text = "'" + text;
+  return '"' + text.replaceAll('"', '""') + '"';
+}
+
+function downloadCSV(items) {
+  const header = ["Product ID", "Product name", "Description", "Quantity", "Unit", "Price"];
+  const rows = items.map(item => [item.id, item.name, item.printed, item.qty, item.unit, item.price]);
+  const text = "﻿" + [header, ...rows].map(row => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
+  const url = URL.createObjectURL(new Blob([text], {type: "text/csv;charset=utf-8"}));
+  const link = document.createElement("a");
+  link.href = url; link.download = "confirmed-products.csv"; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function renderSummary() {
   stopStatusPolling();
   revokeImages();
   rememberDocument(true);
   const summary = state.summary;
   if (!summary) { fail(new Error("review_summary_unavailable")); return; }
+  if (!state.reviewer.trim()) { renderReviewerGate(() => renderSummary()); return; }
+  const payload = state.result.extraction;
+  const lines = lineList(payload);
   const approved = summary.approved_products;
   const pending = summary.pending_row_ids;
   const resolved = summary.review_state === "resolved";
-  const payload = state.result.extraction;
-  $("view").innerHTML = `<div class="section-top"><div><p class="eyebrow">REVIEWED PRODUCTS · STEP 3 OF 3</p><h1>Your reviewed products.</h1><p class="hint">${approved.length} approved product line(s) · ${pending.length} source row(s) still need review${state.run.provider === "synthetic" ? " · fictional sample" : ""}</p></div><button id="back-review" class="button secondary">Back to source review</button></div>
-    <div class="summary-list">${approved.map(item => `<div class="summary-row"><div><span class="product-id">${escapeHTML(item.candidate.sku)}</span><strong>${escapeHTML(item.candidate.description)}</strong><p>${escapeHTML(item.description || "")}${(item.continuation_descriptions || []).map(part => `<br><span class="hint">${escapeHTML(part.raw_description)}</span>`).join("")}</p><p>Approved by ${escapeHTML(item.reviewer)} · source ${escapeHTML(item.row_id)}</p></div><div class="summary-quantity"><strong>${escapeHTML(item.quantity ?? "[unresolved]")}</strong><span>${escapeHTML(item.unit ?? "[unit unresolved]")}</span></div></div>`).join("")}</div>
-    ${approved.length ? "" : '<div class="panel empty">No product has been approved yet.</div>'}
-    ${summary.document_details?.length ? `<details class="panel field document-details"><summary>Document details and other source evidence · ${summary.document_details.length}</summary>${summary.document_details.map(item => `<div class="audit-event"><strong>${escapeHTML(item.row_kind)} · ${escapeHTML(item.role)}</strong><p>${escapeHTML(item.description ?? item.raw_description ?? "")}</p><p>Amount: ${escapeHTML(item.line_total ?? "[not present]")}</p><small>${escapeHTML(item.row_id)}</small></div>`).join("")}</details>` : ""}
-    <section class="panel field"><h2>${resolved ? "Review complete" : "Finish the source review"}</h2><p class="field">Product rows require candidate approval or a no-match decision. Ambiguous item rows require clarification. Typed charges, totals and notes remain inspectable under document details.</p>
-    ${pending.length ? `<div class="callout">${pending.length} row(s) remain unresolved. Return to the source review to decide them.</div>` : ""}
-    ${summary.excluded_rows.length ? `<p class="hint">${summary.excluded_rows.length} non-product or no-match line(s) are retained in the audit history.</p>` : ""}
-    ${resolved ? '<span class="badge green">Saved · review resolved</span>' : attributionHTML() + '<div id="document-acknowledgements"></div><div class="button-row"><button id="finish-review" class="button primary" ' + (summary.can_finish_review ? "" : "disabled") + '>Finish review</button></div>'}
-    ${auditHTML()}</section>`;
+  const bar = reviewerBarHTML();
+  const details = (summary.document_details?.length ? `<details class="more"><summary>Other printed lines (totals, notes) · ${summary.document_details.length}</summary>${summary.document_details.map(item => `<div class="audit-event"><strong>${escapeHTML(item.row_kind)}</strong><p>${escapeHTML(item.description ?? item.raw_description ?? "")}</p>${item.line_total ? `<p>Amount: ${escapeHTML(item.line_total)}</p>` : ""}</div>`).join("")}</details>` : "") +
+    `<details class="more"><summary>Details</summary><dl class="detail-grid"><div><dt>Source file</dt><dd>${escapeHTML(state.name)}</dd></div><div><dt>SHA-256</dt><dd>${escapeHTML(state.source.sha256)}</dd></div><div><dt>Run id</dt><dd>${escapeHTML(state.run.id)}</dd></div></dl>${auditHTML()}</details>`;
+  if (pending.length) {
+    const done = lines.length - pending.length;
+    $("view").innerHTML = `${bar}<section class="panel summary-left"><p class="eyebrow">ALMOST THERE</p><h1>${pending.length} ${pending.length === 1 ? "line" : "lines"} left to check</h1><p class="hint">${done} of ${lines.length} checked. Products are listed here once every line has an answer.</p><progress max="${lines.length}" value="${done}" aria-label="${done} of ${lines.length} lines checked"></progress><div class="line-list">${pending.map(id => { const index = lines.findIndex(row => row.row_id === id); return index < 0 ? "" : `<button class="queue-button" data-row="${index}"><span>Line ${index + 1} · ${escapeHTML(lineTitle(lines[index]))}</span><small>${pillHTML(lineModel(lines[index]))}</small></button>`; }).join("")}</div><div class="stack"><button id="back-review" class="button primary big">Continue checking</button><button id="finish-review" class="button secondary big" disabled>Finish review</button></div></section>${details}`;
+    wireReviewerBar(() => renderSummary());
+    $("back-review").onclick = () => { state.row = Math.max(0, lines.findIndex(row => row.row_id === pending[0])); renderDocument(); };
+    for (const button of document.querySelectorAll("[data-row]")) button.onclick = () => { state.row = Number(button.dataset.row); renderDocument(); };
+    return;
+  }
+  const filled = value => value !== null && value !== undefined && String(value).trim() !== "";
+  const items = approved.map(item => {
+    const row = payload.rows.find(candidate => candidate.row_id === item.row_id);
+    const price = row ? effectiveValue(row, "unit_price") : null;
+    return {id: item.candidate.sku, name: item.candidate.description,
+      printed: [item.description, ...(item.continuation_descriptions || []).map(part => part.raw_description)].filter(filled).join(" "),
+      qty: item.quantity ?? "", unit: item.unit ?? "", price: filled(price) ? price : ""};
+  });
+  const excluded = summary.excluded_rows.length;
+  const table = items.length ? `<div class="table-wrap"><table class="result-table"><thead><tr><th scope="col">ID</th><th scope="col">Product</th><th scope="col">Qty</th><th scope="col">Price</th></tr></thead><tbody>${items.map(item => `<tr><td class="cell-id">${escapeHTML(item.id)}</td><td>${escapeHTML(item.name)}${item.printed ? `<small>As printed: ${escapeHTML(item.printed)}</small>` : ""}</td><td>${escapeHTML([item.qty, item.unit].filter(filled).join(" "))}</td><td>${escapeHTML(item.price)}</td></tr>`).join("")}</tbody></table></div>` : '<div class="panel empty">No line was confirmed as a product.</div>';
+  $("view").innerHTML = `${bar}<section class="done-head"><span class="check big-check" aria-hidden="true">✓</span><h1>${items.length} ${items.length === 1 ? "product" : "products"} confirmed</h1><p class="hint">${excluded ? `${excluded} ${excluded === 1 ? "line was" : "lines were"} marked “not a product”. ` : ""}${resolved ? "Review saved." : "Every line has an answer."}</p></section>
+    ${resolved ? "" : '<section class="panel finish"><h2>One last step</h2><p>Finish the review to lock your answers. They cannot be changed afterwards.</p><div id="document-acknowledgements"></div><button id="finish-review" class="button primary big"' + (summary.can_finish_review ? "" : " disabled") + '>Finish review</button></section>'}
+    ${table}
+    <div class="stack"><button id="download-csv" class="button ${resolved ? "primary" : "secondary"} big" ${items.length ? "" : "disabled"}>Download as spreadsheet</button><button id="back-review" class="button secondary big">← Back to the lines</button></div>${details}`;
+  wireReviewerBar(() => renderSummary());
   $("back-review").onclick = () => renderDocument();
-  wireAttribution();
+  $("download-csv").onclick = () => downloadCSV(items);
   if (resolved) return;
   const partial = payload.pages.filter(page => page.state === "partial" && !state.events.some(event =>
     event.action === "acknowledge_page" && event.evidence_reference.some(ref => ref.page_number === page.page_number)));
   const needsWarnings = payload.warnings.length && !state.events.some(event => event.action === "acknowledge_document");
-  $("document-acknowledgements").innerHTML = partial.map(page => `<div class="callout">Page ${page.page_number} was only partially observed: ${escapeHTML(page.uncertainty || "check the whole page")}<div class="button-row"><button class="button secondary" data-ack-page="${page.page_number}">Acknowledge page uncertainty</button></div></div>`).join("") +
-    (needsWarnings ? `<div class="callout">${payload.warnings.map(escapeHTML).join("<br>")}<div class="button-row"><button class="button secondary" id="ack-warnings">Acknowledge document warnings</button></div></div>` : "") +
-    (summary.blockers.includes("failed_pages_require_new_processing_run") ? '<div class="callout">A page failed. This review cannot be completed; create a new processing run after checking the source.</div>' : "");
+  $("document-acknowledgements").innerHTML = partial.map(page => `<div class="callout">Page ${page.page_number} was only partly read: ${escapeHTML(page.uncertainty || "check the whole page")}<div class="button-row"><button class="button secondary" data-ack-page="${page.page_number}">I checked this page</button></div></div>`).join("") +
+    (needsWarnings ? `<div class="callout">${payload.warnings.map(escapeHTML).join("<br>")}<div class="button-row"><button class="button secondary" id="ack-warnings">I read these warnings</button></div></div>` : "") +
+    (summary.blockers.includes("failed_pages_require_new_processing_run") ? '<div class="callout">A page failed. This review cannot be finished; start a new reading after checking the source.</div>' : "");
   for (const button of document.querySelectorAll("[data-ack-page]")) button.onclick = () => saveReview("acknowledge_page", {
     evidence_reference: [{page_number: Number(button.dataset.ackPage), region_reference: null}]}).then(renderSummary).catch(fail);
   if ($("ack-warnings")) $("ack-warnings").onclick = () => saveReview("acknowledge_document", {
