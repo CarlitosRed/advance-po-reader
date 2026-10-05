@@ -1,4 +1,6 @@
-# Goal acceptance scorecard — 2026-10-03
+# Goal acceptance scorecard — rerun October 4, 2026
+
+Execution: local isolated run. Suite: `python -m pytest -m goal`. Skips count as blocked; strict xfails are separate.
 
 T-007 acceptance suite; T-009 PR A (tiers, three answers, same-row evidence). Base `codex/worktree-standards` at `c06b4e9994277997e6ec8b828317cb5942e0daf6`. The original PR #5 baseline was 10 passed and 8 strict xfail.
 
@@ -12,12 +14,12 @@ Measured with generated fictional PDFs/PNG/JPG, fixed JSON from an injected fake
 | 4 | 3 | 0 | 0 | 0 |
 | 5 | 11 | 0 | 0 | 0 |
 | 6 | 13 | 0 | 0 | 0 |
-| 7 | 14 | 1 | 0 | 0 |
+| 7 | 19 | 1 | 0 | 0 |
 | 8 | 0 | 1 | 0 | 0 |
 | 9 | 3 | 0 | 0 | 0 |
 | 10 | 2 | 0 | 0 | 0 |
 
-Total: 49 passed, 2 xfail, 0 blocked, 0 failed. Pytest exit status: 0.
+Total: 54 passed, 2 xfail, 0 blocked, 0 failed. Pytest exit status: 0.
 
 ## Top 3 gaps
 
@@ -27,9 +29,9 @@ Total: 49 passed, 2 xfail, 0 blocked, 0 failed. Pytest exit status: 0.
 
 ## PR A behavior verified
 
-Goals 4–6 now pass: only Certain is preselected, every product still needs explicit approval, and Uncertain rows require an existing-product binding, a marked new-product binding, or explicit not-a-product exclusion. Catalog creation and binding are atomic and retry-safe; review-created products stay tenant/vendor/pool scoped and expose origin=review. Corrections keep the original strings and require fresh approval. Quantity/unit evidence must reference that row's declared page/region; unlinked shared headers are rejected. A clean throwaway database passes upgrade/downgrade/upgrade.
+Goals 4–6 now pass: only Certain is initially preselected, every product still needs explicit approval, and Uncertain rows require an existing-product binding, a marked new-product binding, or explicit not-a-product exclusion. Catalog creation and binding are atomic and retry-safe; review-created products stay tenant/vendor/pool scoped and expose origin=review. Corrections keep the original strings and require fresh approval. Quantity/unit evidence must reference that row or a fully contained cell on the same page; unlinked shared headers are rejected. A clean throwaway database passes upgrade/downgrade/upgrade.
 
-The headless browser check drives the real review controls and test-owned API: Certain preselection creates no decision, Probable/Uncertain are not preselected, all three answers save separate events, and Finish stays disabled until explicit product approvals/exclusions resolve every row.
+Browser check: passed against the real review controls and test-owned API.
 
 ## Expected failures
 
@@ -44,4 +46,4 @@ Goals 1–3 test the backend's handling of hand-authored extraction observations
 
 All OPENAI_API_KEY and PO_BACKEND_* variables are removed inside the test process; Settings uses `_env_file=None`. Dotenv file opens, built-in provider extraction and external HTTP transports are guarded. No `.env` file or customer document is opened. Application configuration and storage path roots are redirected only in the test harness, so repository `data/` and `output/` stay untouched. Existing services and databases are not migrated or restarted. This scorecard measures the changed PR A source with isolated fixtures; it is not production validation.
 
-PostgreSQL is initialized on an available loopback port from GOAL_POSTGRES_BIN (or PATH), with an owned cluster and `gate_a_test_backend_goal_*` database. Migrations and pg_trgm run there. The database is dropped and the owned server stopped during fixture teardown. Missing binaries are reported as blocked skips; initialization or migration errors fail setup rather than becoming xfail.
+Locally PostgreSQL is initialized on an available loopback port from GOAL_POSTGRES_BIN (or PATH), with an owned cluster and fresh `gate_a_test_backend_*` database. CI creates fresh databases on its ephemeral loopback PostgreSQL service, never a preexisting application database. Migrations and pg_trgm run there. The database is dropped and the owned server stopped during fixture teardown. Missing binaries are reported as blocked skips; initialization or migration errors fail setup rather than becoming xfail.

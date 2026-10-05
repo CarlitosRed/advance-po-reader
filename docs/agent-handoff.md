@@ -93,3 +93,46 @@ rewritten and no existing application database has been migrated. Before using
 this change on an existing runtime, inventory invalid legacy payloads and
 create new source-bound runs under the applicable human authorization. This
 handoff documents that compatibility limit rather than claiming a data repair.
+
+## PR #7 review fixes and B2 CI — October 4, 2026
+
+Implemented B1 across retrieval, explicit binding/proposal/approval, catalog
+listing/detail/counts and migration 0009's trigger: a run without a pool requires
+`review_pool_id IS NULL`. The regression creates a review product in a pool,
+then verifies a later same-vendor run without a pool retrieves no candidate,
+rejects binding/proposal/approval with 422, omits the product from catalog
+listings, and rejects direct database events outside that scope.
+
+S2 keeps legacy unknown/Uncertain `no_match` rows pending in the shared summary
+and UI. N1 selects an explicitly bound candidate for the separate approval and
+provides the friendly binding-error message; selecting it records no approval.
+N2 keeps `not_a_product` canonical and marks `not_product` deprecated in the API
+schema while preserving legacy clients and stored events.
+
+B2 adds the Tier 3 `.github/workflows/backend-goal-checks.yml` change and shared
+test-owned PostgreSQL provisioning. The full backend suite now runs against
+five fresh databases, including the empty historical-migration database; goal
+tests use a separate fresh database. Older test fixtures were aligned with the
+three-answer contract, and historical migrations seed historical columns.
+See [suite commands and CI limits](goal-acceptance-tests.md).
+
+Local verification on the changed source:
+
+- `pytest -c pytest.backend.ini --isolated-backend`: **268 passed in 45.70s**,
+  no skips, xfails or failures.
+- `pytest -m goal`: **54 passed, 2 strict xfailed in 31.49s**, no skips or
+  failures; includes the real review-control browser check on the test-owned API.
+- `pip check` and `git diff --check` pass.
+
+The tracked [scorecard](goal-scorecard-2026-10-03.md) is the local measurement.
+CI runs backend and goal separately and uploads JUnit results plus its own
+scorecard. Its browser tooling is deliberately absent, so that one goal 9
+browser check is a documented skip. A successful CI job does not prove browser
+coverage; report its named suite summaries and skip count separately from the
+local browser pass.
+
+No `.env*`, credentials, customer PDF or live provider is used. No existing
+application database is migrated or service restarted. PR #9 remains plan-only;
+source grounding, independent completeness and F7/F8 are not implemented here.
+Claudio's B-plan conditions 3/4 still require clarification and confirmation
+before B coding, which also waits for #7 to merge from an approved exact head.
