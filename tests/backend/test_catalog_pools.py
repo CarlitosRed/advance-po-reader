@@ -213,6 +213,11 @@ def test_default_upload_search_details_and_legacy_vendor_path(web_client, engine
     in_pool = suggestion["candidates"][0]
     approve = {**review, "action": "approve", "candidate_ids": None,
         "selected_candidate_id": in_pool["candidate_id"]}
+    assert web_client.post("/runs/" + created["id"] + "/reviews", json=approve).status_code == 422
+    binding = {**review, "action": "this_is_product", "candidate_ids": None, "catalog_id": outside_id}
+    assert web_client.post("/runs/" + created["id"] + "/reviews", json=binding).status_code == 422
+    binding["catalog_id"] = in_pool["candidate_id"]
+    assert web_client.post("/runs/" + created["id"] + "/reviews", json=binding).status_code == 201
     assert web_client.post("/runs/" + created["id"] + "/reviews", json=approve).status_code == 201
     old_upload = web_client.post("/documents", headers={"Idempotency-Key": uuid4().hex},
         data={"vendor_id": first_vendor_id}, files={"file": ("legacy.pdf", generate_fixture(), "application/pdf")})
@@ -256,10 +261,13 @@ def test_0008_upgrade_preserves_existing_immutable_suggestions():
         vendor = Vendor(tenant_id=tenant.id, name="Historical fictional catalog")
         session.add(vendor)
         session.flush()
-        product = CatalogProduct(tenant_id=tenant.id, vendor_id=vendor.id, sku="OLD-001",
-            description="Fictional preserved product", normalized_sku="OLD001", active=True)
-        session.add(product)
-        session.flush()
+        # Seed the historical schema with its historical columns, not the
+        # current ORM (which now includes 0009 origin/pool provenance).
+        product_id = uuid4()
+        session.execute(text("INSERT INTO catalog_products "
+            "(id,tenant_id,vendor_id,sku,description,normalized_sku,active) "
+            "VALUES (:id,:tenant,:vendor,'OLD-001','Fictional preserved product','OLD001',true)"),
+            {"id": product_id, "tenant": tenant.id, "vendor": vendor.id})
         source_id, run_id = uuid4(), uuid4()
         session.execute(text("INSERT INTO source_documents "
             "(id, tenant_id, vendor_id, sha256, byte_size, media_type, page_count, storage_reference) "
@@ -271,8 +279,8 @@ def test_0008_upgrade_preserves_existing_immutable_suggestions():
             "VALUES (:id,:tenant,:source,:vendor,'synthetic','partial','in_progress',:key,:hash)"), {
                 "id": run_id, "tenant": tenant.id, "source": source_id, "vendor": vendor.id,
                 "key": uuid4().hex, "hash": "c" * 64})
-        snapshot = [{"candidate_id": str(product.id), "sku": product.sku,
-                     "description": product.description, "method": "exact"}]
+        snapshot = [{"candidate_id": str(product_id), "sku": "OLD-001",
+                     "description": "Fictional preserved product", "method": "exact"}]
         suggestion = Suggestion(tenant_id=tenant.id, run_id=run_id, row_id="historical-line",
             candidates=snapshot, method="exact", retrieval_version="catalog-retrieval-v2", evidence=[],
             outcome="suggested", reason="Historical synthetic suggestion")

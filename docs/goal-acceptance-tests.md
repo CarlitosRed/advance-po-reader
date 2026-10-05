@@ -104,3 +104,43 @@ The new migration adds `origin` and `review_pool_id` and extends immutable
 binding snapshots. Its tested downgrade restores the previous guard and schema
 on an empty throwaway database. Downgrade refuses when review-created products
 or new answer events exist, so it cannot silently discard their evidence.
+
+## PR #7 B2: named backend and goal CI coverage
+
+`Backend and goal checks` adds the `backend-goal` job for pushes and PRs.
+It runs these distinct steps with pinned backend dependencies and PostgreSQL 17:
+
+```text
+python -m pytest -c pytest.backend.ini --isolated-backend --basetemp=.backend-ci-runtime -q --tb=short --junitxml=backend-results.xml
+python -m pytest -m goal -q --tb=short --goal-scorecard=goal-scorecard-ci.md --junitxml=goal-results.xml
+```
+
+The backend harness provisions all five required test database settings,
+including a separate empty historical-migration database. Goal tests get
+another freshly created database. Both use the ephemeral loopback CI service;
+they refuse to reuse a preexisting database. Only databases created by the
+harness are dropped. The service URL path is permitted only in GitHub Actions
+and must name the dedicated test administrator database. Local runs instead
+start and stop their own native PostgreSQL cluster under this worktree.
+No secrets or live provider connection are needed. Dotenv opens and real HTTP
+transports are blocked; the backend suite permits its generated synthetic
+provider and injected mock transports, while goal tests permit only fixed JSON.
+
+CI deliberately does not install the optional Node/Playwright/browser tools.
+`test_goal_9_website_three_answers_and_explicit_approval` is therefore a visible
+skip, counted as blocked in the CI scorecard. It is run locally with the tools
+above. CI uploads both JUnit reports and its scorecard, including skip reasons.
+The scorecard reports browser coverage from the actual outcome.
+
+The other workflows retain their existing coverage: `Local Gate A checks`
+runs `pytest -c pytest.gate-a.ini`, and `Python checks` runs
+`python -m unittest discover -s tests -v`. A green status must identify these
+suites and state separately whether goal and browser checks ran. None of these
+checks measures model accuracy, a live provider, deployment, or customer PDFs.
+
+For a full local backend run with the same isolation:
+
+```powershell
+$env:GOAL_POSTGRES_BIN = '<PostgreSQL binary directory>'
+.\.venv-goal\Scripts\python.exe -m pytest -c pytest.backend.ini --isolated-backend --basetemp=tmp/backend-checks -q --tb=short
+```
