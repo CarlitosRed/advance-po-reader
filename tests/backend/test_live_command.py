@@ -131,6 +131,9 @@ def test_timeout_preserves_unknown_outcome_without_retry_or_secret_echo(live_arg
 
 
 def test_cli_requires_material_specific_arguments_and_affirmative_flag(live_args, monkeypatch):
+    # Never read a real dotenv file (a developer's .env.backend may exist): build the defaults without one.
+    from reader_agent.connection import ConnectionSettings
+    monkeypatch.setattr(live_test, "ConnectionSettings", lambda *args, **kwargs: ConnectionSettings(_env_file=None))
     with pytest.raises(SystemExit):
         live_test.main([])
     arguments = ["--source-path", str(live_args["source_path"]), "--tenant-id", live_args["tenant_id"],
