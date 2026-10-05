@@ -15,3 +15,6 @@ Keep customer PDFs, raw text, source-specific labels, private catalog databases,
 Keep provider/model/API claims from the October 2026 documents time-bound; verify current official sources at implementation. Preserve request IDs, prompts/schema versions, usage, candidates, decisions, retries, latency, and human audit events. Separate extraction fidelity, candidate Recall@K, match precision, auto-accept precision/coverage, review burden, latency, and realized cost. Do not present planning metrics as measured results.
 
 Use a dedicated worktree/branch for source changes. Do not share writable PDF, catalog, dataset, review, or output directories across agents. Read [the agent handoff](docs/agent-handoff.md), [research adoption note](docs/research/document-ai-research-adoption-2026-10-02.md), and [local logic rules](docs/local-logic-rules-2026-10-02.md) for current context. At the end of each task, report changed documents and distinguish documentation updates from implemented behavior.
+
+## Working rules
+Roles, tiers, the review steps and the merge rule are in `ROLES.md`. Follow it for every pull request. Merge only through `tools/gate/po_gate.py`, never with the green button or `gh pr merge`. Changes to `AGENTS.md`, `ROLES.md`, `.github/`, `.githooks/`, `tools/gate/` and the paid-API paths listed in `ROLES.md` are Tier 3 and need Carlos's approval.

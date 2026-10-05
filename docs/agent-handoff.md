@@ -71,3 +71,7 @@ Recreated this desk's isolated Gate A environment with Python 3.12.14. Dependenc
 
 Only documentation conflict resolution and this handoff note changed during the continuation; no new Gate A behavior was implemented. Claudio must review the PR's exact HEAD before any merge. Stop after opening the PR and reporting its number and HEAD. Carlos retains the veto.
 OneDrive mockup reconciled, 21 files match main, OneDrive repo archived to `dev\_archive\`.
+
+## T-010 operating model and merge gate (October 4, 2026)
+
+Desk `advance-po-reader.worktrees\t-010`, branch `claude/t-010-operating-model`, PR #10 (Tier 3). Added `ROLES.md`, the gate tool in `tools/gate/` (standard library only), the `gate-tests` and `scan` CI jobs, the `Gate audit` workflow, a content-scan block in `.githooks/pre-push`, the pull request template, and one appended section in `AGENTS.md`. The `tests` job and every earlier hook line are unchanged. Labels `tier-1` to `tier-4` and `hold` were created on GitHub. No product code changed. Implemented: the files above. Only documented, not built: the attack-team pilot (T-011) and the parked ideas. The gate is a procedure with a record, not a lock: every chat posts as one GitHub account, so it cannot prove who wrote a comment and cannot stop a manual merge. PRs #7, #8 and #9 finish under the old rule 3. `check 7` output after merge: to be added.
