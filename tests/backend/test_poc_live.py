@@ -365,3 +365,68 @@ def test_diagnose_output_folder_is_git_ignored():
     import subprocess
     result = subprocess.run(["git", "check-ignore", "output/poc-demo/diagnostics/x.json"], cwd=ROOT, capture_output=True, text=True)
     assert result.returncode == 0
+
+
+# ---- run one file end to end like the browser does ------------------------------------------------------
+
+def _run_file_module():
+    spec = importlib.util.spec_from_file_location("poc_run_live_file", ROOT / "scripts" / "poc-run-live-file.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_run_file_refuses_without_confirm_and_for_repo_files(capsys):
+    module = _run_file_module()
+    assert module.main(["--file", str(ROOT / "README.md")]) == 2
+    assert module.main(["--confirm", "--file", str(ROOT / "README.md")]) == 2
+    assert "outside this repository" in capsys.readouterr().out
+
+
+@pytest.mark.postgresql
+def test_run_file_reports_counts_only_and_never_resends(live_engine, clean_environment, capsys):
+    from backend.app import create_app
+    from backend.config import Settings
+    from backend.providers import OpenAIProvider
+
+    calls = []
+    inner = _success_transport()
+
+    def counted(request):
+        calls.append(1)
+        return inner.handle_request(request)
+
+    settings = Settings(_env_file=None, database_url=SecretStr(live_engine.url.render_as_string(hide_password=False)),
+                        storage_directory=ROOT / "data" / "demo-agent" / "tests" / uuid4().hex, local_api_token=SecretStr(TOKEN),
+                        live_processing_enabled=True, openai_api_key=SecretStr(FAKE_KEY))
+    app = create_app(settings, engine=live_engine,
+                     provider=OpenAIProvider(api_key=FAKE_KEY, enabled=True, transport=httpx.MockTransport(counted)))
+    before = live.SpendGuard(live_engine, {}).status()["runs"]
+    live.install_live_guard(app, live.SpendGuard(live_engine, {"PO_POC_MAX_LIVE_RUNS": str(before + 5)}))
+    products = json.loads((FIXTURES / "catalog.json").read_text(encoding="utf-8"))["products"][:12]
+    clean_environment.setenv("PO_POC_INPUT_USD_PER_MTOK", "1")
+    clean_environment.setenv("PO_POC_OUTPUT_USD_PER_MTOK", "2")
+    with TestClient(app, base_url="http://127.0.0.1:8014", headers={"X-Local-Token": TOKEN}) as admin:
+        tenant = admin.post("/tenants", json={"name": "Live POC tenant " + uuid4().hex}).json()
+        admin.headers["X-Tenant-ID"] = tenant["id"]
+        vendor = admin.post("/vendors", json={"name": "Live POC vendor"}).json()
+        admin.post("/catalog/import", json={"vendor_id": vendor["id"], "products": products})
+
+        @app.get("/poc-demo/info")
+        def info():
+            return {"tenant_id": tenant["id"], "vendor_id": vendor["id"]}
+
+        folder, path = _outside_pdf()
+        module = _run_file_module()
+        with TestClient(app, base_url="http://127.0.0.1:8014") as browser_like:
+            assert module.main(["--confirm", "--file", str(path)], client=browser_like) == 0
+            first = capsys.readouterr().out
+            assert module.main(["--confirm", "--file", str(path)], client=browser_like) == 0
+            second = capsys.readouterr().out
+    report = json.loads(first)
+    assert report["sent_to_openai_now"] is True and report["run_state"] in {"completed", "partial"}
+    assert report["pages"] == 1 and report["rows"] == 3 and report["product_rows"] == 2
+    assert set(report["tiers"]) == {"certain", "probable", "uncertain"} and sum(report["tiers"].values()) == 2 + 1
+    assert report["tokens"]["input_tokens"] == 1800 and report["estimated_cost_usd"] == 0.0036
+    assert "Fictional" not in first and FAKE_KEY not in first
+    assert json.loads(second)["sent_to_openai_now"] is False and len(calls) == 1
