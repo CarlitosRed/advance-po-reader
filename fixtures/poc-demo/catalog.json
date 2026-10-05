@@ -1,0 +1,606 @@
+{
+  "version": "poc-demo-fictional-v1",
+  "notice": "Invented products and codes; never an authoritative catalog or order data.",
+  "products": [
+    {
+      "sku": "POC-0101",
+      "description": "Fictional fiberglass step ladder compact model 01"
+    },
+    {
+      "sku": "POC-0102",
+      "description": "Fictional fiberglass step ladder compact plus model 01"
+    },
+    {
+      "sku": "POC-0103",
+      "description": "Fictional fiberglass step ladder wide model 01"
+    },
+    {
+      "sku": "POC-0104",
+      "description": "Fictional fiberglass step ladder wide plus model 01"
+    },
+    {
+      "sku": "POC-0105",
+      "description": "Fictional fiberglass step ladder replacement model 01"
+    },
+    {
+      "sku": "POC-0201",
+      "description": "Fictional fiberglass extension ladder compact model 02"
+    },
+    {
+      "sku": "POC-0202",
+      "description": "Fictional fiberglass extension ladder compact plus model 02"
+    },
+    {
+      "sku": "POC-0203",
+      "description": "Fictional fiberglass extension ladder wide model 02"
+    },
+    {
+      "sku": "POC-0204",
+      "description": "Fictional fiberglass extension ladder wide plus model 02"
+    },
+    {
+      "sku": "POC-0205",
+      "description": "Fictional fiberglass extension ladder replacement model 02"
+    },
+    {
+      "sku": "POC-0301",
+      "description": "Fictional twin step ladder compact model 03"
+    },
+    {
+      "sku": "POC-0302",
+      "description": "Fictional twin step ladder compact plus model 03"
+    },
+    {
+      "sku": "POC-0303",
+      "description": "Fictional twin step ladder wide model 03"
+    },
+    {
+      "sku": "POC-0304",
+      "description": "Fictional twin step ladder wide plus model 03"
+    },
+    {
+      "sku": "POC-0305",
+      "description": "Fictional twin step ladder replacement model 03"
+    },
+    {
+      "sku": "POC-0401",
+      "description": "Fictional leaning step ladder compact model 04"
+    },
+    {
+      "sku": "POC-0402",
+      "description": "Fictional leaning step ladder compact plus model 04"
+    },
+    {
+      "sku": "POC-0403",
+      "description": "Fictional leaning step ladder wide model 04"
+    },
+    {
+      "sku": "POC-0404",
+      "description": "Fictional leaning step ladder wide plus model 04"
+    },
+    {
+      "sku": "POC-0405",
+      "description": "Fictional leaning step ladder replacement model 04"
+    },
+    {
+      "sku": "POC-0501",
+      "description": "Fictional combination ladder compact model 05"
+    },
+    {
+      "sku": "POC-0502",
+      "description": "Fictional combination ladder compact plus model 05"
+    },
+    {
+      "sku": "POC-0503",
+      "description": "Fictional combination ladder wide model 05"
+    },
+    {
+      "sku": "POC-0504",
+      "description": "Fictional combination ladder wide plus model 05"
+    },
+    {
+      "sku": "POC-0505",
+      "description": "Fictional combination ladder replacement model 05"
+    },
+    {
+      "sku": "POC-0601",
+      "description": "Fictional manhole ladder compact model 06"
+    },
+    {
+      "sku": "POC-0602",
+      "description": "Fictional manhole ladder compact plus model 06"
+    },
+    {
+      "sku": "POC-0603",
+      "description": "Fictional manhole ladder wide model 06"
+    },
+    {
+      "sku": "POC-0604",
+      "description": "Fictional manhole ladder wide plus model 06"
+    },
+    {
+      "sku": "POC-0605",
+      "description": "Fictional manhole ladder replacement model 06"
+    },
+    {
+      "sku": "POC-0701",
+      "description": "Fictional platform ladder compact model 07"
+    },
+    {
+      "sku": "POC-0702",
+      "description": "Fictional platform ladder compact plus model 07"
+    },
+    {
+      "sku": "POC-0703",
+      "description": "Fictional platform ladder wide model 07"
+    },
+    {
+      "sku": "POC-0704",
+      "description": "Fictional platform ladder wide plus model 07"
+    },
+    {
+      "sku": "POC-0705",
+      "description": "Fictional platform ladder replacement model 07"
+    },
+    {
+      "sku": "POC-0801",
+      "description": "Fictional rolling safety ladder compact model 08"
+    },
+    {
+      "sku": "POC-0802",
+      "description": "Fictional rolling safety ladder compact plus model 08"
+    },
+    {
+      "sku": "POC-0803",
+      "description": "Fictional rolling safety ladder wide model 08"
+    },
+    {
+      "sku": "POC-0804",
+      "description": "Fictional rolling safety ladder wide plus model 08"
+    },
+    {
+      "sku": "POC-0805",
+      "description": "Fictional rolling safety ladder replacement model 08"
+    },
+    {
+      "sku": "POC-0901",
+      "description": "Fictional step stool compact model 09"
+    },
+    {
+      "sku": "POC-0902",
+      "description": "Fictional step stool compact plus model 09"
+    },
+    {
+      "sku": "POC-0903",
+      "description": "Fictional step stool wide model 09"
+    },
+    {
+      "sku": "POC-0904",
+      "description": "Fictional step stool wide plus model 09"
+    },
+    {
+      "sku": "POC-0905",
+      "description": "Fictional step stool replacement model 09"
+    },
+    {
+      "sku": "POC-1001",
+      "description": "Fictional work platform plank compact model 10"
+    },
+    {
+      "sku": "POC-1002",
+      "description": "Fictional work platform plank compact plus model 10"
+    },
+    {
+      "sku": "POC-1003",
+      "description": "Fictional work platform plank wide model 10"
+    },
+    {
+      "sku": "POC-1004",
+      "description": "Fictional work platform plank wide plus model 10"
+    },
+    {
+      "sku": "POC-1005",
+      "description": "Fictional work platform plank replacement model 10"
+    },
+    {
+      "sku": "POC-1101",
+      "description": "Fictional jobsite field station compact model 11"
+    },
+    {
+      "sku": "POC-1102",
+      "description": "Fictional jobsite field station compact plus model 11"
+    },
+    {
+      "sku": "POC-1103",
+      "description": "Fictional jobsite field station wide model 11"
+    },
+    {
+      "sku": "POC-1104",
+      "description": "Fictional jobsite field station wide plus model 11"
+    },
+    {
+      "sku": "POC-1105",
+      "description": "Fictional jobsite field station replacement model 11"
+    },
+    {
+      "sku": "POC-1201",
+      "description": "Fictional mobile plan workstation compact model 12"
+    },
+    {
+      "sku": "POC-1202",
+      "description": "Fictional mobile plan workstation compact plus model 12"
+    },
+    {
+      "sku": "POC-1203",
+      "description": "Fictional mobile plan workstation wide model 12"
+    },
+    {
+      "sku": "POC-1204",
+      "description": "Fictional mobile plan workstation wide plus model 12"
+    },
+    {
+      "sku": "POC-1205",
+      "description": "Fictional mobile plan workstation replacement model 12"
+    },
+    {
+      "sku": "POC-1301",
+      "description": "Fictional folding storage cabinet compact model 13"
+    },
+    {
+      "sku": "POC-1302",
+      "description": "Fictional folding storage cabinet compact plus model 13"
+    },
+    {
+      "sku": "POC-1303",
+      "description": "Fictional folding storage cabinet wide model 13"
+    },
+    {
+      "sku": "POC-1304",
+      "description": "Fictional folding storage cabinet wide plus model 13"
+    },
+    {
+      "sku": "POC-1305",
+      "description": "Fictional folding storage cabinet replacement model 13"
+    },
+    {
+      "sku": "POC-1401",
+      "description": "Fictional rolling jobsite bench compact model 14"
+    },
+    {
+      "sku": "POC-1402",
+      "description": "Fictional rolling jobsite bench compact plus model 14"
+    },
+    {
+      "sku": "POC-1403",
+      "description": "Fictional rolling jobsite bench wide model 14"
+    },
+    {
+      "sku": "POC-1404",
+      "description": "Fictional rolling jobsite bench wide plus model 14"
+    },
+    {
+      "sku": "POC-1405",
+      "description": "Fictional rolling jobsite bench replacement model 14"
+    },
+    {
+      "sku": "POC-1501",
+      "description": "Fictional steel storage chest compact model 15"
+    },
+    {
+      "sku": "POC-1502",
+      "description": "Fictional steel storage chest compact plus model 15"
+    },
+    {
+      "sku": "POC-1503",
+      "description": "Fictional steel storage chest wide model 15"
+    },
+    {
+      "sku": "POC-1504",
+      "description": "Fictional steel storage chest wide plus model 15"
+    },
+    {
+      "sku": "POC-1505",
+      "description": "Fictional steel storage chest replacement model 15"
+    },
+    {
+      "sku": "POC-1601",
+      "description": "Fictional aluminum storage chest compact model 16"
+    },
+    {
+      "sku": "POC-1602",
+      "description": "Fictional aluminum storage chest compact plus model 16"
+    },
+    {
+      "sku": "POC-1603",
+      "description": "Fictional aluminum storage chest wide model 16"
+    },
+    {
+      "sku": "POC-1604",
+      "description": "Fictional aluminum storage chest wide plus model 16"
+    },
+    {
+      "sku": "POC-1605",
+      "description": "Fictional aluminum storage chest replacement model 16"
+    },
+    {
+      "sku": "POC-1701",
+      "description": "Fictional jobsite storage box compact model 17"
+    },
+    {
+      "sku": "POC-1702",
+      "description": "Fictional jobsite storage box compact plus model 17"
+    },
+    {
+      "sku": "POC-1703",
+      "description": "Fictional jobsite storage box wide model 17"
+    },
+    {
+      "sku": "POC-1704",
+      "description": "Fictional jobsite storage box wide plus model 17"
+    },
+    {
+      "sku": "POC-1705",
+      "description": "Fictional jobsite storage box replacement model 17"
+    },
+    {
+      "sku": "POC-1801",
+      "description": "Fictional transport storage cart compact model 18"
+    },
+    {
+      "sku": "POC-1802",
+      "description": "Fictional transport storage cart compact plus model 18"
+    },
+    {
+      "sku": "POC-1803",
+      "description": "Fictional transport storage cart wide model 18"
+    },
+    {
+      "sku": "POC-1804",
+      "description": "Fictional transport storage cart wide plus model 18"
+    },
+    {
+      "sku": "POC-1805",
+      "description": "Fictional transport storage cart replacement model 18"
+    },
+    {
+      "sku": "POC-1901",
+      "description": "Fictional watchman lock kit compact model 19"
+    },
+    {
+      "sku": "POC-1902",
+      "description": "Fictional watchman lock kit compact plus model 19"
+    },
+    {
+      "sku": "POC-1903",
+      "description": "Fictional watchman lock kit wide model 19"
+    },
+    {
+      "sku": "POC-1904",
+      "description": "Fictional watchman lock kit wide plus model 19"
+    },
+    {
+      "sku": "POC-1905",
+      "description": "Fictional watchman lock kit replacement model 19"
+    },
+    {
+      "sku": "POC-2001",
+      "description": "Fictional caster wheel kit compact model 20"
+    },
+    {
+      "sku": "POC-2002",
+      "description": "Fictional caster wheel kit compact plus model 20"
+    },
+    {
+      "sku": "POC-2003",
+      "description": "Fictional caster wheel kit wide model 20"
+    },
+    {
+      "sku": "POC-2004",
+      "description": "Fictional caster wheel kit wide plus model 20"
+    },
+    {
+      "sku": "POC-2005",
+      "description": "Fictional caster wheel kit replacement model 20"
+    },
+    {
+      "sku": "POC-2101",
+      "description": "Fictional truck equipment rack compact model 21"
+    },
+    {
+      "sku": "POC-2102",
+      "description": "Fictional truck equipment rack compact plus model 21"
+    },
+    {
+      "sku": "POC-2103",
+      "description": "Fictional truck equipment rack wide model 21"
+    },
+    {
+      "sku": "POC-2104",
+      "description": "Fictional truck equipment rack wide plus model 21"
+    },
+    {
+      "sku": "POC-2105",
+      "description": "Fictional truck equipment rack replacement model 21"
+    },
+    {
+      "sku": "POC-2201",
+      "description": "Fictional truck saddle box compact model 22"
+    },
+    {
+      "sku": "POC-2202",
+      "description": "Fictional truck saddle box compact plus model 22"
+    },
+    {
+      "sku": "POC-2203",
+      "description": "Fictional truck saddle box wide model 22"
+    },
+    {
+      "sku": "POC-2204",
+      "description": "Fictional truck saddle box wide plus model 22"
+    },
+    {
+      "sku": "POC-2205",
+      "description": "Fictional truck saddle box replacement model 22"
+    },
+    {
+      "sku": "POC-2301",
+      "description": "Fictional van bulkhead compact model 23"
+    },
+    {
+      "sku": "POC-2302",
+      "description": "Fictional van bulkhead compact plus model 23"
+    },
+    {
+      "sku": "POC-2303",
+      "description": "Fictional van bulkhead wide model 23"
+    },
+    {
+      "sku": "POC-2304",
+      "description": "Fictional van bulkhead wide plus model 23"
+    },
+    {
+      "sku": "POC-2305",
+      "description": "Fictional van bulkhead replacement model 23"
+    },
+    {
+      "sku": "POC-2401",
+      "description": "Fictional van adjustable shelf compact model 24"
+    },
+    {
+      "sku": "POC-2402",
+      "description": "Fictional van adjustable shelf compact plus model 24"
+    },
+    {
+      "sku": "POC-2403",
+      "description": "Fictional van adjustable shelf wide model 24"
+    },
+    {
+      "sku": "POC-2404",
+      "description": "Fictional van adjustable shelf wide plus model 24"
+    },
+    {
+      "sku": "POC-2405",
+      "description": "Fictional van adjustable shelf replacement model 24"
+    },
+    {
+      "sku": "POC-2501",
+      "description": "Fictional van drawer unit compact model 25"
+    },
+    {
+      "sku": "POC-2502",
+      "description": "Fictional van drawer unit compact plus model 25"
+    },
+    {
+      "sku": "POC-2503",
+      "description": "Fictional van drawer unit wide model 25"
+    },
+    {
+      "sku": "POC-2504",
+      "description": "Fictional van drawer unit wide plus model 25"
+    },
+    {
+      "sku": "POC-2505",
+      "description": "Fictional van drawer unit replacement model 25"
+    },
+    {
+      "sku": "POC-2601",
+      "description": "Fictional shelf back panel compact model 26"
+    },
+    {
+      "sku": "POC-2602",
+      "description": "Fictional shelf back panel compact plus model 26"
+    },
+    {
+      "sku": "POC-2603",
+      "description": "Fictional shelf back panel wide model 26"
+    },
+    {
+      "sku": "POC-2604",
+      "description": "Fictional shelf back panel wide plus model 26"
+    },
+    {
+      "sku": "POC-2605",
+      "description": "Fictional shelf back panel replacement model 26"
+    },
+    {
+      "sku": "POC-2701",
+      "description": "Fictional door conversion kit compact model 27"
+    },
+    {
+      "sku": "POC-2702",
+      "description": "Fictional door conversion kit compact plus model 27"
+    },
+    {
+      "sku": "POC-2703",
+      "description": "Fictional door conversion kit wide model 27"
+    },
+    {
+      "sku": "POC-2704",
+      "description": "Fictional door conversion kit wide plus model 27"
+    },
+    {
+      "sku": "POC-2705",
+      "description": "Fictional door conversion kit replacement model 27"
+    },
+    {
+      "sku": "POC-2801",
+      "description": "Fictional fall protection harness compact model 28"
+    },
+    {
+      "sku": "POC-2802",
+      "description": "Fictional fall protection harness compact plus model 28"
+    },
+    {
+      "sku": "POC-2803",
+      "description": "Fictional fall protection harness wide model 28"
+    },
+    {
+      "sku": "POC-2804",
+      "description": "Fictional fall protection harness wide plus model 28"
+    },
+    {
+      "sku": "POC-2805",
+      "description": "Fictional fall protection harness replacement model 28"
+    },
+    {
+      "sku": "POC-2901",
+      "description": "Fictional fall protection lanyard compact model 29"
+    },
+    {
+      "sku": "POC-2902",
+      "description": "Fictional fall protection lanyard compact plus model 29"
+    },
+    {
+      "sku": "POC-2903",
+      "description": "Fictional fall protection lanyard wide model 29"
+    },
+    {
+      "sku": "POC-2904",
+      "description": "Fictional fall protection lanyard wide plus model 29"
+    },
+    {
+      "sku": "POC-2905",
+      "description": "Fictional fall protection lanyard replacement model 29"
+    },
+    {
+      "sku": "POC-3001",
+      "description": "Fictional reusable anchor D-ring compact model 30"
+    },
+    {
+      "sku": "POC-3002",
+      "description": "Fictional reusable anchor D-ring compact plus model 30"
+    },
+    {
+      "sku": "POC-3003",
+      "description": "Fictional reusable anchor D-ring wide model 30"
+    },
+    {
+      "sku": "POC-3004",
+      "description": "Fictional reusable anchor D-ring wide plus model 30"
+    },
+    {
+      "sku": "POC-3005",
+      "description": "Fictional reusable anchor D-ring replacement model 30"
+    }
+  ]
+}
