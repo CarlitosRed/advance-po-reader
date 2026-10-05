@@ -2,14 +2,16 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Upload a purchase order</title><link rel="icon" href="/web-assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/web-assets/styles.css">
 <script src="/poc-demo/ui.js" defer></script></head>
-<body><header class="site-header"><div class="header-inner"><strong>Purchase Order Reader</strong><span class="mode-badge">Free · sample extraction</span></div></header>
+<body><header class="site-header"><div class="header-inner"><strong>Purchase Order Reader</strong><span class="mode-badge" id="poc-badge">Free · sample extraction</span></div></header>
 <main class="shell"><div class="poc-page">
 <h1>Upload a purchase order</h1>
 <p>Add a PDF or a photo, then check each line against the original.</p>
 <div id="poc-error" class="error" role="alert" hidden></div>
 <label class="drop-area" id="poc-drop"><div class="upload-symbol" aria-hidden="true">↥</div><strong id="poc-drop-title">Choose a PDF or photo</strong><span class="hint" id="poc-drop-hint">or drop it here · PDF, PNG or JPG</span><input id="poc-file" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"></label>
+<p class="hint" id="poc-live-status" role="status" hidden></p>
+<section class="panel confirm" id="poc-confirm" role="alertdialog" aria-labelledby="poc-confirm-title" hidden><h2 id="poc-confirm-title">Before we read it</h2><p>This sends this document to OpenAI. Cost is usually a few cents. Send it?</p><p class="hint" id="poc-confirm-file"></p><div class="stack"><button type="button" id="poc-send" class="button primary big">Send</button><button type="button" id="poc-cancel" class="button secondary big">Cancel</button></div></section>
 <section aria-labelledby="poc-recent"><h2 id="poc-recent">Recent orders</h2><div id="poc-orders" class="order-list"><p class="hint">Loading…</p></div></section>
-<details class="sample-box"><summary>Try a sample order</summary>
+<details class="sample-box" id="poc-samples"><summary>Try a sample order</summary>
 <p class="hint">This free preview can only read these samples. Open one to start reviewing.</p>
 <div id="poc-cases" class="stack"></div>
 <p class="sample-files">To try the upload yourself, save a sample file and drop it above.</p>

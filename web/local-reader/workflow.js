@@ -54,7 +54,7 @@ async function initialize() {
     state.library = corpus.documents;
     $("library-count").textContent = state.library.length;
     // Free proof of concept: only synthetic catalogs, no default pool and no provider.
-    state.poc = !state.defaultPool && state.catalogs.length > 0 && state.catalogs.every(c => c.synthetic) && !configuration.provider_configured;
+    state.poc = !state.defaultPool && state.catalogs.length > 0 && state.catalogs.every(c => c.synthetic);
     if (state.poc) document.querySelector(".main-nav").hidden = true;
     renderReadiness();
     await restoreRoute();

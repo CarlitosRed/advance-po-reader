@@ -18,6 +18,15 @@ const POC_MESSAGES = {
   pdf_page_limit: "That PDF has too many pages for this preview.",
   image_dimension_limit: "That photo is too large for this preview.",
   animated_image_unsupported: "Choose a still photo, not an animation.",
+  poc_spend_cap_reached: "The live-run limit for this demo is reached, so nothing was sent. Raise the limit in the runbook and restart to continue.",
+  provider_http_401: "OpenAI did not accept the key. Check OPENAI_API_KEY in .env.backend.",
+  provider_http_429: "OpenAI says a rate or quota limit was reached. Nothing was retried.",
+  provider_http_400: "OpenAI did not accept this request (the model may not take PDF files). See “Live mode” in the runbook.",
+  remote_outcome_unknown_no_retry: "The connection to OpenAI was interrupted, so the result is unknown. Nothing was retried, and this attempt may have been charged.",
+  provider_server_outcome_unknown_no_retry: "OpenAI returned a server error and the result is unknown. Nothing was retried.",
+  provider_payload_validation_failed: "The reading came back in a shape we could not check. Try another file.",
+  poc_images_mode_single_page_only: "Image mode reads one-page PDFs only.",
+  provider_not_configured: "Live mode is not configured. Check the runbook.",
   website_session_required: "Reload this page and try again."
 };
 async function pocRequest(path, options = {}) {
@@ -37,10 +46,57 @@ function pocFailure(error) {
   pocElement("poc-error").scrollIntoView({block: "nearest"});
 }
 function pocLabel(item) { return POC_SAMPLE_LABELS[item.id] || item.title; }
+function pocLiveName() {
+  try { return (localStorage.getItem("advance-po-reader.reviewer") || "").trim() || "POC owner"; } catch { return "POC owner"; }
+}
+async function pocSha256(file) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+async function pocLiveStatus() {
+  const status = await pocRequest("/poc-demo/live-status");
+  const line = pocElement("poc-live-status");
+  line.hidden = false; line.textContent = status.message; line.classList.toggle("error", status.blocked);
+  pocElement("poc-file").disabled = status.blocked;
+  pocElement("poc-drop").setAttribute("aria-disabled", String(status.blocked));
+  return status;
+}
+async function pocChoose(file) {
+  pocElement("poc-error").hidden = true;
+  if (!pocInfo.live) { pocUpload(file); return; }
+  if (!/\.(pdf|png|jpe?g)$/i.test(file.name)) { pocFailure(new Error("unsupported_file_type")); return; }
+  try {
+    if ((await pocLiveStatus()).blocked) { pocFailure(new Error("poc_spend_cap_reached")); return; }
+    const sha = await pocSha256(file);
+    pocElement("poc-confirm-file").textContent = file.name + " · " + Math.max(1, Math.round(file.size / 1024)) + " KB";
+    pocElement("poc-confirm").hidden = false;
+    pocElement("poc-send").onclick = () => { pocElement("poc-confirm").hidden = true; pocUploadLive(file, sha); };
+    pocElement("poc-cancel").onclick = () => { pocElement("poc-confirm").hidden = true; pocElement("poc-file").value = ""; };
+    pocElement("poc-cancel").focus();
+  } catch (error) { pocFailure(error); }
+}
+async function pocUploadLive(file, sha) {
+  pocBusy(true, "Reading your order…", "This can take up to three minutes. Please keep this page open.");
+  try {
+    const body = new FormData(); body.set("vendor_id", pocInfo.vendor_id); body.set("file", file);
+    const source = await pocRequest("/documents", {method: "POST", body, headers: {"Idempotency-Key": crypto.randomUUID()}});
+    if (source.sha256 !== sha) throw new Error("authorization_source_mismatch");
+    // Already read before: reopen it. Nothing is sent again and nothing is charged.
+    const earlier = (await pocRequest("/documents/" + source.id + "/runs")).runs.filter(run => ["completed", "partial"].includes(run.state)).at(-1);
+    if (earlier) { location.href = "/#document=" + source.id + "&run=" + earlier.id; return; }
+    // Only this confirmed file is authorized: the backend binds the authorization to the file hash.
+    let run = await pocRequest("/documents/" + source.id + "/runs", {method: "POST", headers: {"Idempotency-Key": crypto.randomUUID()},
+      json: {provider: "openai", external_authorization: {authorized: true, source_sha256: sha, authorized_by: pocLiveName(),
+        policy_reference: "Owner confirmation in the local live POC", reason: "The owner confirmed sending this document to OpenAI in the live POC"}}});
+    run = await pocRequest("/runs/" + run.id + "/process", {method: "POST"});
+    if (!["completed", "partial"].includes(run.state)) throw new Error(run.outcome_code || "request_failed");
+    location.href = "/#document=" + source.id + "&run=" + run.id;
+  } catch (error) { pocFailure(error); pocBusy(false); pocElement("poc-file").value = ""; pocLiveStatus().catch(() => {}); }
+}
 function pocBusy(busy, title, hint) {
   const area = pocElement("poc-drop");
   area.setAttribute("aria-busy", String(busy));
-  pocElement("poc-file").disabled = busy;
+  if (busy || !pocInfo?.live) pocElement("poc-file").disabled = busy;
   pocElement("poc-drop-title").textContent = busy ? title : "Choose a PDF or photo";
   pocElement("poc-drop-hint").textContent = busy ? hint : "or drop it here · PDF, PNG or JPG";
 }
@@ -84,7 +140,7 @@ async function pocLoadOrders() {
   const documents = (await pocRequest("/documents?vendor_id=" + encodeURIComponent(pocInfo.vendor_id) + "&limit=12")).documents;
   const orders = (await Promise.all(documents.map(pocOrder))).filter(Boolean);
   list.replaceChildren();
-  if (!orders.length) { const none = document.createElement("p"); none.className = "hint"; none.textContent = "No orders yet. Upload one above or try a sample."; list.append(none); return; }
+  if (!orders.length) { const none = document.createElement("p"); none.className = "hint"; none.textContent = pocInfo.live ? "No orders yet. Upload one above." : "No orders yet. Upload one above or try a sample."; list.append(none); return; }
   for (const order of orders) {
     const card = document.createElement("a"); card.className = "order-card"; card.href = order.href;
     const title = document.createElement("strong"); title.textContent = order.label;
@@ -113,14 +169,19 @@ async function pocInitialize() {
     pocElement("poc-files").append(row);
   }
   const input = pocElement("poc-file"), area = pocElement("poc-drop");
-  input.onchange = () => { if (input.files[0]) pocUpload(input.files[0]); };
+  input.onchange = () => { if (input.files[0]) pocChoose(input.files[0]); };
   area.ondragover = event => { event.preventDefault(); area.classList.add("dragover"); };
   area.ondragleave = () => area.classList.remove("dragover");
   area.ondrop = event => {
     event.preventDefault(); area.classList.remove("dragover");
     if (event.dataTransfer.files.length !== 1) { pocFailure(new Error("unsupported_file_type")); return; }
-    pocUpload(event.dataTransfer.files[0]);
+    pocChoose(event.dataTransfer.files[0]);
   };
+  if (pocInfo.live) {
+    pocElement("poc-badge").textContent = pocInfo.rehearsal ? "Live rehearsal · no real calls" : "Live · " + pocInfo.model;
+    pocElement("poc-samples").hidden = true;
+    await pocLiveStatus();
+  }
   await pocLoadOrders();
 }
 pocInitialize().catch(error => { pocFailure(error); pocElement("poc-orders").replaceChildren(); });
