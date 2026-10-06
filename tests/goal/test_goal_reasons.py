@@ -21,6 +21,15 @@ EXTRA = [{"sku": "GOAL-010", "description": "Synthetic cobalt ladder long"},
          {"sku": "WERNER D6224-2", "description": "Synthetic anchor strap kit"}]
 
 
+ALIASES = {"sku": "GOAL-002", "description": PRODUCTS[1]["description"], "aliases": [
+    {"value": "CUSTOM-77", "source_role": "customer_item_number"}, {"value": "OLD-77", "source_role": "vendor_sku"}]}
+
+
+def _with_role(row, role, index=0):
+    row["identifiers"][index]["source_role"] = role
+    return row
+
+
 def _node():
     node = os.environ.get("GOAL_NODE_BIN") or shutil.which("node")
     if not node:
@@ -41,7 +50,7 @@ def test_goal_9_plain_reason_table_covers_every_case():
 
 def test_goal_9_plain_reasons_match_what_the_real_review_api_returns(desk, tmp_path):
     node = _node()
-    ok(desk.client.post("/catalog/import", json={"vendor_id": desk.vendor["id"], "products": EXTRA}))
+    ok(desk.client.post("/catalog/import", json={"vendor_id": desk.vendor["id"], "products": [*EXTRA, ALIASES]}))
     cobalt, vermilion = PRODUCTS[0]["description"], PRODUCTS[1]["description"]
     conflict = product_row(3, code="GOAL-001", description=cobalt + " GOAL-002", quantity="1")
     embedded = product_row(5, description=vermilion + ", code GOAL-002", quantity="1")
@@ -58,10 +67,25 @@ def test_goal_9_plain_reasons_match_what_the_real_review_api_returns(desk, tmp_p
     unclear = product_row(9, code="GOAL-002", description=vermilion, quantity="1")
     unclear["quantity"].update(state="uncertain")
     rows.append(unclear)                                                                          # part of the line is hard to read
+    two = product_row(15, code="GOAL-002", description=vermilion, quantity="1")
+    two["identifiers"].append({**two["identifiers"][0], "raw_value": "GOAL-001"})
     result = process(desk, rows)
-    by_row = {item["row_id"]: item for item in result.suggestions}
+    # Alias and conflict lines go through a second fictional run (a page only has room for so many rows).
+    more = [
+        _with_role(product_row(10, code="CUSTOM77", description=vermilion, quantity="1"), "customer_item_number"),   # alias, written differently
+        product_row(11, code="OLD-77", description=vermilion, quantity="1"),                      # vendor alias, exact: not the main code
+        product_row(12, description=vermilion + " code ZZ-99", quantity="1"),                    # no code column, unmatched labeled token
+        product_row(13, code="GOAL-002", description=vermilion + " GOAL-001", quantity="1"),     # description names another product
+        _with_role(product_row(14, code="CUSTOM-77", description=vermilion, quantity="1"), "customer_item_number"), # alias, exact
+        two,                                                                                      # two catalog codes printed: two candidates
+        product_row(16, code="OLD77", description=vermilion, quantity="1"),                      # vendor alias, written differently
+    ]
+    second = process(desk, more)
+    suggestions = [*result.suggestions, *second.suggestions]
+    by_row = {item["row_id"]: item for item in suggestions}
     seed = tmp_path / "reasons-data.json"
-    seed.write_text(json.dumps({"rows": result.result["extraction"]["rows"], "suggestions": result.suggestions}), encoding="utf-8")
+    seed.write_text(json.dumps({"rows": [*result.result["extraction"]["rows"], *second.result["extraction"]["rows"]],
+                                "suggestions": suggestions}), encoding="utf-8")
     completed = _run(node, "reasons-data.cjs", str(seed))
     assert completed.returncode == 0, completed.stdout + completed.stderr + json.dumps(
         {key: (value["method"], value["tier"], value["tier_reason"], [c["sku"] for c in value["candidates"]]) for key, value in by_row.items()})

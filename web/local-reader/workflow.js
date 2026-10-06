@@ -113,6 +113,48 @@ function vendorPrefixPair(candidates) {
   }
   return null;
 }
+// Same cautious key as the server's normalize_identifier: ASCII letters and digits only; anything else has no key.
+function codeKey(value) {
+  const text = String(value ?? "");
+  return /^[\x00-\x7f]*$/.test(text) ? text.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
+}
+const CANONICAL_ROLES = ["sku", "vendor_sku", "vendor_product_code"];
+// Printed codes that the server treats as product-code readings (the other roles are customer or secondary numbers).
+function canonicalCodes(row) {
+  return (row?.identifiers || []).filter(item => CANONICAL_ROLES.includes(item?.source_role) && String(item?.raw_value ?? "").trim())
+    .map(item => String(item.raw_value));
+}
+// The printed code with a letters-only vendor prefix in front of the catalog code ("WER D6210-1"): the server counts
+// it as the same product, so the UI never calls it different.
+function prefixedCode(value, sku) {
+  const text = value.toUpperCase().split(/\s+/).filter(Boolean).join(" "), tail = String(sku).toUpperCase().split(/\s+/).filter(Boolean).join(" ");
+  if (!tail || text.length <= tail.length + 1 || !text.endsWith(tail) || !" -/".includes(text[text.length - tail.length - 1])) return false;
+  const prefix = text.slice(0, text.length - tail.length).split(/[\s/-]+/).filter(Boolean);
+  return prefix.length > 0 && prefix.every(token => /^[A-Za-z]+$/.test(token));
+}
+// True when the description could hold a code-like or labeled reading that the server compares with the catalog.
+// A wide net on purpose: a description with none of these cannot be the cause of a conflict.
+function descriptionMayHoldCode(row) {
+  const text = String(row?.description?.raw_value ?? "");
+  if (/\b(?:code|sku|product\s+(?:code|id)|item\s+(?:code|id))\b\s*[:#=]?\s*[A-Z0-9]/i.test(text)) return true;
+  return (text.match(/[A-Za-z0-9][A-Za-z0-9._\/-]{3,}/g) || []).some(token => /\d/.test(token));
+}
+// Why the server's generic "readings conflict" verdict was given, from the facts it used: the printed code readings
+// against the main catalog code, and the description. Returns a sentence only when the cause is certain, else null.
+function conflictReason(row, sku) {
+  const codes = canonicalCodes(row);
+  const same = codes.filter(code => code === sku || (codeKey(code) && codeKey(code) === codeKey(sku)));
+  const unsure = codes.filter(code => !same.includes(code) && prefixedCode(code, sku));
+  const differ = codes.filter(code => !same.includes(code) && !unsure.includes(code));
+  if (!differ.length && !unsure.length) {
+    // Every printed code is the main code (or there is none), so only a reading in the description can disagree.
+    return codes.length ? "A code in the description does not match the printed code." : "A code in the description does not match this product.";
+  }
+  if (!differ.length || unsure.length || descriptionMayHoldCode(row)) return null;
+  if (codes.includes(sku)) return "Two different product codes are printed on this line.";
+  if (!same.length) return "The printed code is not the catalog's main code for this product.";
+  return null;
+}
 function plainReason(row, suggestion) {
   const candidates = suggestion?.candidates || [];
   const method = suggestion?.method || "none";
@@ -122,15 +164,28 @@ function plainReason(row, suggestion) {
   if (candidates.length > 1) {
     const pair = vendorPrefixPair(candidates);
     if (pair) return "The catalog has both '" + pair[0] + "' and '" + pair[1] + "'.";
-    return candidates.length + " catalog products look alike; pick the right one.";
+    return candidates.length + " catalog products could match this line; pick the right one.";
   }
   if (!candidates.length) return "No catalog product matches this code or name.";
-  if (/conflict/i.test(tierReason)) return "The code and the description do not agree.";
+  const sku = String(candidates[0].sku ?? "");
+  if (/too many code-like readings/i.test(tierReason)) return "This line has too many codes to check against the catalog.";
+  if (/lookup budget/i.test(tierReason)) return "The app skipped its catalog check on this line; please check the match.";
+  if (/conflict/i.test(tierReason)) {
+    const why = conflictReason(row, sku);
+    if (why) return why;
+  }
   if (hasUnclearReading(row)) return "Part of this line is hard to read.";
   if (row && (row.row_kind !== "product" || row.uncertainty)) return "The app could not tell for sure that this line is a product.";
-  if (method === "normalized") return "The printed code is written a little differently from the catalog code.";
-  const squash = value => String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (method === "exact" && printed && !printedCodes(row).some(code => squash(code) === squash(candidates[0].sku))) {
+  const codes = printedCodes(row);
+  const mainCode = codes.filter(code => codeKey(code) && codeKey(code) === codeKey(sku));
+  if (method === "normalized") {
+    // Only a printed code that is the main code spelled differently counts as "written differently"; a printed
+    // alternate code (an alias of this product) that needed the same clean-up is a different thing.
+    if (canonicalCodes(row).some(code => code !== sku && codeKey(code) && codeKey(code) === codeKey(sku))) {
+      return "The printed code is written a little differently from the catalog code.";
+    }
+    if (codes.length && !mainCode.length) return "The printed code is an alternate code for this product, written a little differently.";
+  } else if (method === "exact" && printed && !mainCode.length) {
     return "The printed code is not the catalog's main code for this product.";
   }
   if (method === "description_code_hint" || method === "description_numeric_code_hint") {
