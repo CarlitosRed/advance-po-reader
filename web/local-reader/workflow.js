@@ -649,7 +649,9 @@ function wireTabs(groups, tab) {
     $("tab-" + state.tabs.tab)?.focus();
   };
   for (const button of document.querySelectorAll("[data-show]")) button.onclick = () => { state.tabs.show[tab] = button.dataset.show; renderDocument(); };
-  $("tab-filter").oninput = event => { state.tabs.query = event.target.value; applyFilter(); };
+  // The toolbar is only rendered when the tab has lines, so an empty tab has no filter box.
+  const filter = $("tab-filter");
+  if (filter) filter.oninput = event => { state.tabs.query = event.target.value; applyFilter(); };
   if ($("bulk-confirm")) $("bulk-confirm").onclick = () => bulkConfirm(groups);
   const cards = $("tab-cards");
   cards.onclick = event => {
