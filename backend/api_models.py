@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, StrictInt, StrictBool, field_validator, model_validator
 from backend.catalog import ProductInput
+from gate_a.contracts import EvidenceReference
 
 
 class RequestModel(BaseModel):
@@ -13,6 +14,21 @@ class PageSourceEvidence(RequestModel):
     scope: Literal["page"] = "page"
     page_number: StrictInt = Field(ge=1)
     source_sha256: StrictStr = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class RegionReviewEvidence(EvidenceReference):
+    scope: Literal["region"]
+
+
+class DocumentSourceEvidence(RequestModel):
+    scope: Literal["document"]
+    source_document_id: UUID
+    run_id: UUID
+    source_sha256: StrictStr = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+# Unscoped region references remain valid for existing row clients/history.
+ReviewEvidence = EvidenceReference | RegionReviewEvidence | PageSourceEvidence | DocumentSourceEvidence
 
 
 class PageCountRequest(PageSourceEvidence):
@@ -83,7 +99,7 @@ class ReviewRequest(RequestModel):
     row_id: StrictStr | None = Field(default=None, max_length=120)
     reviewer: StrictStr = Field(min_length=1, max_length=120)
     reason: StrictStr = Field(min_length=1, max_length=500)
-    evidence_reference: list[dict] = Field(default_factory=list, max_length=50)
+    evidence_reference: list[ReviewEvidence] = Field(default_factory=list, max_length=50)
     selected_candidate_id: UUID | None = None
     candidate_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=5)
     field_name: Literal["description", "quantity", "unit", "unit_price", "line_total",
@@ -107,6 +123,14 @@ class ReviewRequest(RequestModel):
                 raise ValueError("page/document acknowledgment requires source evidence and no row")
         elif not self.row_id or not self.evidence_reference:
             raise ValueError("row and source evidence required")
+        if self.action in {"acknowledge_page", "confirm_unavailable_page_text"}:
+            if len(self.evidence_reference) != 1 or not isinstance(self.evidence_reference[0], PageSourceEvidence):
+                raise ValueError("one explicit page source reference required")
+        elif self.action == "acknowledge_document":
+            if len(self.evidence_reference) != 1 or not isinstance(self.evidence_reference[0], DocumentSourceEvidence):
+                raise ValueError("one explicit document source/run reference required")
+        elif self.action != "resolve" and any(not isinstance(ref, EvidenceReference) for ref in self.evidence_reference):
+            raise ValueError("row actions require region evidence")
         if self.action == "approve":
             if self.selected_candidate_id is None:
                 raise ValueError("approve requires an in-set candidate")

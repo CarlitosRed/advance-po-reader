@@ -61,7 +61,7 @@ def pytest_sessionfinish(session, exitstatus):
     lines = ["# Goal acceptance scorecard — rerun October 5, 2026", "",
              "Execution: " + os.environ.get("GOAL_TEST_EXECUTION", "local isolated run") + ". "
              "Suite: `python -m pytest -m goal`. Skips count as blocked; strict xfails are separate.", "",
-             "T-007 acceptance suite; T-009 PR A plus PR B items 3/4 (independent counts and source grounding). "
+             "T-007 acceptance suite; T-009 PR A plus PR B items 3/4/6 (independent counts, source grounding and F7/F8). "
              "Base `codex/worktree-standards` at "
              "`fe5c1f421c4293d0b993a5e2e4abecc69fba500c` (merged PR A). "
              "The original PR #5 baseline was 10 passed and 8 strict xfail.", "",
@@ -79,9 +79,8 @@ def pytest_sessionfinish(session, exitstatus):
     lines += ["", f"Total: {counts['passed']} passed, {counts['xfail']} xfail, "
               f"{counts['blocked']} blocked, {counts['failed']} failed. Pytest exit status: {exitstatus}.", "",
               "## Remaining work", "",
-              "Adjacent F7/F8 repairs remain planned for PR B: label-aware embedded "
-              "codes such as A123/2026, and valid page/document acknowledgment scopes. "
-              "These are follow-ups, not additional goal xfails.", "",
+              "F7/F8 are implemented in item 6. PR #9 still requires exact-head review; "
+              "CI execution and browser availability must be reported separately.", "",
               "## PR A behavior verified", "",
               "Goals 4–6 now pass: only Certain is initially preselected, every product still needs "
               "explicit approval, and Uncertain rows require an existing-product binding, "
@@ -110,7 +109,17 @@ def pytest_sessionfinish(session, exitstatus):
               "approves products or clears count/row blockers. Legacy runs lacking grounding need "
               "new processing. Goal 7's original assertion passes without an xfail. Browser cases "
               "exercise text, photo and unsupported-row controls against the isolated API.", "",
-              ("Browser check: passed against the real review controls and test-owned API, including source-text confirmation controls."
+              "## PR B item 6 behavior verified", "",
+              "Explicitly labeled short, alphabetic and date-shaped codes (including A123/2026) "
+              "are bounded literal SKU retrieval hints within the authorized tenant/vendor/pool. "
+              "Tests execute with and without the actual pg_trgm extension in a disposable transaction. "
+              "Descriptions/identifiers remain literal, unlabeled dates/quantities/currency stay "
+              "conservative, conflicts veto Certain, and every product requires explicit approval. "
+              "Region evidence remains bound to the row; page acknowledgments name the exact hash/page "
+              "including partial pages without regions; document acknowledgments name source/hash/run. "
+              "The real website buttons send these scopes and cannot bypass row, grounding or count "
+              "blockers. Historical region audit evidence remains readable. OpenAPI is regenerated.", "",
+              ("Browser check: passed against the real review controls and test-owned API, including source-text confirmation and page/document acknowledgment controls."
                if any(r["status"] == "passed" and "website_three_answers" in r["test"] for r in RECORDS)
                else "Browser check: not passed in this run. CI deliberately omits browser tooling; "
                     "the resulting skip is visible as blocked goal 9, not a browser pass."), "",

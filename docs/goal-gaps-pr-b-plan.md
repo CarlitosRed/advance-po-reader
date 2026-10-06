@@ -2,7 +2,7 @@
 
 Owner: **Codex · goal gaps:**. Reviewer: Claudio · PR review. Updated: 2026-10-05.
 Status: plan confirmed at `7438183`; item 3 approved at `53a092d`;
-item 4 implemented for exact-head review; item 6 pending.
+items 4 and 6 implemented for exact-head review.
 Carlos merged PR A #7 into `codex/worktree-standards` as
 `fe5c1f421c4293d0b993a5e2e4abecc69fba500c` on 2026-10-05 at 07:03 UTC.
 B includes that merged base through a merge, preserving published history
@@ -129,6 +129,20 @@ review controls, focused tests and any required migration/contracts.
 
 ## Item 6: bounded F7/F8 repairs
 
+- Implemented in the item 6 commit: at most ten distinct labeled tokens of
+  at most forty ASCII code characters use one scoped literal SKU query, bounded
+  to the candidate limit plus one ambiguity sentinel. Label/code strings are
+  saved as retrieval evidence, independently of provider observations. Existing
+  conservative unlabeled hints remain available; labeled hints have priority.
+- Review evidence now has explicit `region`, `page` and `document` forms.
+  Existing row clients may still send their unscoped page/region form. New page
+  acknowledgments require one `scope=page`, exact `source_sha256` and valid
+  partial source `page_number`, including pages with no regions. Document
+  acknowledgments require one `scope=document`, `source_document_id`, `run_id`
+  and exact `source_sha256`. Old region-based page/document requests are
+  rejected; saved historical events stay readable. The response union also
+  retains page count and unavailable-text confirmation evidence. No migration
+  or change to count/grounding policy is needed.
 - **F7:** discover explicitly labeled literal catalog codes such as `A123` and
   `2026`, including safe short/alphabetic/date-shaped cases. Query only the
   authorized catalog scope. Preserve the description as a description; a

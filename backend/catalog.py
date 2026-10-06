@@ -39,6 +39,13 @@ _NUMERIC_UNIT_OR_CURRENCY = re.compile(
 _NUMERIC_CURRENCY_PREFIX = re.compile(r"(?:USD|EUR|GBP|CAD|AUD|CRC)\s*$", re.IGNORECASE)
 
 
+# Explicit labels allow short, alphabetic and date-shaped literal codes.
+# They use exact SKU equality, never normalization or typo expansion.
+_LABELED_DESCRIPTION_CODE = re.compile(
+    r"\b(?:code|sku|product\s+(?:code|id)|item\s+(?:code|id))\b\s*[:#=]?\s*"
+    r"(?P<token>[A-Z0-9][A-Z0-9._/-]{0,39})(?![A-Z0-9._/-])", re.IGNORECASE)
+
+
 class CatalogScopeError(ValueError):
     pass
 
@@ -174,6 +181,20 @@ def _description_code_hints(description: str | None) -> list[str]:
     return result
 
 
+def _labeled_description_code_hints(description: str | None) -> list[dict]:
+    result, seen = [], set()
+    for match in _LABELED_DESCRIPTION_CODE.finditer(description or ""):
+        token = match.group("token")
+        if token not in seen:
+            seen.add(token)
+            result.append({"kind": "description_labeled_code_hint", "source": "product_description",
+                           "raw_token": token, "raw_label": match.group(0)[:match.start("token") - match.start()],
+                           "match_method": "exact_sku"})
+        if len(result) == 10:
+            break
+    return result
+
+
 def _numeric_description_code_hints(description: str | None) -> list[str]:
     """Accept isolated numeric tokens only when nearby context is not quantity, date or money."""
     if not description:
@@ -302,6 +323,16 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID | Non
             if rows:
                 method = "normalized" if normalized else "exact"
                 return _result(method, [scoped_candidate(row, method) for row in rows], limit)
+    labeled_hints = _labeled_description_code_hints(description)
+    if labeled_hints:
+        rows = list(session.scalars(select(CatalogProduct).where(
+            *scope, CatalogProduct.sku.in_([hint["raw_token"] for hint in labeled_hints])
+        ).order_by(CatalogProduct.sku, CatalogProduct.id).limit(limit + 1)))
+        if rows:
+            return _result("description_labeled_code_hint",
+                           [scoped_candidate(row, "description_labeled_code_hint") for row in rows],
+                           limit, labeled_hints)
+
     # A code-like description token is a retrieval hint only. It is never
     # added to identifier observations or aliases, and it must exactly match
     # a SKU within the already selected tenant/vendor namespace.

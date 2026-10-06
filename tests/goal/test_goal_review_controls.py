@@ -10,12 +10,12 @@ from threading import Thread
 import pytest
 
 from copy import deepcopy
-from tests.goal.conftest import ROOT, PRODUCTS, process, product_row
+from tests.goal.conftest import ROOT, PRODUCTS, process, product_row, payload, source_bytes, ok
 
 pytestmark = pytest.mark.goal
 
 
-@pytest.mark.parametrize("source_mode", ["text", "photo", "unsupported"])
+@pytest.mark.parametrize("source_mode", ["text", "photo", "unsupported", "acknowledgments"])
 def test_goal_9_website_three_answers_and_explicit_approval(desk, tmp_path, source_mode):
     node = os.environ.get("GOAL_NODE_BIN") or shutil.which("node")
     browser = os.environ.get("GOAL_BROWSER_BIN")
@@ -25,9 +25,24 @@ def test_goal_9_website_three_answers_and_explicit_approval(desk, tmp_path, sour
             product_row(2, description=PRODUCTS[1]["description"], quantity="3"),
             product_row(3, description="Synthetic accessory to classify", quantity="1", kind="unknown")]
     observed = deepcopy(rows)
-    if source_mode == "unsupported":
+    if source_mode in {"unsupported", "acknowledgments"}:
         observed[0]["description"]["raw_value"] = "Fictional fabricated text"
-    result = process(desk, rows, observed=observed, media_type="image/png" if source_mode == "photo" else "application/pdf")
+    if source_mode == "acknowledgments":
+        import fitz
+        from tests.goal.test_goal_grounding import from_bytes
+        raw = payload(observed)
+        raw["pages"].append({"page_number": 2, "state": "partial", "regions": [],
+                             "uncertainty": "Inspect the fictional partial page without regions"})
+        raw["warnings"] = ["Inspect the fictional document warning"]
+        with fitz.open(stream=source_bytes(rows), filetype="pdf") as pdf:
+            pdf.new_page(width=900, height=1100)
+            data = pdf.tobytes()
+        result = from_bytes(desk, rows, data, raw)
+        result.result = ok(desk.client.get(f"/runs/{result.run['id']}/result"))
+        result.suggestions = ok(desk.client.get(f"/runs/{result.run['id']}/suggestions"))["suggestions"]
+        result.summary = ok(desk.client.get(f"/runs/{result.run['id']}/summary"))
+    else:
+        result = process(desk, rows, observed=observed, media_type="image/png" if source_mode == "photo" else "application/pdf")
     seed = {"workspace": desk.tenant, "catalog": {**desk.vendor, "synthetic": True},
             "catalogs": [desk.vendor], "source": result.source, "run": result.run,
             "result": result.result, "suggestions": result.suggestions, "summary": result.summary,

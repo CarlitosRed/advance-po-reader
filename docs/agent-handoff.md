@@ -248,3 +248,55 @@ Item 6 (F7/F8) is unstarted. Carlos requested a checkpoint and stop at about
 PR #9 stays draft; item 4 needs exact-head re-review, and no merge is authorized.
 No dotenv file, paid/live provider, real PO data, existing application database,
 deployment, cart/order write or main push is involved.
+
+
+## Codex · goal gaps 5 — T-009 PR B item 6, October 5, 2026
+
+Item 6 only follows parent `1ca8c035caa1fc974df4abeb43859ae9c6d5fea4`
+(item 4). F7 discovers explicitly labeled short/alphabetic/date-shaped literal
+codes, including A123/2026, with at most ten distinct forty-character tokens
+and a single tenant/vendor/pool-scoped exact SKU query bounded to limit + 1.
+Labels and codes are retrieval evidence, never new identifier observations or
+rewritten descriptions. Labeled hints take priority over existing conservative
+unlabeled hints. Unlabeled dates/quantities/currency remain conservative;
+A's labeled-conflict veto and explicit approval remain intact.
+
+F8 defines region/page/document review evidence. Row requests retain same-row
+validation and accept both explicit region scope and the existing unscoped
+region form. Page acknowledgments name a valid partial source page and exact
+hash, including partial pages without any regions. Document acknowledgments
+name source/hash/run. New generic acknowledgments reject the old region-only
+or null-region shapes; saved historical audit events remain readable. The
+response union retains unavailable-page confirmations/count evidence. The
+actual website buttons send these source-bound shapes. Generic acknowledgments
+cannot approve rows or clear independent grounding/count blockers. Count and
+grounding policies are unchanged; no migration is added. OpenAPI is regenerated.
+
+Measured local source validation: full backend plus goal **413 passed in
+104.53s**; separate goal **145 passed in 58.84s**, with zero xfails/skips/failures.
+JUnit case sets agree: **45 new F7/F8 cases** and **four real browser modes**
+passed in both commands. The new browser mode clicks page acknowledgment for
+a partial second page without regions and document-warning acknowledgment,
+checks their persisted request scopes, and proves row/grounding/count blockers
+survive before the separate decisions. Tests use the actual pg_trgm extension
+and transactional absence in the disposable harness database; rollback restores
+its indexes. Tenant/vendor/pool provenance, hint/candidate bounds, source/hash/
+page/run rejection, literal preservation, conflicts and unlabeled tokens pass.
+`pip check` passes. The scorecard is regenerated from the separate goal run.
+
+Parent item 4 CI has now been verified: backend **364 passed / 3 browser skips**;
+separate goal **96 passed / 3 browser skips**. Its JUnit artifact has identical
+sets of twenty passing grounding/empty-document cases in both suites. Claudio
+approved item 4 at the full parent SHA; his three non-blocking source-grounding
+notes (split-region phrases, raster regions on text-bearing pages, damaged-PDF
+PyMuPDF exceptions) remain deferred because this task is item 6 only.
+
+Item 6 still requires CI execution and exact-head review after publication.
+The signed PR delivery comment and external checkpoint record the published
+head and actual CI state; this local measurement is not a claim of CI execution.
+PR #9 remains draft and unmerged; no self-approval or merge is authorized.
+Only generated fictional bytes, fixed JSON and test-owned PostgreSQL are used.
+No dotenv file, paid/live provider, real PO data, existing application service/
+database change, deployment, cart/order write or main push is involved.
+The sole external checkpoint is
+`C:\Users\carlo\dev\project-notes\audits\handoff-codex-goal-gaps-5-2026-10-05.md`.

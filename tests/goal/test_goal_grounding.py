@@ -129,7 +129,7 @@ def test_goal_7_unavailable_preserves_all_tiers_one_confirmation_per_page(desk, 
     assert all(c["status"] == "unavailable" and c["unconfirmed_page_numbers"] == [1] for c in checks)
     ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json={"action":"acknowledge_document",
         "reviewer":"Fictional reviewer", "reason":"Generic acknowledgement",
-        "evidence_reference":[{"page_number":1,"region_reference":"header"}]}))
+        "evidence_reference":[{"scope":"document", "source_document_id":result.source["id"], "run_id":result.run["id"], "source_sha256":result.source["sha256"]}]}))
     assert "unavailable_page_text_requires_confirmation" in summary(desk, result)["blockers"]
     event = ok(confirm(desk, result))
     assert event["row_id"] is None and event["reviewer"] and event["created_at"]
@@ -154,7 +154,7 @@ def test_goal_7_source_review_separate_from_approval_corrections_and_counts(desk
     assert finish(desk, result).json()["error"] == "unsupported_product_text_requires_source_review"
     ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json={"action":"acknowledge_document",
         "reviewer":"Fictional reviewer", "reason":"Generic acknowledgement",
-        "evidence_reference":[{"page_number":1,"region_reference":"header"}]}))
+        "evidence_reference":[{"scope":"document", "source_document_id":result.source["id"], "run_id":result.run["id"], "source_sha256":result.source["sha256"]}]}))
     assert finish(desk, result).json()["error"] == "unsupported_product_text_requires_source_review"
     assert confirm(desk, result).status_code == 422
     ok(review_source(desk, result, observed[0]))

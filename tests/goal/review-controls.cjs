@@ -30,6 +30,25 @@ const { chromium } = require(require.resolve("playwright", {
     assert.equal(await page.locator("#finish-review").isDisabled(), true);
     await page.evaluate(() => renderDocument());
 
+    if (seed.sourceMode === "acknowledgments") {
+      await page.click("#reviewed-products");
+      await page.click('[data-ack-page="2"]');
+      await page.waitForFunction(() => !state.busy && state.events.at(-1)?.action === "acknowledge_page");
+      assert.deepEqual(await page.evaluate(() => state.events.at(-1).evidence_reference),
+        [{scope:"page", page_number:2, source_sha256:seed.source.sha256}]);
+      assert.equal(await page.locator("[data-ack-page]").count(), 0);
+      await page.click("#ack-warnings");
+      await page.waitForFunction(() => !state.busy && state.events.at(-1)?.action === "acknowledge_document");
+      assert.deepEqual(await page.evaluate(() => state.events.at(-1).evidence_reference),
+        [{scope:"document", source_document_id:seed.source.id, run_id:seed.run.id, source_sha256:seed.source.sha256}]);
+      assert.equal(await page.locator("#ack-warnings").count(), 0);
+      assert.equal(await page.evaluate(() => state.result.extraction.pages[1].state), "partial");
+      assert.equal(await page.evaluate(() => state.result.extraction.warnings.length), 1);
+      for (const blocker of ["unresolved_rows_remain", "independent_page_product_counts_required", "unsupported_product_text_requires_source_review"])
+        assert.equal(await page.evaluate(b => state.summary.blockers.includes(b), blocker), true);
+      assert.equal(await page.locator("#finish-review").isDisabled(), true);
+      await page.evaluate(() => renderDocument());
+    }
     if (seed.sourceMode === "photo") {
       await page.click("#reviewed-products");
       assert.equal(await page.locator("[data-confirm-unavailable]").count(), 1);
@@ -95,7 +114,13 @@ const { chromium } = require(require.resolve("playwright", {
     await page.locator('[data-page-count="1"] button').click();
     await page.waitForFunction(() => !state.busy && state.summary.page_coverage[0].status === "matched");
     assert.equal(await page.evaluate(() => state.summary.page_coverage[0].status), "matched");
-    if (seed.sourceMode === "unsupported") {
+    if (seed.sourceMode === "acknowledgments") {
+      assert.equal(await page.locator("#finish-review").isDisabled(), true);
+      await page.fill('[data-page-count="2"] input[name="product_count"]', "0");
+      await page.locator('[data-page-count="2"] button').click();
+      await page.waitForFunction(() => !state.busy && state.summary.page_coverage[1].status === "matched");
+    }
+    if (["unsupported", "acknowledgments"].includes(seed.sourceMode)) {
       assert.equal(await page.locator("#finish-review").isDisabled(), true);
       assert.match(await page.locator('[data-source-row="line-1"]').innerText(), /Fictional fabricated text/);
       await page.click('[data-confirm-source="line-1"]');

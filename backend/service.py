@@ -237,6 +237,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest, settings=None):
     payload = ExtractionPayload.model_validate(run.result)
     events = session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant, ReviewEvent.run_id == run_id)
                              .order_by(*ReviewEvent.audit_order())).all()
+    evidence_reference = request.model_dump(mode="json")["evidence_reference"]
     request_hash = fingerprint(request.model_dump(mode="json"))
     if request.action == "new_product":
         prior = next((event for event in events if event.action == "new_product" and
@@ -267,7 +268,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest, settings=None):
         from backend.source_checks import grounding_projection
         source = source_for(session, tenant, run.source_document_id)
         try:
-            references = [PageSourceEvidence.model_validate(ref) for ref in request.evidence_reference]
+            references = [PageSourceEvidence.model_validate(ref) for ref in evidence_reference]
         except Exception:
             raise BackendError("invalid_page_source_evidence", 422) from None
         if len(references) != 1:
@@ -286,32 +287,31 @@ def review_run(session, tenant, run_id, request: ReviewRequest, settings=None):
         new_value = {**ref.model_dump(), "independent_text_status": "unavailable", "human_confirmed_source": True}
         run.review_state = "in_progress"
     elif request.action in {"acknowledge_page", "acknowledge_document"}:
-        try:
-            references = [EvidenceReference.model_validate(reference) for reference in request.evidence_reference]
-        except Exception:
-            raise BackendError("invalid_review_evidence_reference", 422) from None
-        declared = {(page.page_number, region.region_reference) for page in payload.pages for region in page.regions}
-        if not references or not all((ref.page_number, ref.region_reference) in declared for ref in references):
-            raise BackendError("review_evidence_outside_document", 422)
+        source = source_for(session, tenant, run.source_document_id)
+        ref = request.evidence_reference[0]
+        if ref.source_sha256 != source.sha256:
+            raise BackendError("review_source_hash_mismatch", 422)
         if request.action == "acknowledge_page":
-            numbers = {ref.page_number for ref in references}
-            if len(numbers) != 1:
-                raise BackendError("acknowledge_one_page_per_event", 422)
-            page = next(page for page in payload.pages if page.page_number in numbers)
+            page = next((page for page in payload.pages if page.page_number == ref.page_number), None)
+            if ref.page_number > source.page_count or page is None:
+                raise BackendError("page_outside_document", 422)
             if page.state != "partial":
                 raise BackendError("only_partial_pages_can_be_acknowledged", 422)
             old_value = {"page_state": page.state, "uncertainty": page.uncertainty}
-            new_value = {"human_acknowledged_uncertainty": True}
+            new_value = {**ref.model_dump(mode="json"), "human_acknowledged_uncertainty": True}
         else:
+            if ref.source_document_id != source.id or ref.run_id != run.id:
+                raise BackendError("review_evidence_outside_document", 422)
             old_value = {"warnings": list(payload.warnings)}
-            new_value = {"human_acknowledged_warnings": True}
+            new_value = {**ref.model_dump(mode="json"), "human_acknowledged_warnings": True}
         run.review_state = "in_progress"
     else:
         row = next((row for row in payload.rows if row.row_id == request.row_id), None)
         if row is None:
             raise BackendError("row_not_found", 404)
         try:
-            references = [EvidenceReference.model_validate(reference) for reference in request.evidence_reference]
+            references = [EvidenceReference.model_validate({k: v for k, v in reference.items() if k != "scope"})
+                          for reference in evidence_reference]
         except Exception:
             raise BackendError("invalid_review_evidence_reference", 422) from None
         row_references = {(ref.page_number, ref.region_reference) for ref in row.evidence}
@@ -431,7 +431,7 @@ def review_run(session, tenant, run_id, request: ReviewRequest, settings=None):
                 new_value["identifier_index"] = request.identifier_index
         run.review_state = "in_progress"
     event = ReviewEvent(tenant_id=tenant, run_id=run_id, row_id=request.row_id, action=request.action,
-                        reviewer=request.reviewer, reason=request.reason, evidence_reference=request.evidence_reference,
+                        reviewer=request.reviewer, reason=request.reason, evidence_reference=evidence_reference,
                         old_value=old_value, new_value=new_value, selected_candidate_id=request.selected_candidate_id,
                         created_at=now(), event_sequence=max((e.event_sequence or 0 for e in events), default=0) + 1)
     session.add(event)

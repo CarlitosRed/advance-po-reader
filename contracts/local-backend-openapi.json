@@ -485,6 +485,39 @@
         "title": "CatalogResponse",
         "type": "object"
       },
+      "DocumentSourceEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "document",
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_document_id": {
+            "format": "uuid",
+            "title": "Source Document Id",
+            "type": "string"
+          },
+          "source_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "source_document_id",
+          "run_id",
+          "source_sha256"
+        ],
+        "title": "DocumentSourceEvidence",
+        "type": "object"
+      },
       "ErrorResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1361,6 +1394,32 @@
         "title": "Region",
         "type": "object"
       },
+      "RegionReviewEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "page_number": {
+            "minimum": 1.0,
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "region_reference": {
+            "title": "Region Reference",
+            "type": "string"
+          },
+          "scope": {
+            "const": "region",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_number",
+          "region_reference",
+          "scope"
+        ],
+        "title": "RegionReviewEvidence",
+        "type": "object"
+      },
       "ResultResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1478,8 +1537,20 @@
           },
           "evidence_reference": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EvidenceReference"
+                },
+                {
+                  "$ref": "#/components/schemas/RegionReviewEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/PageSourceEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/DocumentSourceEvidence"
+                }
+              ]
             },
             "maxItems": 50,
             "title": "Evidence Reference",
@@ -1628,7 +1699,13 @@
                   "$ref": "#/components/schemas/EvidenceReference"
                 },
                 {
+                  "$ref": "#/components/schemas/RegionReviewEvidence"
+                },
+                {
                   "$ref": "#/components/schemas/PageSourceEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/DocumentSourceEvidence"
                 }
               ]
             },

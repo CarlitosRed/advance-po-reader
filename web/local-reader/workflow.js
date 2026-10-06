@@ -120,9 +120,10 @@ function renderSummary() {
     (needsWarnings ? `<div class="callout">${payload.warnings.map(escapeHTML).join("<br>")}<div class="button-row"><button class="button secondary" id="ack-warnings">Acknowledge document warnings</button></div></div>` : "") +
     (summary.blockers.includes("failed_pages_require_new_processing_run") ? '<div class="callout">A page failed. This review cannot be completed; create a new processing run after checking the source.</div>' : "");
   for (const button of document.querySelectorAll("[data-ack-page]")) button.onclick = () => saveReview("acknowledge_page", {
-    evidence_reference: [{page_number: Number(button.dataset.ackPage), region_reference: null}]}).then(renderSummary).catch(fail);
+    evidence_reference: [{scope: "page", page_number: Number(button.dataset.ackPage), source_sha256: state.source.sha256}]}).then(renderSummary).catch(fail);
   if ($("ack-warnings")) $("ack-warnings").onclick = () => saveReview("acknowledge_document", {
-    evidence_reference: [{page_number: payload.pages[0].page_number, region_reference: null}]}).then(renderSummary).catch(fail);
+    evidence_reference: [{scope: "document", source_document_id: state.source.id, run_id: state.run.id,
+      source_sha256: state.source.sha256}]}).then(renderSummary).catch(fail);
   $("finish-review").onclick = () => saveReview("resolve").then(renderSummary).catch(fail);
 }
 

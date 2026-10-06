@@ -89,7 +89,7 @@ def test_goal_8_zero_and_other_mismatches_survive_exclusion_and_document_ack(des
         ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json=review_body(row, "not_a_product")))
     ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json={
         "action": "acknowledge_document", "reviewer": "Fictional reviewer", "reason": "Source checked",
-        "evidence_reference": [{"page_number": 1, "region_reference": "header"}]}))
+        "evidence_reference": [{"scope": "document", "source_document_id": result.source["id"], "run_id": result.run["id"], "source_sha256": result.source["sha256"]}]}))
     event = ok(count(desk, result, independent))
     assert event["new_value"]["status"] == "mismatch"
     check = summary(desk, result)["page_coverage"][0]

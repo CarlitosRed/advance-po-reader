@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
-from backend.api_models import PageSourceEvidence
+from backend.api_models import ReviewEvidence
 
 from backend.contracts import ExtractionPayload
 from gate_a.contracts import EvidenceReference
@@ -126,7 +126,7 @@ class ReviewResponse(ResponseModel):
     action: str
     reviewer: str
     reason: str
-    evidence_reference: list[EvidenceReference | PageSourceEvidence]
+    evidence_reference: list[ReviewEvidence]
     old_value: Any | None
     new_value: Any | None
     selected_candidate_id: UUID | None

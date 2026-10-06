@@ -55,7 +55,7 @@ def test_goal_2_code_inside_description_is_found_without_code_column(desk):
     result = process(desk, rows, code_column=False)
     assert result.result["extraction"]["rows"][0]["identifiers"] == []
     suggestion, = result.suggestions
-    assert suggestion["method"] == "description_code_hint"
+    assert suggestion["method"] == "description_labeled_code_hint"
     assert [c["sku"] for c in suggestion["candidates"]] == ["GOAL-001"]
     assert "GOAL-001" in str(suggestion["evidence"])
 

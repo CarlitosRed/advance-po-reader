@@ -378,7 +378,7 @@ def test_partial_page_needs_evidence_bound_human_acknowledgement(resource_factor
     assert resource.review(run, "acknowledge_page", evidence_reference=[
         {"page_number": 1, "region_reference": "invented"}]).status_code == 422
     acknowledgement = resource.review(run, "acknowledge_page", evidence_reference=[
-        {"page_number": 1, "region_reference": "line-1"}])
+        {"scope": "page", "page_number": 1, "source_sha256": resource.source["sha256"]}])
     assert acknowledgement.status_code == 201
     assert acknowledgement.json()["old_value"]["page_state"] == "partial"
     assert resource.review(run, "resolve").status_code == 201
@@ -396,7 +396,7 @@ def test_document_warnings_need_separate_named_evidence_bound_acknowledgement(re
     assert blocked.status_code == 409
     assert blocked.json()["error"] == "document_warnings_require_explicit_acknowledgement"
     acknowledgement = resource.review(run, "acknowledge_document", evidence_reference=[
-        {"page_number": 1, "region_reference": "header"}])
+        {"scope": "document", "source_document_id": resource.source["id"], "run_id": run["id"], "source_sha256": resource.source["sha256"]}])
     assert acknowledgement.status_code == 201
     assert resource.review(run, "resolve").status_code == 201
     assert resource.result(run)["extraction"]["warnings"] == payload["warnings"]
