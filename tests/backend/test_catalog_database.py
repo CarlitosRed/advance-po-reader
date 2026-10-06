@@ -1,5 +1,6 @@
 """Synthetic-only catalog and history tests against a dedicated local database."""
 
+import json
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -385,3 +386,88 @@ def test_description_tokens_veto_only_when_they_are_another_catalog_product(sess
     assert tier_for("Widget 10MM 12IN48IN10.5 ZZ99-AB") == "certain"   # specs and unlisted codes are not products
     assert tier_for("Widget WER SYN-001") == "certain"                 # prefix variant of the same SKU
     assert tier_for("Widget QQ77-ZZ") == "uncertain"                   # another catalog product
+
+
+# ---- real retrieval + tenant catalog lookup + persisted suggestions + review_suggestions (synthetic data) ----------
+
+def review_rows(session, tenant, vendor, run, specs):
+    """specs: [(codes, description)]. Runs the real retrieval for each row, persists the suggestion and returns the
+    review_suggestions values in row order."""
+    from backend.contracts import validate_payload
+    from backend.synthetic import fixture_payload
+    from backend.tiers import review_suggestions
+    data = fixture_payload().model_dump(mode="json")
+    template = next(item for item in data["rows"] if item["row_kind"] == "product")
+    rows = []
+    for index, (codes, description) in enumerate(specs):
+        row = json.loads(json.dumps(template))
+        row["row_id"] = f"row-{index}"
+        row["identifiers"] = [{**template["identifiers"][0], "raw_value": code, "source_label": "Part No.",
+                               "source_role": "vendor_product_code"} for code in codes]
+        row["description"]["raw_value"] = description
+        rows.append(row)
+    data["rows"] = rows
+    payload = validate_payload(data, 1)
+    run.result = payload.model_dump(mode="json")
+    session.flush()
+    for row in payload.rows:
+        found = retrieve_candidates(session, tenant, vendor,
+                                    [{"raw_value": i.raw_value, "source_role": i.source_role} for i in row.identifiers],
+                                    row.description.raw_value)
+        session.add(Suggestion(tenant_id=tenant, run_id=run.id, row_id=row.row_id, **found))
+    session.flush()
+    session.refresh(run)
+    return review_suggestions(session, tenant, run)
+
+
+def review_one(session, skus, codes, description="Synthetic widget"):
+    tenant, vendor, _, run = history(session)
+    import_products(session, tenant, vendor, [product(sku, f"Synthetic part {sku}") for sku in skus])
+    [value] = review_rows(session, tenant, vendor, run, [(codes, description)])
+    return value
+
+
+@pytest.mark.parametrize("codes,description", [(("SYN-001", "wer-syn-001"), "Synthetic widget"),
+                                               (("SYN-001",), "Widget WER-SYN-001"),
+                                               (("SYN-001",), "Widget SKU: wer-syn-001")])
+def test_vendor_prefix_form_that_is_another_active_catalog_sku_vetoes(session, codes, description):
+    both = review_one(session, ["SYN-001", "WER-SYN-001"], codes, description)
+    assert both["tier"] == "uncertain" and both["suggested_candidate_id"] is None
+    only_candidate = review_one(session, ["SYN-001"], codes, description)      # prefix variant stays accepted
+    assert only_candidate["tier"] == "certain"
+
+
+@pytest.mark.parametrize("skus,codes", [(["ÉÉ1234"], ("ÉÉ1234", "ББ9999")),
+                                        (["SYN-001"], ("SYN-001", "ſer SYN-001"))])
+def test_unnormalizable_second_reading_is_not_certain_and_leaves_value_free_evidence(session, skus, codes):
+    value = review_one(session, skus, codes)
+    assert value["tier"] == "uncertain" and value["suggested_candidate_id"] is None
+    unverifiable = [item for item in value["evidence"] if item.get("kind") == "reading_unverifiable"]
+    assert unverifiable and all(set(item) == {"kind", "extractor", "reason", "length"} for item in unverifiable)
+
+
+def test_large_payload_review_is_bounded_and_never_certain_when_capped(session, monkeypatch):
+    import backend.tiers as tiers
+    tenant, vendor, _, run = history(session)
+    import_products(session, tenant, vendor, [product(), product("QQ77-ZZ", "Other synthetic part")])
+    # Over the per-row bound: 200 distinct labeled tokens in each of 330 rows (66,001 keys before the fix).
+    specs = [(("SYN-001",), " ".join(f"SKU: ZX{row:03d}{number:03d}" for number in range(200))[:2799])
+             for row in range(330)]
+    values = review_rows(session, tenant, vendor, run, specs)
+    assert len(values) == 330 and {value["tier"] for value in values} == {"uncertain"}
+    assert all(item["kind"] == "readings_not_checked" for value in values for item in value["evidence"])
+    # Under the per-row bound but over a (lowered) per-run budget and a tiny batch size: strict, never certain.
+    monkeypatch.setattr(tiers, "MAX_LOOKUP_KEYS_PER_RUN", 4)
+    monkeypatch.setattr(tiers, "LOOKUP_BATCH", 2)
+    tenant, vendor, _, run = history(session)
+    import_products(session, tenant, vendor, [product(), product("QQ77-ZZ", "Other synthetic part")])
+    specs = [(("SYN-001",), "Widget"), (("SYN-001",), "Widget CC22-DD EE33-FF"),
+             (("SYN-001",), "Widget GG55-HH"), (("SYN-001",), "Widget JJ66-KK")]
+    assert [value["tier"] for value in review_rows(session, tenant, vendor, run, specs)] == [
+        "certain", "certain", "certain", "uncertain"]                       # the row past the budget is strict
+    monkeypatch.setattr(tiers, "MAX_LOOKUP_KEYS_PER_RUN", 20000)           # chunked lookup still covers every key
+    tenant, vendor, _, run = history(session)
+    import_products(session, tenant, vendor, [product(), product("QQ77-ZZ", "Other synthetic part")])
+    specs.append((("SYN-001",), "Widget QQ77-ZZ"))
+    assert [value["tier"] for value in review_rows(session, tenant, vendor, run, specs)] == [
+        "certain", "certain", "certain", "certain", "uncertain"]
