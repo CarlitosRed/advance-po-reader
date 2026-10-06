@@ -30,6 +30,15 @@ const expected = {
   "line-14": "The printed code is not the catalog's main code for this product.",
   "line-15": "2 catalog products could match this line; pick the right one.",
   "line-16": "The printed code is not the catalog's main code for this product.",
+  // Printed codes under customer roles (no customer alias exists): identical values are never called a mismatch.
+  "line-17": "The printed code is this product's code; the match came from the description.",
+  "line-18": "The printed code is this product's code; the match came from the description.",
+  "line-19": "Matched from the description; the printed code is the same code, written differently.",
+  "line-20": "Matched from the code in the description; please check the printed code.",
+  "line-21": "The printed code is this product's code, but the match came from the name.",
+  "line-22": "Matched from the code in the description; please check the printed code.",
+  "line-23": "The printed code does not match, but a code in the description does.",
+  "line-24": "A code in the description does not match this product.",
 };
 const seen = {};
 for (const [id, text] of Object.entries(expected)) seen[id] = reason(id);
@@ -37,4 +46,10 @@ if (process.env.REASONS_DUMP) console.log(JSON.stringify(data.suggestions.map(s 
 for (const [id, text] of Object.entries(expected)) assert.equal(seen[id], text, id);
 // The control line is certain: it belongs to Sure and is never given a reason in Check.
 assert.equal(suggestion("line-8").tier, "certain");
+// The reported reproduction and its numeric twin really are description-code-hint retrievals with no customer alias.
+assert.equal(suggestion("line-17").method, "description_code_hint");
+assert.equal(suggestion("line-18").method, "description_numeric_code_hint");
+assert.equal(suggestion("line-17").candidates[0].sku, "GOAL-002");
+// Nothing that says a printed code differs may be shown when a printed code equals the product's main code.
+for (const id of ["line-17", "line-18", "line-19", "line-21"]) assert.doesNotMatch(reason(id), /does not match|not the catalog|different from|bdiffers?b/, id);
 console.log("plain reasons on real data passed");

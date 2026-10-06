@@ -18,7 +18,8 @@ pytestmark = pytest.mark.goal
 EXTRA = [{"sku": "GOAL-010", "description": "Synthetic cobalt ladder long"},
          {"sku": "GOAL-011", "description": "Synthetic cobalt ladder short"},
          {"sku": "D6224-2", "description": "Synthetic anchor strap kit"},
-         {"sku": "WERNER D6224-2", "description": "Synthetic anchor strap kit"}]
+         {"sku": "WERNER D6224-2", "description": "Synthetic anchor strap kit"},
+         {"sku": "4801239", "description": "Synthetic teal hinge"}]
 
 
 ALIASES = {"sku": "GOAL-002", "description": PRODUCTS[1]["description"], "aliases": [
@@ -81,10 +82,25 @@ def test_goal_9_plain_reasons_match_what_the_real_review_api_returns(desk, tmp_p
         product_row(16, code="OLD77", description=vermilion, quantity="1"),                      # vendor alias, written differently
     ]
     second = process(desk, more)
-    suggestions = [*result.suggestions, *second.suggestions]
+    # Printed codes under customer roles (no customer alias exists for them) next to a description that names the same
+    # product: the screen must never call identical values a mismatch.
+    role = "customer_item_number"
+    scoped = [
+        _with_role(product_row(17, code="GOAL-002", description=vermilion + " code GOAL-002", quantity="1"), role),     # same code, found via the description
+        _with_role(product_row(18, code="4801239", description="Synthetic teal hinge 4801239", quantity="1"), role),     # same, numeric hint
+        _with_role(product_row(19, code="GOAL002", description=vermilion + " code GOAL-002", quantity="1"), role),     # same code written differently
+        _with_role(product_row(20, code="CUST-5", description=vermilion + " code GOAL-002", quantity="1"), role),      # unrelated customer number
+        _with_role(product_row(21, code="GOAL-002", description=vermilion, quantity="1"), role),                       # same code, found by name
+        _with_role(product_row(22, code="GOAL-002", description=vermilion + " code GOAL-001", quantity="1"), role),    # description names another product
+        product_row(23, code="ZZZ-9", description=vermilion + " code GOAL-002", quantity="1"),                         # vendor code really differs
+        _with_role(product_row(24, code="GOAL-002", description=vermilion + " code ZZ-99", quantity="1"), role),       # unmatched labeled token
+    ]
+    third = process(desk, scoped)
+    suggestions = [*result.suggestions, *second.suggestions, *third.suggestions]
     by_row = {item["row_id"]: item for item in suggestions}
     seed = tmp_path / "reasons-data.json"
-    seed.write_text(json.dumps({"rows": [*result.result["extraction"]["rows"], *second.result["extraction"]["rows"]],
+    seed.write_text(json.dumps({"rows": [*result.result["extraction"]["rows"], *second.result["extraction"]["rows"],
+                                         *third.result["extraction"]["rows"]],
                                 "suggestions": suggestions}), encoding="utf-8")
     completed = _run(node, "reasons-data.cjs", str(seed))
     assert completed.returncode == 0, completed.stdout + completed.stderr + json.dumps(

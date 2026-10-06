@@ -118,6 +118,9 @@ function codeKey(value) {
   const text = String(value ?? "");
   return /^[\x00-\x7f]*$/.test(text) ? text.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
 }
+function sameCode(code, sku) {
+  return code === sku || (codeKey(code) !== "" && codeKey(code) === codeKey(sku));
+}
 const CANONICAL_ROLES = ["sku", "vendor_sku", "vendor_product_code"];
 // Printed codes that the server treats as product-code readings (the other roles are customer or secondary numbers).
 function canonicalCodes(row) {
@@ -152,6 +155,8 @@ function conflictReason(row, sku) {
   }
   if (!differ.length || unsure.length || descriptionMayHoldCode(row)) return null;
   if (codes.includes(sku)) return "Two different product codes are printed on this line.";
+  // A printed code of any role that is this product's main code (or its vendor-prefixed form) is not "different".
+  if (printedCodes(row).some(code => sameCode(code, sku) || prefixedCode(code, sku))) return null;
   if (!same.length) return "The printed code is not the catalog's main code for this product.";
   return null;
 }
@@ -189,10 +194,17 @@ function plainReason(row, suggestion) {
     return "The printed code is not the catalog's main code for this product.";
   }
   if (method === "description_code_hint" || method === "description_numeric_code_hint") {
-    return printed ? "The printed code does not match, but a code in the description does."
-      : "No code column on this line; the code was found inside the description.";
+    // Found by the code inside the description. A role-limited lookup is not proof that the printed value differs, so
+    // "does not match" is only said for printed product-code readings that really differ from this product's codes.
+    if (!printed) return "No code column on this line; the code was found inside the description.";
+    if (codes.includes(sku)) return "The printed code is this product's code; the match came from the description.";
+    if (mainCode.length) return "Matched from the description; the printed code is the same code, written differently.";
+    const product = canonicalCodes(row);
+    if (product.length && !product.some(code => prefixedCode(code, sku))) return "The printed code does not match, but a code in the description does.";
+    return "Matched from the code in the description; please check the printed code.";
   }
   if (method === "description_code_hint_trigram") return "The code in the description is close to this catalog code, but not the same.";
+  if (method === "trigram" && mainCode.length) return "The printed code is this product's code, but the match came from the name.";
   if (method === "trigram") return printed ? "The printed code or name is close to this product, but not the same."
     : "No product code on this line; matched by name only.";
   if (evidence.some(item => ["description_hint_ignored", "code_reading_ignored"].includes(item?.kind))) {
