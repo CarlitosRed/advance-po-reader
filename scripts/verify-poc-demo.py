@@ -39,7 +39,7 @@ def main():
         first = seed_catalog(engine)
         second = seed_catalog(engine)
         assert first['products'] == second['products'], 'Repeated seed changed IDs or content'
-        assert len(second['products']) == 150
+        assert len(second['products']) == 153
         previous_url = engine.url
         with engine.connect() as connection:
             previous_counts = tuple(connection.execute(text(
@@ -70,7 +70,7 @@ def main():
         with local_database(args.postgres_bin, fresh=True) as (engine, owner):
             assert owner['database'] != old_database and old_database in owner['history']
             current = seed_catalog(engine)
-            assert current['product_count'] == 150
+            assert current['product_count'] == 153
             with engine.connect() as connection:
                 assert connection.scalar(text('SELECT count(*) FROM review_events')) == 0
                 assert connection.scalar(text('SELECT count(*) FROM processing_runs')) == 0
@@ -84,7 +84,7 @@ def main():
                 reset_verified = True
             finally:
                 previous.dispose()
-    report = {'seed_idempotent':True, 'fixture_product_count':150, 'dotenv_reads_refused':True,
+    report = {'seed_idempotent':True, 'fixture_product_count':153, 'dotenv_reads_refused':True,
               'external_http_refused':True, 'builtin_openai_refused':True, 'live_run_creation_refused':True,
               'unknown_source_not_given_fixed_output':True, 'unknown_upload_fails_through_real_api':True,
               'no_key_live_disabled':True,

@@ -92,3 +92,4 @@
 .proposal .guess-name{font-size:18px;color:var(--ink);overflow-wrap:anywhere}.proposal.green .guess-code{font-size:16px}
 .check-button{display:flex;align-items:center;justify-content:center;gap:10px;min-height:56px;font-size:18px}.check-button span{font-size:22px;line-height:1}
 .tab.quiet{min-height:64px}.tab.quiet .tab-count{font-size:20px;font-weight:600}.tab.quiet .tab-name,.tab.quiet small{font-weight:400}.tab.quiet:not([aria-selected=true]){background:var(--bg);border-color:var(--line);border-bottom-color:#b5c0cb}
+.tab-card.green .check-button{background:var(--green);border-color:var(--green);color:white}

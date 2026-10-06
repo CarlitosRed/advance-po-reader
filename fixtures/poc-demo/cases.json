@@ -99,6 +99,61 @@
           "description": "Order total"
         }
       ]
+    },
+    {
+      "id": "demo-reasons",
+      "title": "Why each line needs a look",
+      "rows": [
+        {
+          "product": 0,
+          "mode": "name"
+        },
+        {
+          "product": 152,
+          "mode": "name"
+        },
+        {
+          "mode": "uncertain",
+          "description": "Fictional unlisted accessory"
+        },
+        {
+          "mode": "literal",
+          "code": "POC-0101",
+          "description": "Fictional fiberglass step ladder wide model 01 POC-0103"
+        },
+        {
+          "product": 12,
+          "mode": "certain",
+          "unclear_quantity": true
+        },
+        {
+          "mode": "literal",
+          "code": "POC-3101X",
+          "description": "Fictional anchor strap"
+        },
+        {
+          "product": 20,
+          "mode": "probable"
+        },
+        {
+          "product": 30,
+          "mode": "embedded"
+        },
+        {
+          "product": 11,
+          "mode": "certain"
+        },
+        {
+          "mode": "uncertain",
+          "kind": "note",
+          "description": "Deliver to dock 4 before noon"
+        },
+        {
+          "mode": "uncertain",
+          "kind": "total",
+          "description": "Order total"
+        }
+      ]
     }
   ]
 }
