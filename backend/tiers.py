@@ -16,6 +16,18 @@ LABELED_CODE = re.compile(r"\b(?:code|sku|product\s+(?:code|id)|item\s+(?:code|i
                           r"([A-Z0-9][A-Z0-9._/-]{0,39})(?![A-Z0-9._/-])", re.IGNORECASE)
 
 
+def _same_code(value, sku):
+    """Equal after normalization, or the SKU preceded by a printed letters-only vendor prefix token
+    ("WER D6210-1", "WER-D6210-1"); the SKU must be the whole trailing token and the prefix may not hold digits."""
+    if normalize_identifier(value) == normalize_identifier(sku):
+        return True
+    text, key = " ".join(value.upper().split()), " ".join(sku.upper().split())
+    if not key or len(text) <= len(key) + 1 or not text.endswith(key) or text[-len(key) - 1] not in " -/":
+        return False
+    prefix = [token for token in re.split(r"[\s/-]+", text[:-len(key)]) if token]
+    return bool(prefix) and all(token.isalpha() and token.isascii() for token in prefix)
+
+
 def confidence_tier(row, suggestion):
     candidates = suggestion["candidates"]
     fields = [*row.identifiers, row.description, row.quantity, row.unit]
@@ -28,12 +40,13 @@ def confidence_tier(row, suggestion):
              if identifier.source_role in CANONICAL_SKU_ROLES and identifier.raw_value]
     hints = _description_code_hints(row.description.raw_value) + _numeric_description_code_hints(row.description.raw_value)
     hints += LABELED_CODE.findall(row.description.raw_value or "")
-    readings = [identifier.raw_value for identifier in codes] + hints
-    if any(normalize_identifier(value) != normalize_identifier(candidate["sku"]) for value in readings):
+    readings = [identifier.raw_value for identifier in codes]
+    if (any(not _same_code(value, candidate["sku"]) for value in readings) or
+            any(normalize_identifier(value) != normalize_identifier(candidate["sku"]) for value in hints)):
         return "uncertain", "Code-column and description readings conflict with the candidate"
     if (suggestion["method"] == "exact" and codes and
-            all(identifier.state == "observed" and identifier.raw_value == candidate["sku"]
-                for identifier in codes)):
+            all(identifier.state == "observed" for identifier in codes) and
+            any(identifier.raw_value == candidate["sku"] for identifier in codes)):
         return "certain", "Unique literal code-column match; explicit human approval still required"
     return "probable", "Description, embedded-code, alias or normalized match requires confirmation"
 

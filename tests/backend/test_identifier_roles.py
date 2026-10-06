@@ -74,3 +74,37 @@ def test_certain_still_needs_literal_equality_and_unique_candidate():
     two = {**suggestion("exact"), "candidates": [{"candidate_id": "a", "sku": "SYN-001"},
                                                  {"candidate_id": "b", "sku": "SYN-001"}]}
     assert confidence_tier(row, two)[0] == "uncertain"
+
+
+def row_with_codes(*values, role="vendor_product_code"):
+    data = fixture_payload().model_dump(mode="json")
+    row = next(item for item in data["rows"] if item["row_kind"] == "product")
+    template = row["identifiers"][0]
+    row["identifiers"] = [{**template, "raw_value": value, "source_role": role, "source_label": "Part No."}
+                          for value in values]
+    row["description"]["raw_value"] = "Synthetic widget"
+    return next(item for item in validate_payload({**data, "rows": [
+        item if item is not row else row for item in data["rows"]]}, 1).rows if item.row_kind == "product")
+
+
+@pytest.mark.parametrize("codes", [("WER SYN-001", "SYN-001"), ("WER-SYN-001", "SYN-001"),
+                                   ("WER/SYN-001", "SYN-001"), ("SYN-001", "SYN-001")])
+def test_printed_vendor_prefix_plus_literal_sku_stays_certain(codes):
+    assert confidence_tier(row_with_codes(*codes), suggestion("exact"))[0] == "certain"
+
+
+@pytest.mark.parametrize("codes", [("WER SYN-001",),                      # no literal SKU among the codes
+                                   ("SYN-001", "OTHER-77"),               # one literal + one different product
+                                   ("SYN-001", "WER OTHER-77"),
+                                   ("SYN-001", "XSYN-001"),               # substring, not a whole token
+                                   ("SYN-001", "WER XSYN-001"),
+                                   ("SYN-001", "SYN-0011"),
+                                   ("SYN-001", "A1 SYN-001"),             # prefix holding digits is not a vendor prefix
+                                   ("SYN-001", "SYN-001 WER")])           # SKU must be the trailing token
+def test_prefix_relaxation_does_not_hide_a_different_product(codes):
+    assert confidence_tier(row_with_codes(*codes), suggestion("exact"))[0] != "certain"
+
+
+def test_different_code_is_uncertain_and_prefix_needs_exact_method():
+    assert confidence_tier(row_with_codes("SYN-001", "OTHER-77"), suggestion("exact"))[0] == "uncertain"
+    assert confidence_tier(row_with_codes("SYN-001", "WER SYN-001"), suggestion("trigram"))[0] == "probable"
