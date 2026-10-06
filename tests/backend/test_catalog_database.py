@@ -471,3 +471,59 @@ def test_large_payload_review_is_bounded_and_never_certain_when_capped(session, 
     specs.append((("SYN-001",), "Widget QQ77-ZZ"))
     assert [value["tier"] for value in review_rows(session, tenant, vendor, run, specs)] == [
         "certain", "certain", "certain", "certain", "uncertain"]
+
+
+# ---- a skipped catalog check (run budget spent) must never make a row looser -------------------------------------
+
+def _letters(number, width=6):
+    return "".join(chr(97 + (number // 26 ** place) % 26) for place in range(width))
+
+
+def filler_specs(count, tag):
+    """Rows that together request exactly `count` distinct lookup keys, each row within the 40-reading limit
+    (one observed code plus at most 38 labeled alphabetic tokens)."""
+    specs, made = [], 0
+    while made < count:
+        take = min(39, count - made)
+        tokens = [_letters(made + offset + 1) for offset in range(take - 1)]
+        specs.append(((f"F{tag}{len(specs):04d}",), " ".join(f"SKU: {token}" for token in tokens) or "Filler"))
+        made += take
+    return specs
+
+
+@pytest.mark.parametrize("total", [19999, 20000, 20001])      # keys requested including the target's own two keys
+@pytest.mark.parametrize("codes", [("SYN-001", "wer-syn-001"), ("wer-syn-001", "SYN-001")])
+def test_prefix_veto_holds_across_the_production_lookup_budget(session, total, codes):
+    from backend.tiers import MAX_LOOKUP_KEYS_PER_RUN
+    assert MAX_LOOKUP_KEYS_PER_RUN == 20000
+    tenant, vendor, _, run = history(session)
+    import_products(session, tenant, vendor, [product(), product("WER-SYN-001", "Prefixed synthetic part")])
+    values = review_rows(session, tenant, vendor, run, [*filler_specs(total - 2, "A"), (codes, "Synthetic widget")])
+    target = values[-1]
+    assert target["tier"] == "uncertain" and target["suggested_candidate_id"] is None
+    skipped = [item for item in target["evidence"] if item.get("kind") == "readings_not_checked"]
+    assert bool(skipped) == (total > 20000)          # only the 20,001st key is over the run budget
+    assert all(set(item) == {"kind", "reason"} for item in skipped)
+
+
+def test_measurement_shaped_catalog_sku_veto_holds_across_the_production_lookup_budget(session):
+    for prior, skipped in [(19998, False), (19999, True), (20000, True)]:   # target adds 2 keys: 20,000 vs 20,001+
+        tenant, vendor, _, run = history(session)
+        import_products(session, tenant, vendor, [product(), product("10MM", "Another active synthetic SKU")])
+        target = review_rows(session, tenant, vendor, run,
+                             [*filler_specs(prior, "B"), (("SYN-001",), "Widget 10MM")])[-1]
+        assert target["tier"] == "uncertain" and target["suggested_candidate_id"] is None
+        assert any(item.get("kind") == "readings_not_checked" for item in target["evidence"]) == skipped
+
+
+def test_skipped_check_is_conservative_and_value_free_with_a_lowered_budget(session, monkeypatch):
+    import backend.tiers as tiers
+    monkeypatch.setattr(tiers, "MAX_LOOKUP_KEYS_PER_RUN", 1)
+    tenant, vendor, _, run = history(session)
+    import_products(session, tenant, vendor, [product(), product("WER-SYN-001", "Prefixed synthetic part")])
+    first, target = review_rows(session, tenant, vendor, run, [(("QQ-1",), "Synthetic widget"),
+                                                              (("SYN-001", "wer-syn-001"), "Synthetic widget")])
+    assert target["tier"] == "uncertain" and target["suggested_candidate_id"] is None
+    assert target["evidence"][-1] == {"kind": "readings_not_checked", "reason": "lookup_budget_exhausted"}
+    assert "skipped" in target["tier_reason"]
+    assert "SYN" not in repr(target["evidence"]).upper()
