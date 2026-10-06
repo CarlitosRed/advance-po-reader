@@ -27,7 +27,7 @@ def test_goal_9_website_three_answers_and_explicit_approval(desk, tmp_path):
             "catalogs": [desk.vendor], "source": result.source, "run": result.run,
             "result": result.result, "suggestions": result.suggestions, "summary": result.summary,
             "reviewer": "Fictional browser reviewer", "reason": "Checked generated fixture",
-            "name": "Generated fictional browser fixture", "events": []}
+            "name": "Generated fictional browser fixture", "events": [], "mode": "line"}
     fixture = tmp_path / "browser-seed.json"
     fixture.write_text(json.dumps(seed), encoding="utf-8")
     allowed = (f"/runs/{result.run['id']}", f"/documents/{result.source['id']}/pages/", "/website/catalog")

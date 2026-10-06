@@ -55,7 +55,7 @@ function assignTabs(payload, suggestions, events, marks) {
       if (kept.moved.includes(row.row_id)) entry.tab = "check";
       else if (excluded) { entry.tab = "not"; entry.kind = "person"; }
       else if (entry.boundId) entry.tab = "check";
-      else entry.tab = entry.tier === "certain" ? "sure" : "check";
+      else entry.tab = entry.tier === "certain" && entry.suggestion?.suggested_candidate_id ? "sure" : "check";
       entry.done = entry.tab === "not" ? true : entry.status === "approve";
     }
     groups[entry.tab].push(entry);
@@ -64,6 +64,32 @@ function assignTabs(payload, suggestions, events, marks) {
 }
 function tabCounts(groups) {
   return Object.fromEntries(TAB_IDS.map(id => [id, {total: groups[id].length, todo: groups[id].filter(e => !e.done).length}]));
+}
+// The first tab that still has work; if everything is done, the first tab that has any line; an empty page opens on Sure.
+function defaultTabOf(counts) {
+  return TAB_IDS.find(id => counts[id].todo > 0) || TAB_IDS.find(id => counts[id].total > 0) || "sure";
+}
+// Plain words for a tab with nothing to show, and the tab that is worth opening instead (or null).
+function emptyTabCopy(tab, counts, filtering) {
+  const other = TAB_IDS.find(id => id !== tab && counts[id].todo > 0) || TAB_IDS.find(id => id !== tab && counts[id].total > 0) || null;
+  if (filtering) return {text: "No line matches the filter.", goto: null};
+  if (counts[tab].total > 0) return {text: "Everything in this tab is done.", goto: TAB_IDS.find(id => id !== tab && counts[id].todo > 0) || null};
+  if (tab === "sure") return {
+    text: "No line was sure this time. That is normal: a line is only “sure” when its printed code matches exactly one product. " +
+      (other ? "Every product line is in Check, where you confirm each one against its picture." : "There are no product lines to confirm."),
+    goto: other};
+  if (tab === "check") return {text: "Nothing needs a closer look. Every product line was sure or already answered.", goto: other};
+  return {text: "No totals, notes or charges were found, and no line was marked as not a product.", goto: other};
+}
+// How many lines per page have no exact spot on the page (their snapshot shows the whole page instead).
+function wholePageCounts(payload, groups) {
+  const counts = {};
+  for (const entry of Object.values(groups).flat()) {
+    if (regionBox(payload, entry.row)) continue;
+    const page = entry.row.evidence?.[0]?.page_number || 1;
+    counts[page] = (counts[page] || 0) + 1;
+  }
+  return counts;
 }
 function bulkTargets(entries, visibleIds) {
   const visible = new Set(visibleIds);
@@ -354,11 +380,11 @@ function enhancePending() {
 
 /* ---------- Three-tab review page ---------- */
 const TAB_INFO = {
-  sure: {title: "Sure", tone: "green", color: "#167055",
+  sure: {title: "Sure", tone: "green", color: "#167055", todoWord: "to confirm",
     intro: "The printed code matches exactly one product. Look at the picture, then confirm."},
-  check: {title: "Check", tone: "amber", color: "#c27a00",
+  check: {title: "Check", tone: "amber", color: "#c27a00", todoWord: "to check",
     intro: "Likely or unclear matches. Confirm a suggestion, pick another product, or mark the line as not a product."},
-  not: {title: "Not products", tone: "gray", color: "#4d5f70",
+  not: {title: "Not products", tone: "gray", color: "#4d5f70", todoWord: "to review",
     intro: "Totals, notes, charges, and lines marked as not a product. Agree, or say if one is really a product."}
 };
 const pageImages = new Map();
@@ -419,21 +445,45 @@ function drawSnapshot(canvas, image, bbox, color, options = {}) {
 }
 async function paintSnapshot(canvas) {
   const frame = canvas.closest(".snap-frame");
+  const page = Number(canvas.dataset.page);
   frame.classList.remove("failed"); frame.classList.add("loading");
   try {
-    const image = await pageImage(Number(canvas.dataset.page));
+    const image = await pageImage(page);
     if (!canvas.isConnected) return;
     drawSnapshot(canvas, image, canvas.dataset.bbox ? JSON.parse(canvas.dataset.bbox) : null, canvas.dataset.color);
     frame.classList.remove("loading");
+    if (state.tabs.snapFailed.delete(page)) updateSnapBanner();
   } catch {
     if (!canvas.isConnected) return;
     frame.classList.remove("loading"); frame.classList.add("failed");
+    state.tabs.snapFailed.add(page);
+    updateSnapBanner();
   }
+}
+// Page-level wording above the cards: pages whose picture could not load, and lines with no exact spot on the page.
+function updateSnapBanner() {
+  const banner = $("snap-banner");
+  if (!banner) return;
+  const failed = [...state.tabs.snapFailed].sort((a, b) => a - b);
+  const whole = Object.entries(state.tabs.wholePage || {}).sort((a, b) => a[0] - b[0]);
+  const parts = [];
+  if (failed.length) parts.push('<p><strong>' + (failed.length === 1 ? "The picture of page " + failed[0] + " is" : "The pictures of pages " + failed.join(", ") + " are") +
+    ' not available right now.</strong> Lines on ' + (failed.length === 1 ? "that page" : "those pages") + ' show no snapshot. You can still decide from the printed text on each line, or <button type="button" class="link-button" id="retry-snapshots">try again</button>.</p>');
+  if (whole.length) parts.push('<p>' + whole.map(([page, n]) => "Page " + page + ": " + n + (n === 1 ? " line has" : " lines have")).join("; ") + ' no exact spot on the page, so its snapshot shows the whole page.</p>');
+  banner.hidden = !parts.length;
+  banner.innerHTML = parts.join("");
+  if ($("retry-snapshots")) $("retry-snapshots").onclick = () => {
+    for (const page of failed) pageImages.delete(state.source.id + ":" + page);
+    state.tabs.snapFailed = new Set();
+    updateSnapBanner();
+    document.querySelectorAll("#tab-cards canvas.snap").forEach(canvas => { if (canvas.closest(".snap-frame").classList.contains("failed")) paintSnapshot(canvas); });
+  };
 }
 function watchSnapshots(root) {
   state.snapObserver?.disconnect();
   const canvases = [...root.querySelectorAll("canvas.snap")];
-  if (!("IntersectionObserver" in window)) { canvases.forEach(paintSnapshot); return; }
+  // A hidden tab never reports visibility, and every row on a page shares one decoded picture, so paint them all.
+  if (!("IntersectionObserver" in window) || document.hidden) { canvases.forEach(paintSnapshot); return; }
   state.snapObserver = new IntersectionObserver(items => {
     for (const item of items) if (item.isIntersecting) { state.snapObserver.unobserve(item.target); paintSnapshot(item.target); }
   }, {rootMargin: "600px 0px"});
@@ -453,7 +503,7 @@ function snapshotHTML(entry, tab) {
   const page = ref?.page_number || 1;
   return '<div class="snap-frame loading"><canvas class="snap" role="img" aria-label="Snapshot of ' + escapeHTML(entryTitle(entry)) + ' on page ' + page +
     '" data-page="' + page + '" data-color="' + TAB_INFO[tab].color + '"' + (box ? ' data-bbox="' + escapeHTML(JSON.stringify(box)) + '"' : "") + '></canvas>' +
-    '<div class="snap-skeleton">Loading the picture…</div><div class="snap-fallback"><span>The picture did not load.</span> <button type="button" class="link-button" data-act="retry-snap">Try again</button></div></div>';
+    '<div class="snap-skeleton">Loading the picture…</div><div class="snap-fallback"><span>No picture for this line. Use the printed text below.</span> <button type="button" class="link-button" data-act="retry-snap">Try again</button></div></div>';
 }
 function productCardHTML(c, label, tone) {
   return '<div class="proposal ' + tone + '"><span class="guess-label">' + label + '</span><strong class="guess-code">' + escapeHTML(c.sku) + '</strong><span class="guess-desc">' + escapeHTML(c.description) + '</span>' + (c.origin === "review" ? '<small>Added by a reviewer</small>' : "") + '</div>';
@@ -516,7 +566,7 @@ function tabCardHTML(entry, tab, resolved) {
   return '<article class="tab-card ' + TAB_INFO[tab].tone + '" data-row-id="' + escapeHTML(entry.row.row_id) + '" data-pending="' + (entry.done ? "0" : "1") + '" data-search="' + escapeHTML(entryText(entry)) + '">' +
     '<div class="card-head"><h3 class="line-title">' + escapeHTML(entryTitle(entry)) + '</h3>' + parts.pill + '</div>' +
     snapshotHTML(entry, tab) +
-    '<div class="snap-tools"><button type="button" class="link-button" data-act="enlarge">Enlarge</button>' + (entry.lineIndex >= 0 ? '<button type="button" class="link-button" data-act="open-line">Open line</button>' : "") + '</div>' +
+    '<div class="snap-tools"><button type="button" class="link-button" data-act="enlarge">Enlarge</button>' + (entry.lineIndex >= 0 ? '<button type="button" class="link-button" data-act="open-line">Open line</button>' : "") + '<span class="swipe-hint">Swipe sideways to see the whole line</span></div>' +
     '<div class="tab-card-body"><div class="tab-facts">' + parts.body + '</div><div class="tab-decision">' + (parts.proposal || "") + '<div class="tab-actions">' + parts.actions + '</div></div></div>' + (parts.panel || "") + '</article>';
 }
 function flaggedNoticeHTML() {
@@ -535,27 +585,34 @@ function renderTabs() {
   const groups = assignTabs(payload, state.suggestions, state.events, loadMarks());
   const counts = tabCounts(groups);
   const ui = state.tabs;
-  if (!TAB_IDS.includes(ui.tab)) ui.tab = TAB_IDS.find(id => counts[id].todo > 0) || "sure";
+  ui.snapFailed = new Set();
+  ui.wholePage = wholePageCounts(payload, groups);
+  if (!TAB_IDS.includes(ui.tab)) ui.tab = defaultTabOf(counts);
   const tab = ui.tab;
   const lines = Object.values(groups).flat().filter(e => e.lineIndex >= 0);
   const left = lines.filter(e => e.status === "unresolved").length;
   const total = lines.length;
   const show = ui.show[tab];
   const list = groups[tab].filter(e => show === "all" || !e.done);
-  const tabs = TAB_IDS.map(id => '<button role="tab" id="tab-' + id + '" class="tab ' + TAB_INFO[id].tone + '" aria-selected="' + (id === tab) + '" aria-controls="tab-panel" data-tab="' + id + '" tabindex="' + (id === tab ? 0 : -1) + '"><span class="tab-name">' + TAB_INFO[id].title + '</span><strong class="tab-count">' + counts[id].total + '</strong><small>' + (counts[id].todo ? counts[id].todo + " to do" : (counts[id].total ? "all done" : "none")) + '</small></button>').join("");
+  const tabs = TAB_IDS.map(id => '<button role="tab" id="tab-' + id + '" class="tab ' + TAB_INFO[id].tone + (counts[id].total ? "" : " is-empty") + '" aria-selected="' + (id === tab) + '" aria-controls="tab-panel" data-tab="' + id + '" tabindex="' + (id === tab ? 0 : -1) + '"><span class="tab-name">' + TAB_INFO[id].title + '</span><strong class="tab-count">' + counts[id].total + '</strong><small>' + (counts[id].todo ? counts[id].todo + " " + TAB_INFO[id].todoWord : (counts[id].total ? "all done" : "none")) + '</small></button>').join("");
   const bulk = tab === "sure" && !resolved ? '<button id="bulk-confirm" class="button primary">Confirm all visible</button>' : "";
   const toolbar = '<div class="tab-toolbar"><label class="sr-only" for="tab-filter">Filter lines</label><input id="tab-filter" class="search-input" type="search" maxlength="80" placeholder="Filter lines" value="' + escapeHTML(ui.query) + '"><div class="segmented" role="group" aria-label="Which lines"><button type="button" data-show="todo" aria-pressed="' + (show === "todo") + '">To do</button><button type="button" data-show="all" aria-pressed="' + (show === "all") + '">All</button></div>' + bulk + '</div>';
-  const empty = !groups[tab].length ? "Nothing here for this document." : (!list.length ? "Everything in this tab is done." : "");
+  const emptyCopy = list.length ? null : emptyTabCopy(tab, counts, false);
+  const intro = TAB_INFO[tab].intro + (tab === "check" && !counts.sure.total && counts.check.total ? " Nothing was sure this time, so every product line is here." : "");
+  const emptyHTML = emptyCopy ? '<div class="tab-empty" id="tab-empty"><p>' + emptyCopy.text + '</p>' +
+    (emptyCopy.goto ? '<button type="button" class="button primary" data-tab="' + emptyCopy.goto + '">Go to ' + TAB_INFO[emptyCopy.goto].title + ' (' + counts[emptyCopy.goto].total + ')</button>' : "") + '</div>'
+    : '<p class="hint" id="tab-empty" hidden></p>';
   $("view").innerHTML = reviewerBarHTML() +
     '<section class="progress-block"><div class="progress-text"><strong>' + (left ? left + (left === 1 ? " line" : " lines") + " left to check" : "All lines checked") + '</strong> · ' + (total - left) + ' of ' + total + ' done</div><button id="reviewed-products" class="link-button">' + (resolved ? "Results" : "Summary") + '</button></section>' +
     '<progress id="review-progress" max="' + Math.max(total, 1) + '" value="' + (total - left) + '" aria-label="' + (total - left) + ' of ' + total + ' lines checked"></progress>' +
     '<div class="tablist" role="tablist" aria-label="Lines by confidence">' + tabs + '</div>' +
-    '<section id="tab-panel" class="tab-panel ' + TAB_INFO[tab].tone + '" role="tabpanel" aria-labelledby="tab-' + tab + '"><p class="tab-intro">' + TAB_INFO[tab].intro + '</p>' + toolbar +
-    '<p class="hint" id="tab-empty"' + (empty ? "" : " hidden") + '>' + empty + '</p><div id="tab-cards">' + list.map(e => tabCardHTML(e, tab, resolved)).join("") + '</div></section>';
+    '<section id="tab-panel" class="tab-panel ' + TAB_INFO[tab].tone + '" role="tabpanel" aria-labelledby="tab-' + tab + '"><p class="tab-intro">' + intro + '</p><div id="snap-banner" class="callout snap-banner" role="status" hidden></div>' + (groups[tab].length ? toolbar : "") +
+    emptyHTML + '<div id="tab-cards">' + list.map(e => tabCardHTML(e, tab, resolved)).join("") + '</div></section>';
   wireReviewerBar(() => renderDocument());
   $("reviewed-products").onclick = () => renderSummary();
   wireTabs(groups, tab);
   applyFilter();
+  updateSnapBanner();
   watchSnapshots($("tab-cards"));
 }
 function applyFilter() {
