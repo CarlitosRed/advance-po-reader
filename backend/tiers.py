@@ -48,8 +48,15 @@ def description_hints(row):
             [("labeled", token) for token in LABELED_CODE.findall(description or "")])
 
 
+def canonical_codes(row):
+    return [identifier for identifier in row.identifiers
+            if identifier.source_role in CANONICAL_SKU_ROLES and identifier.raw_value]
+
+
 def hint_keys(row):
-    return {normalize_identifier(token) for _, token in description_hints(row)} - {""}
+    """Normalized description hints and canonical code readings: the keys to look up among the tenant's SKUs."""
+    return ({normalize_identifier(token) for _, token in description_hints(row)} |
+            {normalize_identifier(identifier.raw_value) for identifier in canonical_codes(row)}) - {""}
 
 
 def _split_hints(row, sku, known_skus):
@@ -73,17 +80,35 @@ def _split_hints(row, sku, known_skus):
     return vetoing, ignored
 
 
+def _split_codes(row, sku, known_skus):
+    """Return (conflicting, ignored) canonical code readings that are not the candidate SKU. The printed code
+    column is proof of the candidate when one observed reading is literally the SKU; any OTHER reading (a
+    customer or secondary item number, a substring of the SKU, ...) then conflicts only when it is another
+    active catalog SKU. Without that literal proof, or without catalog info, every other reading conflicts."""
+    others = [identifier.raw_value for identifier in canonical_codes(row) if not _same_code(identifier.raw_value, sku)]
+    proven = known_skus is not None and any(
+        identifier.raw_value == sku and identifier.state == "observed" for identifier in canonical_codes(row))
+    if not proven:
+        return others, []
+    conflicting = [value for value in others if not normalize_identifier(value) or normalize_identifier(value) in known_skus]
+    return conflicting, [value for value in others if value not in conflicting]
+
+
 def ignored_hint_evidence(row, suggestion, known_skus=None):
-    """Value-free evidence for hints the tier ignored: extractor, shape class and reason only, never the text."""
+    """Value-free evidence for readings the tier ignored: extractor, shape class and reason only, never the text."""
     if len(suggestion["candidates"]) != 1:
         return []
-    _, ignored = _split_hints(row, suggestion["candidates"][0]["sku"], known_skus)
-    return [{"kind": "description_hint_ignored", "extractor": extractor, "reason": reason, "length": len(token)}
-            for extractor, token, reason in ignored if reason != "candidate_sku"]
+    sku = suggestion["candidates"][0]["sku"]
+    _, ignored = _split_hints(row, sku, known_skus)
+    found = [{"kind": "description_hint_ignored", "extractor": extractor, "reason": reason, "length": len(token)}
+             for extractor, token, reason in ignored if reason != "candidate_sku"]
+    return found + [{"kind": "code_reading_ignored", "extractor": "code_column", "reason": "not_a_catalog_code",
+                     "length": len(value)} for value in _split_codes(row, sku, known_skus)[1]]
 
 
 def confidence_tier(row, suggestion, known_skus=None):
-    """known_skus: normalized active catalog SKUs of the tenant that appear as description hints, or None."""
+    """known_skus: normalized active catalog SKUs of the tenant that appear as description hints or code readings,
+    or None when the catalog is unknown (then every other reading conflicts)."""
     candidates = suggestion["candidates"]
     fields = [*row.identifiers, row.description, row.quantity, row.unit]
     if (row.row_kind != "product" or row.uncertainty or
@@ -91,14 +116,13 @@ def confidence_tier(row, suggestion, known_skus=None):
             suggestion["outcome"] != "suggested" or len(candidates) != 1):
         return "uncertain", "Unresolved source evidence, classification or candidate ambiguity"
     candidate = candidates[0]
-    codes = [identifier for identifier in row.identifiers
-             if identifier.source_role in CANONICAL_SKU_ROLES and identifier.raw_value]
-    readings = [identifier.raw_value for identifier in codes]
+    codes = canonical_codes(row)
     vetoing, ignored = _split_hints(row, candidate["sku"], known_skus)
-    if any(not _same_code(value, candidate["sku"]) for value in readings) or vetoing:
+    conflicting, other_codes = _split_codes(row, candidate["sku"], known_skus)
+    if conflicting or vetoing:
         return "uncertain", "Code-column and description readings conflict with the candidate"
-    skipped = sum(reason != "candidate_sku" for _, _, reason in ignored)
-    note = f"; {skipped} description token(s) ignored (measurement or not a catalog code)" if skipped else ""
+    skipped = sum(reason != "candidate_sku" for _, _, reason in ignored) + len(other_codes)
+    note = f"; {skipped} other reading(s) ignored (measurement or not a catalog code)" if skipped else ""
     if (suggestion["method"] == "exact" and codes and
             all(identifier.state == "observed" for identifier in codes) and
             any(identifier.raw_value == candidate["sku"] for identifier in codes)):
