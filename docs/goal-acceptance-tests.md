@@ -126,6 +126,11 @@ No secrets or live provider connection are needed. Dotenv opens and real HTTP
 transports are blocked; the backend suite permits its generated synthetic
 provider and injected mock transports, while goal tests permit only fixed JSON.
 
+Three-tab page: `test_goal_9_empty_tabs_open_without_error_and_explain_themselves` opens the page in the same
+loopback bridge with no sure line, then opens the empty Sure and Not products tabs and checks no page error, the
+explanation, the "Go to Check" button and the filter. It uses the same `GOAL_NODE_BIN` / `GOAL_BROWSER_BIN` and is a
+visible skip in CI.
+
 CI deliberately does not install the optional Node/Playwright/browser tools.
 `test_goal_9_website_three_answers_and_explicit_approval` is therefore a visible
 skip, counted as blocked in the CI scorecard. It is run locally with the tools
