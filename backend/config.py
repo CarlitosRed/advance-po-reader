@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     extraction_model: str = Field(default="gpt-6-luna", min_length=1, max_length=120)
     provider_store: bool = False
     provider_timeout_seconds: int = Field(default=60, ge=1, le=180)
+    # Speed: read each PDF page as its own request at the same time (false = one whole-document request).
+    provider_split_pages: bool = True
+    provider_page_concurrency: int = Field(default=6, ge=1, le=12)
+    # Not sent unless set; set it to measure the effect of lower reasoning on its own.
+    provider_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
 
     @field_validator("database_url")
     @classmethod

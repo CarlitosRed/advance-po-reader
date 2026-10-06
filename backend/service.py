@@ -122,7 +122,9 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
     if provider is None:
         provider = (SyntheticProvider() if run.provider == "synthetic" else OpenAIProvider(
             api_key=settings.openai_api_key.get_secret_value(), enabled=True, model=settings.extraction_model,
-            store=settings.provider_store, timeout_seconds=settings.provider_timeout_seconds))
+            store=settings.provider_store, timeout_seconds=settings.provider_timeout_seconds,
+            split_pages=settings.provider_split_pages, page_concurrency=settings.provider_page_concurrency,
+            reasoning_effort=settings.provider_reasoning_effort))
     advance(run, "processing")
     attempt = ProviderAttempt(tenant_id=tenant, run_id=run.id, state="unknown_outcome",
                               model=getattr(provider, "model", "synthetic-fixture"),
