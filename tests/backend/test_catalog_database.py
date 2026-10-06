@@ -340,3 +340,48 @@ def test_upload_and_processing_idempotency_is_tenant_scoped(session):
             provider="synthetic", state="created", review_state="not_started", idempotency_key=run.idempotency_key,
             payload_hash="e" * 64))
         session.flush()
+
+
+def test_vendor_product_code_role_reaches_certain_but_header_text_does_not(session):
+    """Real catalog lookup + real tier code: only a canonical source_role can be exact/certain."""
+    from backend.contracts import validate_payload
+    from backend.synthetic import fixture_payload
+    from backend.tiers import confidence_tier
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product()])
+
+    def tier_for(role):
+        data = fixture_payload().model_dump(mode="json")
+        row = data["rows"][0]
+        row["identifiers"][0].update({"raw_value": "SYN-001", "source_label": "Part No.", "source_role": role})
+        row["description"]["raw_value"] = "Unrelated printed words"
+        parsed = next(item for item in validate_payload(data, 1).rows if item.row_kind == "product")
+        identifier = parsed.identifiers[0]
+        found = retrieve_candidates(session, tenant, vendor,
+                                    [{"raw_value": identifier.raw_value, "source_role": identifier.source_role}],
+                                    parsed.description.raw_value)
+        return found["method"], confidence_tier(parsed, found)[0]
+    assert tier_for("vendor_product_code") == ("exact", "certain")
+    assert tier_for("Part No.")[0] != "exact" and tier_for("Part No.")[1] != "certain"
+
+
+def test_description_tokens_veto_only_when_they_are_another_catalog_product(session):
+    """Real retrieval + tenant catalog lookup + real tier code (synthetic data)."""
+    from backend.contracts import validate_payload
+    from backend.synthetic import fixture_payload
+    from backend.tiers import _known_catalog_skus, confidence_tier, hint_keys
+    tenant, vendor = tenant_vendor(session)
+    import_products(session, tenant, vendor, [product(), product("QQ77-ZZ", "Other synthetic part")])
+
+    def tier_for(description):
+        data = fixture_payload().model_dump(mode="json")
+        data["rows"][0]["identifiers"][0].update({"raw_value": "SYN-001", "source_label": "Part No.",
+                                                  "source_role": "vendor_product_code"})
+        data["rows"][0]["description"]["raw_value"] = description
+        parsed = next(item for item in validate_payload(data, 1).rows if item.row_kind == "product")
+        found = retrieve_candidates(session, tenant, vendor, [{"raw_value": "SYN-001", "source_role": "vendor_sku"}],
+                                    description)
+        return confidence_tier(parsed, found, _known_catalog_skus(session, tenant, hint_keys(parsed)))[0]
+    assert tier_for("Widget 10MM 12IN48IN10.5 ZZ99-AB") == "certain"   # specs and unlisted codes are not products
+    assert tier_for("Widget WER SYN-001") == "certain"                 # prefix variant of the same SKU
+    assert tier_for("Widget QQ77-ZZ") == "uncertain"                   # another catalog product

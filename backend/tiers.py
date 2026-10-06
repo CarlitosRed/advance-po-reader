@@ -7,7 +7,7 @@ from sqlalchemy import select
 from backend.catalog import CANONICAL_SKU_ROLES, _description_code_hints, _numeric_description_code_hints
 from backend.catalog import normalize_identifier
 from backend.contracts import ExtractionPayload
-from backend.models import Suggestion
+from backend.models import CatalogProduct, Suggestion
 from backend.review_summary import effective_row_role
 
 # Broader labeled readings veto Certain even when the conservative retrieval
@@ -16,7 +16,74 @@ LABELED_CODE = re.compile(r"\b(?:code|sku|product\s+(?:code|id)|item\s+(?:code|i
                           r"([A-Z0-9][A-Z0-9._/-]{0,39})(?![A-Z0-9._/-])", re.IGNORECASE)
 
 
-def confidence_tier(row, suggestion):
+def _same_code(value, sku):
+    """Equal after normalization, or the SKU preceded by a printed letters-only vendor prefix token
+    ("WER D6210-1", "WER-D6210-1"); the SKU must be the whole trailing token and the prefix may not hold digits."""
+    if normalize_identifier(value) == normalize_identifier(sku):
+        return True
+    text, key = " ".join(value.upper().split()), " ".join(sku.upper().split())
+    if not key or len(text) <= len(key) + 1 or not text.endswith(key) or text[-len(key) - 1] not in " -/":
+        return False
+    prefix = [token for token in re.split(r"[\s/-]+", text[:-len(key)]) if token]
+    return bool(prefix) and all(token.isalpha() and token.isascii() for token in prefix)
+
+
+# Sizes, dimensions and specs ("10MM", "250ML", "12IN48IN10.5") look code-shaped to the description
+# extractors but are not product codes. Only digit groups with a known unit count as a measurement.
+_UNIT = (r"(?:mm|cm|m|in|ft|yd|oz|lbs?|kg|g|gr|mg|ml|l|lt|ltr|gal|qt|pt|pk|pc|pcs|ct|ea|mil|mic|um|"
+         r"v|w|kw|hp|amp|psi|bar|hz|ga|sf|lf)")
+_NUMBER = r"\d+(?:[.,]\d+)?"
+MEASUREMENT = re.compile(rf"^{_NUMBER}(?:{_UNIT})?(?:[-./xX*]?{_NUMBER}(?:{_UNIT})?)*$", re.IGNORECASE)
+
+
+def looks_like_measurement(token):
+    return bool(MEASUREMENT.match(token)) and bool(re.search(rf"\d{_UNIT}(?![A-Za-z])", token, re.IGNORECASE))
+
+
+def description_hints(row):
+    """(extractor, token) pairs read from the description; the same three readings the tier always used."""
+    description = row.description.raw_value
+    return ([("code", token) for token in _description_code_hints(description)] +
+            [("numeric", token) for token in _numeric_description_code_hints(description)] +
+            [("labeled", token) for token in LABELED_CODE.findall(description or "")])
+
+
+def hint_keys(row):
+    return {normalize_identifier(token) for _, token in description_hints(row)} - {""}
+
+
+def _split_hints(row, sku, known_skus):
+    """Return (vetoing, ignored). A hint is ignored when it is the candidate SKU (prefix-tolerant), a measurement
+    that is not a catalog SKU, or (catalog known) not any active catalog SKU of the tenant. A hint equal to a
+    different catalog SKU, or an unmeasured code-shaped token when the catalog is unknown, still vetoes."""
+    vetoing, ignored = [], []
+    for extractor, token in description_hints(row):
+        key = normalize_identifier(token)
+        other_product = known_skus is not None and key in known_skus
+        if _same_code(token, sku):
+            ignored.append((extractor, token, "candidate_sku"))
+        elif other_product:
+            vetoing.append((extractor, token))
+        elif looks_like_measurement(token):
+            ignored.append((extractor, token, "measurement"))
+        elif known_skus is not None and extractor != "labeled":
+            ignored.append((extractor, token, "not_a_catalog_code"))
+        else:
+            vetoing.append((extractor, token))
+    return vetoing, ignored
+
+
+def ignored_hint_evidence(row, suggestion, known_skus=None):
+    """Value-free evidence for hints the tier ignored: extractor, shape class and reason only, never the text."""
+    if len(suggestion["candidates"]) != 1:
+        return []
+    _, ignored = _split_hints(row, suggestion["candidates"][0]["sku"], known_skus)
+    return [{"kind": "description_hint_ignored", "extractor": extractor, "reason": reason, "length": len(token)}
+            for extractor, token, reason in ignored if reason != "candidate_sku"]
+
+
+def confidence_tier(row, suggestion, known_skus=None):
+    """known_skus: normalized active catalog SKUs of the tenant that appear as description hints, or None."""
     candidates = suggestion["candidates"]
     fields = [*row.identifiers, row.description, row.quantity, row.unit]
     if (row.row_kind != "product" or row.uncertainty or
@@ -26,16 +93,25 @@ def confidence_tier(row, suggestion):
     candidate = candidates[0]
     codes = [identifier for identifier in row.identifiers
              if identifier.source_role in CANONICAL_SKU_ROLES and identifier.raw_value]
-    hints = _description_code_hints(row.description.raw_value) + _numeric_description_code_hints(row.description.raw_value)
-    hints += LABELED_CODE.findall(row.description.raw_value or "")
-    readings = [identifier.raw_value for identifier in codes] + hints
-    if any(normalize_identifier(value) != normalize_identifier(candidate["sku"]) for value in readings):
+    readings = [identifier.raw_value for identifier in codes]
+    vetoing, ignored = _split_hints(row, candidate["sku"], known_skus)
+    if any(not _same_code(value, candidate["sku"]) for value in readings) or vetoing:
         return "uncertain", "Code-column and description readings conflict with the candidate"
+    skipped = sum(reason != "candidate_sku" for _, _, reason in ignored)
+    note = f"; {skipped} description token(s) ignored (measurement or not a catalog code)" if skipped else ""
     if (suggestion["method"] == "exact" and codes and
-            all(identifier.state == "observed" and identifier.raw_value == candidate["sku"]
-                for identifier in codes)):
-        return "certain", "Unique literal code-column match; explicit human approval still required"
-    return "probable", "Description, embedded-code, alias or normalized match requires confirmation"
+            all(identifier.state == "observed" for identifier in codes) and
+            any(identifier.raw_value == candidate["sku"] for identifier in codes)):
+        return "certain", "Unique literal code-column match; explicit human approval still required" + note
+    return "probable", "Description, embedded-code, alias or normalized match requires confirmation" + note
+
+
+def _known_catalog_skus(session, tenant, keys):
+    if not keys:
+        return set()
+    return set(session.scalars(select(CatalogProduct.normalized_sku).where(
+        CatalogProduct.tenant_id == tenant, CatalogProduct.active.is_(True),
+        CatalogProduct.normalized_sku.in_(sorted(keys)))))
 
 
 def review_suggestions(session, tenant, run):
@@ -46,6 +122,10 @@ def review_suggestions(session, tenant, run):
         return []
     payload = ExtractionPayload.model_validate(run.result)
     values = []
+    product_rows = [row for row in payload.rows
+                    if effective_row_role(row, payload.schema_version) in {"product_item", "unknown"}]
+    keys = set().union(*(hint_keys(row) for row in product_rows)) if product_rows else set()
+    known_skus = _known_catalog_skus(session, tenant, keys)
     for row in payload.rows:
         if effective_row_role(row, payload.schema_version) not in {"product_item", "unknown"}:
             continue
@@ -57,7 +137,8 @@ def review_suggestions(session, tenant, run):
                      "retrieval_version": "review-tiers-v1", "evidence": [],
                      "reason": "Unknown source row requires an explicit three-way decision",
                      "created_at": run.created_at})
-        value["tier"], value["tier_reason"] = confidence_tier(row, value)
+        value["tier"], value["tier_reason"] = confidence_tier(row, value, known_skus)
+        value["evidence"] = [*value["evidence"], *ignored_hint_evidence(row, value, known_skus)]
         value["approval_status"] = "needs_approval"
         value["suggested_candidate_id"] = value["candidates"][0]["candidate_id"] if value["tier"] == "certain" else None
         values.append(value)

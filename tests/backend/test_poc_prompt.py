@@ -35,7 +35,7 @@ def test_prompt_states_every_contract_rule():
     flat = " ".join(EXTRACTION_PROMPT.split())
     missing = [phrase for phrase in RULE_PHRASES if " ".join(phrase.split()) not in flat]
     assert not missing, missing
-    assert PROMPT_VERSION == "po-literal-evidence-v5"
+    assert PROMPT_VERSION == "po-literal-evidence-v6"
 
 
 def test_prompt_keeps_the_literal_evidence_instructions():
@@ -43,3 +43,14 @@ def test_prompt_keeps_the_literal_evidence_instructions():
     for phrase in ("Preserve exact printed", "Never guess absent/unreadable values or repair an ID",
                    "Do not provide parsed numbers, catalog IDs", "Use original literal observation"):
         assert phrase in flat
+
+
+def test_prompt_gives_the_identifier_role_vocabulary():
+    """source_role must be a catalog role, never the PO's own header text."""
+    from backend.catalog import CANONICAL_SKU_ROLES
+    flat = " ".join(EXTRACTION_PROMPT.split())
+    for role in sorted(CANONICAL_SKU_ROLES) + ["line_number", "other"]:
+        assert f"- {role}:" in flat, role
+    assert "source_label is the literal printed column/field header text" in flat
+    assert "never the header text" in flat
+    assert "Never use a line number, row sequence number, quantity or price column as a product code" in flat
