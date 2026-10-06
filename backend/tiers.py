@@ -17,8 +17,8 @@ LABELED_CODE = re.compile(r"\b(?:code|sku|product\s+(?:code|id)|item\s+(?:code|i
 
 
 # Documented bounds on the tenant-SKU lookup. A row beyond the per-row bound is never Certain; a row whose keys
-# would exceed the per-run budget is judged strictly (catalog treated as unknown), so conflict evidence is never
-# dropped silently. The lookup itself is chunked so one statement never approaches the driver parameter limit.
+# would exceed the per-run budget is never checked, so it is never Certain either (a cap or skipped check must never
+# make a row looser; catalog-unknown relaxations are never applied to it). The lookup itself is chunked so one statement never approaches the driver parameter limit.
 MAX_READINGS_PER_ROW = 40
 MAX_LOOKUP_KEYS_PER_RUN = 20000
 LOOKUP_BATCH = 1000
@@ -118,10 +118,12 @@ def _split_codes(row, sku, known_skus):
     return conflicting, [value for value in others if value not in conflicting]
 
 
-def ignored_hint_evidence(row, suggestion, known_skus=None):
+def ignored_hint_evidence(row, suggestion, known_skus=None, check_skipped=False):
     """Value-free evidence for readings the tier ignored: extractor, shape class and reason only, never the text."""
     if too_many_readings(row):
         return [{"kind": "readings_not_checked", "reason": "too_many_readings"}]
+    if check_skipped:
+        return [{"kind": "readings_not_checked", "reason": "lookup_budget_exhausted"}]
     if len(suggestion["candidates"]) != 1:
         return []
     sku = suggestion["candidates"][0]["sku"]
@@ -136,12 +138,15 @@ def ignored_hint_evidence(row, suggestion, known_skus=None):
                      "length": len(value)} for value in _split_codes(row, sku, known_skus)[1]]
 
 
-def confidence_tier(row, suggestion, known_skus=None):
+def confidence_tier(row, suggestion, known_skus=None, check_skipped=False):
     """known_skus: normalized active catalog SKUs of the tenant that appear as description hints or code readings,
-    or None when the catalog is unknown (then every other reading conflicts)."""
+    or None when the catalog is unknown (then every other reading conflicts). check_skipped: the catalog lookup for
+    this row was skipped (run budget spent); that is not "catalog unknown" and is never Certain."""
     candidates = suggestion["candidates"]
     if too_many_readings(row):
         return "uncertain", "Too many code-like readings to verify against the catalog"
+    if check_skipped:
+        return "uncertain", "Catalog check skipped because the lookup budget for this run was spent"
     fields = [*row.identifiers, row.description, row.quantity, row.unit]
     if (row.row_kind != "product" or row.uncertainty or
             any(field.state in {"uncertain", "unreadable"} or field.alternative_readings for field in fields) or
@@ -185,7 +190,7 @@ def review_suggestions(session, tenant, run):
     for row in product_rows:
         wanted = hint_keys(row)
         if len(keys) + len(wanted - keys) > MAX_LOOKUP_KEYS_PER_RUN:
-            unchecked.add(row.row_id)      # budget spent: this row is judged strictly (catalog unknown)
+            unchecked.add(row.row_id)      # budget spent: never checked, never Certain
         else:
             keys |= wanted
     known_skus = _known_catalog_skus(session, tenant, keys)
@@ -200,9 +205,9 @@ def review_suggestions(session, tenant, run):
                      "retrieval_version": "review-tiers-v1", "evidence": [],
                      "reason": "Unknown source row requires an explicit three-way decision",
                      "created_at": run.created_at})
-        known = None if row.row_id in unchecked else known_skus
-        value["tier"], value["tier_reason"] = confidence_tier(row, value, known)
-        value["evidence"] = [*value["evidence"], *ignored_hint_evidence(row, value, known)]
+        skipped = row.row_id in unchecked
+        value["tier"], value["tier_reason"] = confidence_tier(row, value, known_skus, skipped)
+        value["evidence"] = [*value["evidence"], *ignored_hint_evidence(row, value, known_skus, skipped)]
         value["approval_status"] = "needs_approval"
         value["suggested_candidate_id"] = value["candidates"][0]["candidate_id"] if value["tier"] == "certain" else None
         values.append(value)
