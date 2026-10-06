@@ -161,8 +161,72 @@ def test_ignored_hints_are_reported_without_their_text():
 
 def test_ignored_hints_never_lift_the_core_certain_requirements():
     assert tier("Widget 10MM", set(), method="trigram")[0] == "probable"
-    assert tier("Widget 10MM", set(), codes=("SYN-001", "OTHER-77"))[0] == "uncertain"
+    assert tier("Widget 10MM", {"OTHER77"}, codes=("SYN-001", "OTHER-77"))[0] == "uncertain"
     assert confidence_tier(row_with_codes("SYN-001", description="Widget 10MM"),
                            {**suggestion("exact"), "candidates": [{"candidate_id": "a", "sku": "SYN-001"},
                                                                    {"candidate_id": "b", "sku": "OTHER-77"}]},
                            set())[0] == "uncertain"
+
+
+# ---- a second printed code beside the literal SKU conflicts only when it is another catalog product -------------
+
+@pytest.mark.parametrize("other", ["99887", "ZZ-4451", "WER 777", "SYN", "001", "N-001", "syn 001-X"])
+def test_second_code_that_is_not_a_catalog_sku_does_not_veto_a_literal_match(other):
+    result = tier("Synthetic widget", set(), codes=("SYN-001", other))
+    assert result[0] == "certain" and "ignored" in result[1]
+    assert tier("Synthetic widget", set(), codes=(other, "SYN-001"))[0] == "certain"
+
+
+@pytest.mark.parametrize("other", ["OTHER-77", "other 77", "Other77"])
+def test_second_code_equal_to_a_different_catalog_sku_still_vetoes(other):
+    assert tier("Synthetic widget", {"OTHER77"}, codes=("SYN-001", other))[0] == "uncertain"
+
+
+def test_second_code_is_not_waved_through_without_catalog_info_or_literal_proof():
+    assert tier("Synthetic widget", None, codes=("SYN-001", "99887"))[0] == "uncertain"      # catalog unknown
+    assert tier("Synthetic widget", set(), codes=("WER SYN-001", "99887"))[0] != "certain"  # no literal SKU
+    assert tier("Synthetic widget", set(), codes=("SYN-001", "99887"), method="trigram")[0] == "probable"
+    assert tier("Synthetic widget", set(), codes=("SYN-001", "ÉÉ1234"))[0] == "uncertain"  # not checkable
+
+
+def test_ignored_second_code_is_reported_without_its_text_and_is_a_lookup_key():
+    from backend.tiers import hint_keys, ignored_hint_evidence
+    row = row_with_codes("SYN-001", "99887", description="Synthetic widget")
+    assert "99887" in hint_keys(row)
+    found = ignored_hint_evidence(row, suggestion("exact"), set())
+    assert found == [{"kind": "code_reading_ignored", "extractor": "code_column", "reason": "not_a_catalog_code", "length": 5}]
+    assert ignored_hint_evidence(row, suggestion("exact"), {"99887"}) == []
+
+
+# ---- review findings: catalog veto before prefix equivalence, unnormalizable readings, bounded readings -------
+
+@pytest.mark.parametrize("codes", [("SYN-001", "WER-SYN-001"), ("SYN-001", "wer syn-001")])
+def test_prefixed_form_that_is_a_catalog_sku_vetoes_before_prefix_equivalence(codes):
+    assert tier("Synthetic widget", {"SYN001", "WERSYN001"}, codes=codes)[0] == "uncertain"
+    assert tier("Synthetic widget", {"SYN001"}, codes=codes)[0] == "certain"      # not a catalog SKU: still the vendor prefix
+    assert tier("Widget WER-SYN-001", {"SYN001", "WERSYN001"})[0] == "uncertain"
+    assert tier("Widget WER-SYN-001", {"SYN001"})[0] == "certain"
+
+
+@pytest.mark.parametrize("codes", [("ÉÉ1234", "ББ9999"), ("SYN-001", "ſer SYN-001"), ("SYN-001", "ſYN-001")])
+def test_unnormalizable_readings_never_compare_equal_or_prefix_match(codes):
+    sku = codes[0]
+    assert confidence_tier(row_with_codes(*codes), suggestion("exact", sku), set())[0] == "uncertain"
+    assert confidence_tier(row_with_codes(*codes), suggestion("exact", sku), None)[0] == "uncertain"
+
+
+def test_unnormalizable_reading_is_reported_without_its_text():
+    from backend.tiers import ignored_hint_evidence
+    found = ignored_hint_evidence(row_with_codes("SYN-001", "ББ9999"), suggestion("exact"), set())
+    assert found == [{"kind": "reading_unverifiable", "extractor": "code_column", "reason": "not_normalizable",
+                      "length": 6}]
+
+
+def test_row_with_too_many_readings_is_never_certain_and_contributes_no_lookup_keys():
+    from backend.tiers import MAX_READINGS_PER_ROW, hint_keys, ignored_hint_evidence
+    heavy = " ".join(f"SKU: ZX{number:04d}" for number in range(MAX_READINGS_PER_ROW + 1))
+    row = row_with_codes("SYN-001", description=heavy)
+    assert hint_keys(row) == set()
+    assert confidence_tier(row, suggestion("exact"), set())[0] == "uncertain"
+    assert ignored_hint_evidence(row, suggestion("exact"), set()) == [
+        {"kind": "readings_not_checked", "reason": "too_many_readings"}]
