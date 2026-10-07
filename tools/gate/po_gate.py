@@ -53,7 +53,13 @@ SECRETS = [
 ]
 # "files" is not asked here: `gh pr view --json files` stops at 100 entries. fetch_pr reads the full list instead.
 VIEW_FIELDS = ("number,title,state,isDraft,baseRefName,headRefName,headRefOid,author,labels,"
-               "body,changedFiles,statusCheckRollup,comments,reviews")
+               "body,baseRefOid,changedFiles,statusCheckRollup,comments,reviews")
+# Everything that defines WHICH diff the file list belongs to. Read before and after the list; any difference stops the gate.
+SNAPSHOT_FIELDS = ("number", "baseRefName", "baseRefOid", "headRefName", "headRefOid", "changedFiles")
+SHA = re.compile(r"^[0-9a-f]{40}$")
+# The statuses GitHub gives a changed file. A rename or copy must name the file it came from.
+FILE_STATUSES = ("added", "removed", "modified", "renamed", "copied", "changed", "unchanged")
+NEEDS_OLD_NAME = ("renamed", "copied")
 # GitHub lists at most 3000 files of a pull request; at that count the list may be cut off.
 MAX_FILES = 3000
 
@@ -238,8 +244,9 @@ def parse_json_pages(raw):
 
 
 def fetch_files(gh, repo, number):
-    """The changed-file list as [{"path": new name, "previous_path": old name (renames only)}], read page by
-    page (100 per page). Every entry needs a non-empty text `filename`; a path may appear only once."""
+    """The changed-file list as [{"path", "status", "previous_path" (the old name, when there is one)}], read page
+    by page (100 per page). Every entry needs a non-empty text `filename` and a known `status`; a renamed or
+    copied file must name its old file; a path may appear only once."""
     raw = gh(["api", f"repos/{repo}/pulls/{number}/files?per_page=100", "--paginate"])
     files, seen = [], set()
     for entry in parse_json_pages(raw):
@@ -249,26 +256,51 @@ def fetch_files(gh, repo, number):
         if name in seen:
             raise GateError(f"the changed-file list names '{name}' twice; cannot verify the files")
         seen.add(name)
-        rec = {"path": name}
+        status = entry.get("status")
+        if not isinstance(status, str) or status not in FILE_STATUSES:
+            raise GateError(f"the changed-file list gives no usable status for '{name}'; cannot verify the files")
+        rec = {"path": name, "status": status}
         prev = entry.get("previous_filename")
         if prev is not None:
             if not isinstance(prev, str) or not prev:
                 raise GateError(f"the changed-file list has a bad previous name for '{name}'; cannot verify the files")
             rec["previous_path"] = prev
+        elif status in NEEDS_OLD_NAME:
+            raise GateError(f"'{name}' is {status} but the list gives no old name; cannot verify the files")
         files.append(rec)
     return files
 
 
+def snapshot(gh, repo, number, fields):
+    """The fields that say which diff this is, as GitHub reports them right now."""
+    got = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", ",".join(fields)]))
+    if not isinstance(got, dict):
+        raise GateError("GitHub's answer about the pull request is not an object; cannot verify the files")
+    return got
+
+
 def fetch_pr(gh, cfg, number):
     """The pull request as `gh pr view` reports it, plus the complete file list. `changedFiles` is GitHub's own
-    count; `evaluate` compares it with the list, so a list that came back short or empty cannot pass. The PR is
-    looked at again after the list is read: if its head or count moved meanwhile, the read is refused."""
+    count; `evaluate` compares it with the list, so a list that came back short or empty cannot pass. Which diff
+    the list belongs to is pinned: number, base branch, base commit, head branch, head commit and count are read
+    before and after the list, and any difference (or any of them being unreadable) refuses the read."""
     repo = repo_of(gh, cfg)
     pr = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", VIEW_FIELDS]))
+    if pr.get("number") != number:
+        raise GateError(f"GitHub answered for pull request {pr.get('number')!r}, not {number}")
+    for field in ("headRefOid", "baseRefOid"):
+        if not isinstance(pr.get(field), str) or not SHA.match(pr[field]):
+            raise GateError(f"GitHub gave no usable {field}; cannot tell which diff the file list belongs to")
+    if not isinstance(pr.get("baseRefName"), str) or not pr["baseRefName"]:
+        raise GateError("GitHub gave no baseRefName; cannot tell which diff the file list belongs to")
+    if any(k not in pr for k in SNAPSHOT_FIELDS):
+        raise GateError("GitHub left out part of the pull request's identity; cannot verify the files")
     pr["files"] = fetch_files(gh, repo, number)
-    again = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", "headRefOid,changedFiles"]))
-    if again.get("headRefOid") != pr.get("headRefOid") or again.get("changedFiles") != pr.get("changedFiles"):
-        raise GateError("the pull request changed while its file list was being read; run the check again")
+    before = {k: pr.get(k) for k in SNAPSHOT_FIELDS}
+    after = snapshot(gh, repo, number, SNAPSHOT_FIELDS)
+    if {k: after.get(k) for k in SNAPSHOT_FIELDS} != before or any(k not in after for k in SNAPSHOT_FIELDS):
+        raise GateError("the pull request changed while its file list was being read (its base, head or file count "
+                        "moved); run the check again")
     return pr
 
 
@@ -286,10 +318,13 @@ def evaluate(pr, cfg):
     for rec in records:
         path = rec.get("path") if isinstance(rec, dict) else None
         prev = rec.get("previous_path") if isinstance(rec, dict) else None
+        status = rec.get("status") if isinstance(rec, dict) else None
         if not isinstance(path, str) or not path:
             problems.append("a file record has no path")
         elif prev is not None and (not isinstance(prev, str) or not prev):
             problems.append(f"'{path}' has an unusable previous name")
+        elif status in NEEDS_OLD_NAME and not prev:
+            problems.append(f"'{path}' is {status} but has no old name")
         else:
             new_names.append(path)
             files.extend([path] + ([prev] if prev else []))

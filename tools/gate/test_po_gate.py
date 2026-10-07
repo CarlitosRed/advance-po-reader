@@ -9,6 +9,7 @@ import po_gate as g
 
 HEAD = "a" * 40
 OLD = "b" * 40
+BASE = "d" * 40
 SEP = "·"
 
 CFG = dict(g.DEFAULTS)
@@ -37,7 +38,7 @@ def approve(name=REVIEW, sha=HEAD, when="2026-10-04T10:00:00Z"):
 def pr(**over):
     base = {
         "number": 7, "title": "Add tiers", "state": "OPEN", "isDraft": False,
-        "baseRefName": "main", "headRefName": "codex/close-goal-gaps", "headRefOid": HEAD,
+        "baseRefName": "main", "headRefName": "codex/close-goal-gaps", "headRefOid": HEAD, "baseRefOid": BASE,
         "author": {"login": "CarlitosRed"},
         "labels": [{"name": "tier-2"}], "body": BODY,
         "files": [{"path": "backend/tiers.py"}],
@@ -77,18 +78,26 @@ def n_files(count, special=None):
     return [{"path": special.get(i, f"backend/f{i}.py")} for i in range(count)]
 
 
+DROP = object()
+
+
 class FakeGH:
-    """api_out replaces what the file-list call prints; head_after is the head the second look at the PR reports."""
-    def __init__(self, pull, api_out=None, head_after=None):
-        self.pull, self.calls, self.api_out, self.head_after = pull, [], api_out, head_after
+    """api_out replaces what the file-list call prints; `after` overrides fields in the second look at the PR
+    (what GitHub reports once the file list has been read). A value of DROP removes the field."""
+    def __init__(self, pull, api_out=None, after=None):
+        self.pull, self.calls, self.api_out, self.after = pull, [], api_out, after
         self.views = 0
 
     def __call__(self, args):
         self.calls.append(args)
         if args[:2] == ["pr", "view"]:
             self.views += 1
-            if self.views > 1 and self.head_after:
-                return json.dumps(dict(self.pull, headRefOid=self.head_after))
+            if self.views > 1 and self.after:
+                again = dict(self.pull, **{k: v for k, v in self.after.items() if v is not DROP})
+                for k, v in self.after.items():
+                    if v is DROP:
+                        again.pop(k, None)
+                return json.dumps(again)
             return json.dumps(self.pull)
         if args[:2] == ["repo", "view"]:
             return "CarlitosRed/advance-po-reader\n"
@@ -516,7 +525,7 @@ class FileListProofTests(unittest.TestCase):
         self.assertFalse(safe(gh))
 
     def test_pr_that_moves_while_it_is_being_read_is_refused(self):
-        gh = FakeGH(pr(files=n_files(5)), head_after="c" * 40)
+        gh = FakeGH(pr(files=n_files(5)), after={"headRefOid": "c" * 40})
         self.assertFalse(safe(gh))
         self.assertTrue(safe(FakeGH(pr(files=n_files(5)))))
 
@@ -583,7 +592,7 @@ class MalformedFileListTests(unittest.TestCase):
         self.assertTrue(safe(self.gh(one, 2)))
 
     def test_null_previous_filename_is_the_same_as_none(self):
-        out = json.dumps([{"filename": "a.py", "previous_filename": None}])
+        out = json.dumps([{"filename": "a.py", "status": "added", "previous_filename": None}])
         self.assertTrue(safe(self.gh(out, 1)))
 
 
@@ -638,6 +647,122 @@ class RenameTests(unittest.TestCase):
         code, _ = (lambda out: (g.cmd_merge(gh, CFG, 7, AUTHOR, out=out.append), out))([])
         self.assertEqual(code, 1)
         self.assertEqual(gh.merged(), [])
+
+
+class WhichDiffTests(unittest.TestCase):
+    """Round 2, finding 1: the list must belong to the same diff the gate evaluates. Everything that defines
+    'which diff' is snapshotted before and after the list is read; any difference, or any field the gate
+    cannot read, stops the check. Each field is varied on its own."""
+
+    def run_with(self, after=None, **over):
+        pull = pr(files=[{"path": "backend/ordinary.py"}], **over)
+        return FakeGH(pull, after=after)
+
+    def test_nothing_moving_passes(self):
+        self.assertTrue(safe(self.run_with()))
+        self.assertTrue(safe(self.run_with(after={})))
+
+    def test_each_field_that_moves_on_its_own_is_refused(self):
+        moves = {
+            "head": {"headRefOid": "c" * 40},
+            "base sha": {"baseRefOid": "e" * 40},
+            "base branch": {"baseRefName": "dev"},
+            "head branch": {"headRefName": "codex/other"},
+            "count": {"changedFiles": 2},
+            "number": {"number": 8},
+        }
+        for label, after in moves.items():
+            self.assertFalse(safe(self.run_with(after=after)), label)
+
+    def test_base_moves_with_constant_head_and_constant_count(self):
+        """Codex's two-base history: same head, same count of 1, different file names under the new base."""
+        gh = self.run_with(after={"baseRefOid": "e" * 40})
+        self.assertEqual(gh.pull["changedFiles"], 1)
+        self.assertFalse(safe(gh))
+        gh = self.run_with(after={"baseRefOid": "e" * 40})
+        out = []
+        try:
+            code = g.cmd_merge(gh, CFG, 7, AUTHOR, out=out.append)
+        except g.GateError:
+            code = 2
+        self.assertNotEqual(code, 0)
+        self.assertEqual(gh.merged(), [])
+
+    def test_a_field_missing_from_the_second_look_is_refused(self):
+        for field in ("headRefOid", "baseRefOid", "baseRefName", "headRefName", "changedFiles", "number"):
+            self.assertFalse(safe(self.run_with(after={field: DROP})), field)
+
+    def test_a_field_missing_or_unusable_in_the_first_look_is_refused(self):
+        for field, bad in (("baseRefOid", DROP), ("baseRefOid", None), ("baseRefOid", ""), ("baseRefOid", "xyz"),
+                           ("baseRefOid", 5), ("baseRefOid", "D" * 40), ("headRefOid", DROP), ("headRefOid", ""),
+                           ("headRefOid", "abc"), ("baseRefName", DROP), ("baseRefName", ""), ("number", DROP),
+                           ("headRefName", DROP), ("changedFiles", DROP)):
+            pull = pr(files=[{"path": "backend/ordinary.py"}])
+            if bad is DROP:
+                del pull[field]
+            else:
+                pull[field] = bad
+            self.assertFalse(safe(FakeGH(pull)), (field, bad))
+
+    def test_the_pr_that_comes_back_must_be_the_pr_asked_for(self):
+        self.assertFalse(safe(FakeGH(pr(files=[{"path": "backend/ordinary.py"}], number=8))))
+
+
+class RenameStatusTests(unittest.TestCase):
+    """Round 2, finding 2: a record that says `renamed` must name the old file; a record that gives no usable
+    status cannot be judged and is refused."""
+
+    def one(self, status, prev):
+        entry = {"filename": "backend/ordinary.py"}
+        if status is not DROP:
+            entry["status"] = status
+        if prev is not DROP:
+            entry["previous_filename"] = prev
+        gh = FakeGH(pr(files=[{"path": "backend/ordinary.py"}]), api_out=json.dumps([entry]))
+        return safe(gh)
+
+    def test_status_by_previous_name_matrix(self):
+        bad_prev = (None, "", 5, True, ["reader.py"], {"a": 1})
+        for status in ("added", "modified", "removed", "changed", "unchanged"):
+            self.assertTrue(self.one(status, DROP), status)
+            self.assertTrue(self.one(status, None), status)
+            self.assertTrue(self.one(status, "reader.py"), status)
+            for prev in bad_prev[1:]:
+                self.assertFalse(self.one(status, prev), (status, prev))
+        # renamed and copied: the old name is required
+        for status in ("renamed", "copied"):
+            self.assertTrue(self.one(status, "backend/old.py"), status)
+            self.assertFalse(self.one(status, DROP), status)
+            for prev in bad_prev:
+                self.assertFalse(self.one(status, prev), (status, prev))
+
+    def test_missing_or_unknown_status_is_refused(self):
+        for status in (DROP, None, "", 5, ["renamed"], "Renamed", "moved"):
+            self.assertFalse(self.one(status, "backend/old.py"), status)
+            self.assertFalse(self.one(status, DROP), status)
+
+    def test_the_renamed_record_with_a_protected_old_name_is_tier_3_and_without_one_is_refused(self):
+        entry = {"filename": "backend/ordinary.py", "status": "renamed", "previous_filename": "reader.py"}
+        gh = FakeGH(pr(files=[{"path": "backend/ordinary.py"}], labels=[{"name": "tier-2"}]), api_out=json.dumps([entry]))
+        self.assertEqual(g.evaluate(g.fetch_pr(gh, CFG, 7), CFG)["tier"], 3)
+        entry.pop("previous_filename")
+        gh = FakeGH(pr(files=[{"path": "backend/ordinary.py"}]), api_out=json.dumps([entry]))
+        with self.assertRaises(g.GateError):
+            g.fetch_pr(gh, CFG, 7)
+
+    def test_evaluate_alone_refuses_a_rename_record_without_an_old_name(self):
+        for rec in ({"path": "a.py", "status": "renamed"}, {"path": "a.py", "status": "renamed", "previous_path": None},
+                    {"path": "a.py", "status": "copied"}):
+            self.assertFalse(rules(g.evaluate(pr(files=[rec]), CFG))["files"], rec)
+        self.assertTrue(rules(g.evaluate(pr(files=[{"path": "a.py", "status": "added"}]), CFG))["files"])
+
+    def test_a_rename_stays_one_file_and_both_names_are_kept(self):
+        entry = {"filename": "backend/b.py", "status": "renamed", "previous_filename": "backend/a.py"}
+        gh = FakeGH(pr(files=[{"path": "backend/b.py"}]), api_out=json.dumps([entry]))
+        got = g.fetch_pr(gh, CFG, 7)
+        self.assertEqual(got["files"][0]["path"], "backend/b.py")
+        self.assertEqual(got["files"][0]["previous_path"], "backend/a.py")
+        self.assertEqual(got["files"][0]["status"], "renamed")
 
 
 class MergeTests(unittest.TestCase):
