@@ -51,8 +51,11 @@ SECRETS = [
     (re.compile(r"AKIA[0-9A-Z]{16}"), "AWS access key"),
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"), "GitHub token"),
 ]
+# "files" is not asked here: `gh pr view --json files` stops at 100 entries. fetch_pr reads the full list instead.
 VIEW_FIELDS = ("number,title,state,isDraft,baseRefName,headRefName,headRefOid,author,labels,"
-               "body,files,statusCheckRollup,comments,reviews")
+               "body,statusCheckRollup,comments,reviews")
+# GitHub lists at most 3000 files of a pull request; at that count the list may be cut off.
+MAX_FILES = 3000
 
 DEFAULTS = {
     "repo": "",                       # empty = detect with `gh repo view` from the current folder
@@ -205,9 +208,35 @@ def repo_of(gh, cfg):
     return repo
 
 
+def parse_json_pages(raw):
+    """Read the output of `gh api --paginate`: one JSON array per page, written one after another
+    ('[...][...]'), or a single array, or an array of arrays (`--slurp`). Returns one flat list."""
+    dec, pos, items = json.JSONDecoder(), 0, []
+    raw = raw or ""
+    while True:
+        while pos < len(raw) and raw[pos].isspace():
+            pos += 1
+        if pos >= len(raw):
+            return items
+        page, pos = dec.raw_decode(raw, pos)
+        for entry in page if isinstance(page, list) else [page]:
+            if isinstance(entry, list):
+                items.extend(entry)
+            else:
+                items.append(entry)
+
+
+def fetch_files(gh, repo, number):
+    """The complete changed-file list, as [{"path": ...}], read page by page (100 per page)."""
+    raw = gh(["api", f"repos/{repo}/pulls/{number}/files?per_page=100", "--paginate"])
+    return [{"path": f.get("filename", "")} for f in parse_json_pages(raw)]
+
+
 def fetch_pr(gh, cfg, number):
-    raw = gh(["pr", "view", str(number), "--repo", repo_of(gh, cfg), "--json", VIEW_FIELDS])
-    return json.loads(raw)
+    repo = repo_of(gh, cfg)
+    pr = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", VIEW_FIELDS]))
+    pr["files"] = fetch_files(gh, repo, number)
+    return pr
 
 
 def evaluate(pr, cfg):
@@ -256,8 +285,8 @@ def evaluate(pr, cfg):
             add("tier", True, tier_labels[0])
 
     # files
-    if len(files) >= 100:
-        add("files", False, "100 or more changed files: the file list cannot be fully verified; split the change")
+    if len(files) >= MAX_FILES:
+        add("files", False, f"{MAX_FILES} or more changed files: the file list cannot be fully verified; split the change")
     else:
         bad = [f for f in files if match_any(f, cfg["forbidden_globs"]) and not match_any(f, cfg["scan_allow"])]
         add("files", not bad, "no forbidden files" if not bad else f"forbidden files changed: {', '.join(bad[:5])}")

@@ -36,7 +36,7 @@ Exit codes: 0 passed, 1 a rule failed, 2 the tool could not run (the message say
 | `state` | The pull request is open, not a draft, and targets `main`. |
 | `hold` | No comment starting with `hold` is active (Carlos's `unhold` lifts it) and the `hold` label is off. |
 | `tier` | Exactly one `tier-N` label. Protected paths raise it to 3, and a Tier 1 label that touches more than `docs\` and `README.md` is raised to 2. Tier 4 never passes. |
-| `files` | No forbidden file names (PDFs, images, model files, `.env*`, `data\`, `output\`, `tmp\`, `.venv\`, SQLite files, keys) and fewer than 100 changed files. |
+| `files` | No forbidden file names (PDFs, images, model files, `.env*`, `data\`, `output\`, `tmp\`, `.venv\`, SQLite files, keys) in the complete list of changed files, and fewer than 3000 changed files. The gate reads the full list page by page (`gh api repos/<repo>/pulls/<n>/files --paginate`); `gh pr view` stops at 100 files, so it is not used for this. GitHub itself lists at most 3000 files, so at 3000 or more the list may be cut off and the gate refuses (split the change). |
 | `check:<name>` | Each required check (`tests`, `gate-tests`, `scan`) succeeded on the head commit, in every run of that name. |
 | `evidence:<heading>` | Tier 2 and 3: the pull request body has `## Plan`, `## Evidence` and `## Cost`. |
 | `plan` | Tier 2 and 3: a signed comment starting with `go` from the other vendor's reviewer, or from Carlos. |

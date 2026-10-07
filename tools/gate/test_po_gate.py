@@ -57,6 +57,19 @@ def rules(ev):
     return {r["rule"]: r["ok"] for r in ev["results"]}
 
 
+def files_pages(files, per_page=100):
+    """What `gh api repos/<repo>/pulls/<n>/files?per_page=100 --paginate` prints: one JSON array per page,
+    written one straight after the other."""
+    entries = [{"filename": f["path"], "status": "added"} for f in files]
+    return "".join(json.dumps(entries[i:i + per_page]) for i in range(0, len(entries), per_page))
+
+
+def n_files(count, special=None):
+    """count files; special={149: 'path'} puts that path at that position (0-based)."""
+    special = special or {}
+    return [{"path": special.get(i, f"backend/f{i}.py")} for i in range(count)]
+
+
 class FakeGH:
     def __init__(self, pull):
         self.pull, self.calls = pull, []
@@ -67,6 +80,8 @@ class FakeGH:
             return json.dumps(self.pull)
         if args[:2] == ["repo", "view"]:
             return "CarlitosRed/advance-po-reader\n"
+        if args[0] == "api":
+            return files_pages(self.pull.get("files") or [])
         return ""
 
     def merged(self):
@@ -336,9 +351,63 @@ class OtherRuleTests(unittest.TestCase):
         for path in (".env.example", "backend/.env.backend.example"):
             self.assertTrue(rules(g.evaluate(pr(files=[{"path": path}]), CFG))["files"], path)
 
-    def test_hundred_files_cannot_be_verified(self):
-        p = pr(files=[{"path": f"backend/f{i}.py"} for i in range(100)])
-        self.assertFalse(rules(g.evaluate(p, CFG))["files"])
+    def test_file_list_below_the_github_cap_is_verified(self):
+        for count in (99, 100, 166, 2999):
+            self.assertTrue(rules(g.evaluate(pr(files=n_files(count)), CFG))["files"], count)
+
+    def test_file_list_at_the_github_cap_cannot_be_verified(self):
+        for count in (3000, 3001):
+            ev = g.evaluate(pr(files=n_files(count)), CFG)
+            self.assertFalse(rules(ev)["files"], count)
+            msg = [r["msg"] for r in ev["results"] if r["rule"] == "files"][0]
+            self.assertIn("cannot be fully verified; split the change", msg)
+
+    def test_forbidden_file_as_the_150th_entry_is_caught(self):
+        ev = g.evaluate(pr(files=n_files(166, {149: "docs/order.pdf"})), CFG)
+        self.assertFalse(rules(ev)["files"])
+        self.assertIn("docs/order.pdf", [r["msg"] for r in ev["results"] if r["rule"] == "files"][0])
+
+    def test_protected_path_as_the_150th_entry_raises_the_tier(self):
+        p = pr(files=n_files(166, {149: "tools/gate/po_gate.py"}), labels=[{"name": "tier-1"}])
+        ev = g.evaluate(p, CFG)
+        self.assertEqual(ev["tier"], 3)
+        self.assertIn("raised to tier-3", [r["msg"] for r in ev["results"] if r["rule"] == "tier"][0])
+
+
+class FetchFilesTests(unittest.TestCase):
+    def fetch(self, count, special=None):
+        gh = FakeGH(pr(files=n_files(count, special)))
+        return gh, g.fetch_pr(gh, CFG, 7)
+
+    def test_all_files_come_back_for_99_100_166_and_3000(self):
+        for count in (99, 100, 166, 3000):
+            _, got = self.fetch(count)
+            self.assertEqual([f["path"] for f in got["files"]], [f["path"] for f in n_files(count)], count)
+
+    def test_files_come_from_the_paginated_endpoint(self):
+        gh, _ = self.fetch(166)
+        api = [c for c in gh.calls if c[0] == "api"]
+        self.assertEqual(len(api), 1)
+        self.assertEqual(api[0][1], "repos/CarlitosRed/advance-po-reader/pulls/7/files?per_page=100")
+        self.assertIn("--paginate", api[0])
+        view = [c for c in gh.calls if c[:2] == ["pr", "view"]][0]
+        self.assertNotIn("files", view[view.index("--json") + 1].split(","))
+
+    def test_forbidden_file_past_the_100th_is_caught_end_to_end(self):
+        _, got = self.fetch(166, {149: "scan.png"})
+        self.assertFalse(rules(g.evaluate(got, CFG))["files"])
+
+    def test_protected_file_past_the_100th_raises_the_tier_end_to_end(self):
+        gh = FakeGH(pr(files=n_files(166, {149: "ROLES.md"}), labels=[{"name": "tier-1"}]))
+        self.assertEqual(g.evaluate(g.fetch_pr(gh, CFG, 7), CFG)["tier"], 3)
+
+    def test_page_formats_are_all_read(self):
+        one = json.dumps([{"filename": "a"}, {"filename": "b"}])
+        self.assertEqual(len(g.parse_json_pages(one)), 2)
+        self.assertEqual(len(g.parse_json_pages(one + chr(10) + one)), 4)
+        self.assertEqual(len(g.parse_json_pages(json.dumps([[{"filename": "a"}], [{"filename": "b"}]]))), 2)
+        self.assertEqual(g.parse_json_pages(""), [])
+        self.assertEqual(g.parse_json_pages("[]"), [])
 
     def test_hundred_comments_cannot_be_read(self):
         p = pr(comments=[go(), approve()] + [comment(AUTHOR, "note", f"2026-10-04T12:{i % 60:02d}:00Z") for i in range(98)])
