@@ -978,10 +978,10 @@ BAD_GIT_BRANCHES = [
     "C:/x", "C:x", BS + BS + "server" + BS + "share" + BS + "x", "-codex/x",
 ]
 # more shapes of the same class, and the single character @
-MORE_BAD_GIT_BRANCHES = ["@", "codex/@{", ".codex/x", "codex/.x", "codex/", "/", "//",
+MORE_BAD_GIT_BRANCHES = ["codex/@{", ".codex/x", "codex/.x", "codex/", "/", "//",
                          "codex/a..", "..", ".", "-", "--x", "codex/a b", "codex/a" + chr(127) + "b", "x.lock",
                          "codex/a/.lock", "a/b.lock/c"]
-GOOD_GIT_BRANCHES = ["codex/some-task", "claude/t-021-gate-full-file-list", "main", "feature", "codex/v1.2.3",
+GOOD_GIT_BRANCHES = ["@", "codex/@", "@x", "x@", "codex/some-task", "claude/t-021-gate-full-file-list", "main", "feature", "codex/v1.2.3",
                      "codex/task-42", "codex/caf" + chr(0xe9), "codex/" + chr(0x65e5) + chr(0x672c), "a@b", "codex/a]b",
                      "codex/x.locked", "codex/a.lock.b", "codex/a_b/c-d", "codex/UPPER"]
 
@@ -1028,6 +1028,16 @@ class GitBranchGrammarTests(unittest.TestCase):
             pull = pr(files=[{"path": "backend/ordinary.py"}], baseRefName=good)
             self.assertTrue(safe(FakeGH(pull)), repr(good))
 
+    def test_branch_named_at_sign_is_a_valid_branch_and_a_tier_1_docs_pr_from_it_merges(self):
+        """Git and GitHub allow a branch called exactly @; the gate must not over-refuse it."""
+        for head in ("@", "codex/@", "@x"):
+            p = pr(labels=[{"name": "tier-1"}], files=[{"path": "docs/agent-handoff.md"}], comments=[], body="",
+                   headRefName=head)
+            gh = FakeGH(p)
+            self.assertEqual(g.cmd_merge(gh, CFG, 7, "Carlos", out=[].append), 0, head)
+            self.assertEqual(len(gh.merged()), 1, head)
+        self.assertIsNone(g.bad_branch("@"))
+
     def test_a_clean_codex_branch_merges_through_the_whole_path(self):
         gh = FakeGH(pr())
         self.assertEqual(g.cmd_merge(gh, CFG, 7, AUTHOR, out=[].append), 0)
@@ -1039,8 +1049,7 @@ class GitBranchGrammarTests(unittest.TestCase):
         except OSError:
             self.skipTest("git not available")
         for name in BAD_GIT_BRANCHES + MORE_BAD_GIT_BRANCHES:
-            if name != "@":     # git's branch mode accepts a lone @; the gate refuses it (no real branch is called that)
-                self.assertFalse(git_accepts_branch(name), repr(name))
+            self.assertFalse(git_accepts_branch(name), repr(name))
             self.assertIsNotNone(g.bad_branch(name), repr(name))
         for name in GOOD_GIT_BRANCHES:
             self.assertTrue(git_accepts_branch(name), repr(name))
@@ -1057,7 +1066,7 @@ class GitBranchGrammarTests(unittest.TestCase):
             for name in (ch, "a" + ch + "b", "a/" + ch, ch + "/a", "a" + ch, ch + "a", "a." + ch):
                 if not git_accepts_branch(name):
                     self.assertIsNotNone(g.bad_branch(name), repr(name))
-                elif name != "@":
+                else:
                     self.assertIsNone(g.bad_branch(name), repr(name))
 
 
