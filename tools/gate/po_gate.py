@@ -23,6 +23,7 @@ import re
 import shlex
 import subprocess
 import sys
+import unicodedata
 
 TIER_LABELS = {"tier-1": 1, "tier-2": 2, "tier-3": 3, "tier-4": 4}
 TRAILER = re.compile(r"^Gate-Record: pass tier=([123]) head=([0-9a-f]{40})\b(.*)$", re.M)
@@ -57,7 +58,7 @@ VIEW_FIELDS = ("number,title,state,isDraft,baseRefName,headRefName,headRefOid,au
 # Everything that defines WHICH diff the file list belongs to. Read before and after the list; any difference stops the gate.
 SNAPSHOT_FIELDS = ("number", "baseRefName", "baseRefOid", "headRefName", "headRefOid", "changedFiles")
 SHA = re.compile(r"[0-9a-f]{40}")                       # used with fullmatch: a trailing newline must not pass
-NAME = re.compile(r"[^\s\x00-\x1f\x7f]+")                 # a branch name: no space, tab, newline or control character
+# (branch names are checked by bad_branch; paths by bad_path)
 # The statuses GitHub gives a changed file. A rename or copy must name the file it came from.
 FILE_STATUSES = ("added", "removed", "modified", "renamed", "copied", "changed", "unchanged")
 NEEDS_OLD_NAME = ("renamed", "copied")
@@ -128,15 +129,37 @@ def is_int(value):
     return type(value) is int
 
 
+DRIVE = re.compile(r"[A-Za-z]:")
+
+
+def odd_character(ch, allow_space):
+    """A character that must not appear in a name from GitHub: any Unicode control, format, surrogate, private-use
+    or unassigned character (categories C*), and any separator (Z*) except, where allowed, the plain ASCII space."""
+    cat = unicodedata.category(ch)
+    return cat.startswith("C") or (cat.startswith("Z") and not (allow_space and ch == " "))
+
+
 def bad_path(path):
-    """Why a repository path from GitHub cannot be trusted, or None. A path is exact text: no control character
-    (newline, tab ...), no space at either end, no backslash, and no empty, '.' or '..' folder part."""
+    """Why a repository path from GitHub cannot be trusted, or None. A path is plain text: no Unicode control,
+    format, surrogate, private-use or unassigned character; no space-like character except the ordinary space
+    inside a name (never at either end); no backslash; not rooted ('/', '//', a drive such as 'C:' or a
+    UNC name); and no empty, '.' or '..' folder part."""
     if not isinstance(path, str) or not path:
         return "is not text"
-    if path != path.strip() or any(ord(c) < 32 or ord(c) == 127 for c in path) or chr(92) in path:
-        return "has a space, control character or backslash"
-    if path.startswith("/") or any(part in ("", ".", "..") for part in path.split("/")):
-        return "is not a plain repository path"
+    if any(odd_character(c, allow_space=True) for c in path) or chr(92) in path or path != path.strip(" "):
+        return "has a control, hidden or unusual space character, or a backslash, or a space at an end"
+    if path.startswith("/") or DRIVE.match(path) or any(part in ("", ".", "..") for part in path.split("/")):
+        return "is not a plain repository path (rooted, drive-lettered, or with an empty, '.' or '..' part)"
+    return None
+
+
+def bad_branch(name):
+    """Why a branch name from GitHub cannot be trusted, or None: text with no space of any kind and no
+    Unicode control, format, surrogate, private-use or unassigned character."""
+    if not isinstance(name, str) or not name:
+        return "is not text"
+    if any(odd_character(c, allow_space=False) for c in name):
+        return "has a space, control or hidden character"
     return None
 
 
@@ -154,7 +177,7 @@ def check_identity(got, number, where):
             raise GateError(f"GitHub's {where} {field} is not a 40-character lowercase commit id; "
                             "cannot tell which diff the file list belongs to")
     for field in ("headRefName", "baseRefName"):
-        if not isinstance(got[field], str) or not NAME.fullmatch(got[field]):
+        if bad_branch(got[field]):
             raise GateError(f"GitHub's {where} {field} is not a clean branch name; "
                             "cannot tell which diff the file list belongs to")
     if not is_int(got["changedFiles"]) or got["changedFiles"] < 0:

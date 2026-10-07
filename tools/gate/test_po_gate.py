@@ -878,6 +878,98 @@ class StrictPathTests(unittest.TestCase):
         self.assertEqual(ev["tier"], 2)
 
 
+import unicodedata
+
+
+def code_points(*numbers):
+    return [chr(n) for n in numbers]
+
+
+# Every general category that starts with C (Cc Cf Cs Co Cn) and the non-ASCII separators (Z*).
+C_CHARS = code_points(0x00, 0x1f, 0x7f, 0x80, 0x85, 0x9f, 0xad, 0x61c, 0x200b, 0x200d, 0x200e, 0x202a, 0x202e,
+                      0x2060, 0x2066, 0x2069, 0xfeff, 0xfff9, 0xd800, 0xdc00, 0xdfff, 0xe000, 0xf8ff, 0x378,
+                      0xfdd0, 0xffff, 0xf0000, 0xe0001)
+Z_CHARS = code_points(0xa0, 0x1680, 0x2000, 0x2003, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000)
+DRIVE_AND_ROOTED = ["C:/tools/gate/po_gate.py", "c:" + BS + "x", "C:x", "C:", "z:/a/b.py", "C:" + BS + "tools" + BS + "x.py",
+                    "//server/share/x.py", "//x", "/x", "/tools/gate/po_gate.py", BS + BS + "?" + BS + "C:" + BS + "x",
+                    BS + BS + "server" + BS + "share" + BS + "x.py", BS + "x", "~/x" + BS + "y"]
+
+
+class UnicodeAndRootedPathTests(unittest.TestCase):
+    """Round 4: the whole class of 'not a plain repository path'. A path or branch name with any Unicode
+    control, format, surrogate, private-use or unassigned character, any non-ASCII space or separator, or a
+    drive, UNC or root prefix is refused, in every place it can arrive."""
+
+    def test_the_character_lists_really_are_in_those_categories(self):
+        for ch in C_CHARS:
+            self.assertTrue(unicodedata.category(ch).startswith("C"), hex(ord(ch)))
+        for ch in Z_CHARS:
+            self.assertTrue(unicodedata.category(ch).startswith("Z"), hex(ord(ch)))
+
+    def paths_with(self, chars):
+        for ch in chars:
+            yield "tools/gate" + ch + "/po_gate.py"
+            yield ch + "tools/gate/po_gate.py"
+            yield "tools/gate/po_gate.py" + ch
+            yield "docs/a" + ch + "b.md"
+
+    def entry(self, **kw):
+        e = {"filename": "backend/ordinary.py", "status": "added"}
+        e.update(kw)
+        return json.dumps([e])
+
+    def fetched_ok(self, out):
+        return safe(FakeGH(pr(files=[{"path": "backend/ordinary.py"}]), api_out=out))
+
+    def test_new_names_with_c_or_z_characters_or_roots_are_refused(self):
+        for bad in list(self.paths_with(C_CHARS + Z_CHARS)) + DRIVE_AND_ROOTED:
+            self.assertFalse(self.fetched_ok(self.entry(filename=bad)), repr(bad))
+
+    def test_old_names_with_c_or_z_characters_or_roots_are_refused(self):
+        for bad in list(self.paths_with(C_CHARS + Z_CHARS)) + DRIVE_AND_ROOTED:
+            for status in ("renamed", "modified"):
+                self.assertFalse(self.fetched_ok(self.entry(status=status, previous_filename=bad)), (status, repr(bad)))
+
+    def test_evaluate_alone_refuses_the_same_names(self):
+        for bad in list(self.paths_with(C_CHARS + Z_CHARS)) + DRIVE_AND_ROOTED:
+            self.assertFalse(rules(g.evaluate(pr(files=[{"path": bad}]), CFG))["files"], repr(bad))
+            rec = {"path": "backend/ordinary.py", "previous_path": bad}
+            self.assertFalse(rules(g.evaluate(pr(files=[rec]), CFG))["files"], repr(bad))
+
+    def test_the_reviewers_two_examples(self):
+        self.assertFalse(self.fetched_ok(self.entry(filename="C:/tools/gate/po_gate.py")))
+        self.assertFalse(self.fetched_ok(self.entry(filename="tools/gate" + chr(0x80) + "/po_gate.py")))
+
+    def test_branch_names_with_c_or_z_characters_are_refused_in_first_second_and_both_reads(self):
+        for field in ("baseRefName", "headRefName"):
+            for ch in C_CHARS + Z_CHARS + [" "]:
+                bad = "codex/" + ch + "bad"
+                for where in ("first", "second", "both"):
+                    pull = pr(files=[{"path": "backend/ordinary.py"}])
+                    after = {}
+                    if where in ("first", "both"):
+                        pull[field] = bad
+                    if where in ("second", "both"):
+                        after[field] = bad
+                    self.assertFalse(safe(FakeGH(pull, after=after)), (field, repr(bad), where))
+
+    def test_ordinary_non_ascii_names_and_inner_spaces_still_pass(self):
+        for good in ("docs/caf" + chr(0xe9) + ".md", "docs/" + chr(0x65e5) + chr(0x672c) + "/" + chr(0x6ce8) + ".txt",
+                     "my docs/a b.txt", "src/na" + chr(0xef) + "ve file.py", "docs/emoji-" + chr(0x1f600) + ".md",
+                     "docs/" + chr(0x438) + chr(0x442) + ".txt", "a-b_c.d/e+f.py", ".github-notes/x.md"):
+            self.assertTrue(self.fetched_ok(self.entry(filename=good)), repr(good))
+            self.assertTrue(self.fetched_ok(self.entry(status="renamed", previous_filename=good)), repr(good))
+            self.assertTrue(rules(g.evaluate(pr(files=[{"path": good}]), CFG))["files"], repr(good))
+
+    def test_env_example_exception_and_other_normal_names_still_pass(self):
+        for good in (".env.example", "backend/.env.backend.example", "README.md", "a.b.c/d.e.py"):
+            self.assertTrue(self.fetched_ok(self.entry(filename=good)), good)
+
+    def test_non_ascii_branch_names_without_controls_still_pass(self):
+        pull = pr(files=[{"path": "backend/ordinary.py"}], headRefName="codex/caf" + chr(0xe9))
+        self.assertTrue(safe(FakeGH(pull)))
+
+
 class MergeTests(unittest.TestCase):
     def run_merge(self, gh, merged_as=AUTHOR, **kw):
         lines = []
