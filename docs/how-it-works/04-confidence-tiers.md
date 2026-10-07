@@ -89,7 +89,7 @@ Catalog: `ACME-1001` Brass hinge 50mm; `ACME-1002` Brass hinge 75mm; `ACME-2001`
 ## How we know it works
 - Tests: `tests/backend/test_catalog_database.py` and `tests/backend/test_identifier_roles.py` (run against a real PostgreSQL database), `tests/goal/test_goal_tiers.py`. The builder reported 371 backend tests passed on PostgreSQL for #19's last commit (`decisions.md`; not re-run for this page).
 - Reviews: Codex reviewed #19 three times. Findings fixed: a supplier prefix hid a real second product; look-alike letters compared equal; an unbounded lookup crashed on 330 rows; a skipped check relaxed the rules. Approved at `9cc9aca`.
-- Measured on the 33 sample orders (`decisions.md`, 2026-10-06, stored runs, no spend): of 150 product lines, **120 Certain, 13 Probable, 19 Uncertain**. An earlier version of PR #19 (before its second-code rule) measured 95 Certain on the same orders. The 19 Uncertain were: 13 with two to four candidates found only by text similarity, 2 with no candidate, 2 unknown lines, 2 still in conflict.
+- Measured on the 33 sample orders (`decisions.md`, 2026-10-06, stored runs, no spend): of the 150 product lines, **120 were Certain, 13 Probable and 17 Uncertain**; two more lines were labelled unknown and are also Uncertain (19 Uncertain in all; the 17 is derived from the logged totals). An earlier version of PR #19 (before its second-code rule) measured 95 Certain on the same orders. The 19 Uncertain were: 13 with two to four candidates found only by text similarity, 2 with no candidate, 2 unknown lines, 2 still in conflict.
 - Caveats: the catalog was built from these same orders. "Certain" is how sure the app is, not a measured accuracy; no human audited every Certain line.
 
 ## Status
