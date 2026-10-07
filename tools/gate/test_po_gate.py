@@ -50,6 +50,8 @@ def pr(**over):
         "reviews": [],
     }
     base.update(over)
+    if "changedFiles" not in over:
+        base["changedFiles"] = len(base["files"])
     return base
 
 
@@ -59,8 +61,13 @@ def rules(ev):
 
 def files_pages(files, per_page=100):
     """What `gh api repos/<repo>/pulls/<n>/files?per_page=100 --paginate` prints: one JSON array per page,
-    written one straight after the other."""
-    entries = [{"filename": f["path"], "status": "added"} for f in files]
+    written one straight after the other. A file may carry "previous" (the old name of a rename)."""
+    entries = []
+    for f in files:
+        e = {"filename": f["path"], "status": "renamed" if f.get("previous") else "added"}
+        if f.get("previous"):
+            e["previous_filename"] = f["previous"]
+        entries.append(e)
     return "".join(json.dumps(entries[i:i + per_page]) for i in range(0, len(entries), per_page))
 
 
@@ -71,16 +78,23 @@ def n_files(count, special=None):
 
 
 class FakeGH:
-    def __init__(self, pull):
-        self.pull, self.calls = pull, []
+    """api_out replaces what the file-list call prints; head_after is the head the second look at the PR reports."""
+    def __init__(self, pull, api_out=None, head_after=None):
+        self.pull, self.calls, self.api_out, self.head_after = pull, [], api_out, head_after
+        self.views = 0
 
     def __call__(self, args):
         self.calls.append(args)
         if args[:2] == ["pr", "view"]:
+            self.views += 1
+            if self.views > 1 and self.head_after:
+                return json.dumps(dict(self.pull, headRefOid=self.head_after))
             return json.dumps(self.pull)
         if args[:2] == ["repo", "view"]:
             return "CarlitosRed/advance-po-reader\n"
         if args[0] == "api":
+            if self.api_out is not None:
+                return self.api_out
             return files_pages(self.pull.get("files") or [])
         return ""
 
@@ -406,8 +420,10 @@ class FetchFilesTests(unittest.TestCase):
         self.assertEqual(len(g.parse_json_pages(one)), 2)
         self.assertEqual(len(g.parse_json_pages(one + chr(10) + one)), 4)
         self.assertEqual(len(g.parse_json_pages(json.dumps([[{"filename": "a"}], [{"filename": "b"}]]))), 2)
-        self.assertEqual(g.parse_json_pages(""), [])
         self.assertEqual(g.parse_json_pages("[]"), [])
+        for bad in ("", "  ", "{}", "5", "[1]", "[[1]]"):
+            with self.assertRaises(g.GateError, msg=repr(bad)):
+                g.parse_json_pages(bad)
 
     def test_hundred_comments_cannot_be_read(self):
         p = pr(comments=[go(), approve()] + [comment(AUTHOR, "note", f"2026-10-04T12:{i % 60:02d}:00Z") for i in range(98)])
@@ -427,6 +443,201 @@ class FetchFilesTests(unittest.TestCase):
         text = g.format_report(g.evaluate(pr(), CFG), 7)
         self.assertIn("shared GitHub account", text)
         self.assertIn("RESULT: PASS", text)
+
+
+def safe(gh):
+    """True only when the whole path (fetch, then evaluate) lets the file list through."""
+    try:
+        got = g.fetch_pr(gh, CFG, 7)
+    except g.GateError:
+        return False
+    return rules(g.evaluate(got, CFG))["files"]
+
+
+def arr(*names):
+    return json.dumps([{"filename": n, "status": "added"} for n in names])
+
+
+class FileListProofTests(unittest.TestCase):
+    """Finding 1: a successful call must be PROVEN complete against an independent count."""
+
+    def gh(self, api_out, count, **over):
+        return FakeGH(pr(files=[{"path": "backend/a.py"}], changedFiles=count, **over), api_out=api_out)
+
+    def test_complete_list_matching_the_count_passes(self):
+        self.assertTrue(safe(self.gh(arr("a", "b", "c"), 3)))
+
+    def test_empty_or_whitespace_output_is_refused(self):
+        for out in ("", "   ", chr(10), " " + chr(10) + chr(9)):
+            self.assertFalse(safe(self.gh(out, 3)), repr(out))
+            self.assertFalse(safe(self.gh(out, 0)), repr(out))
+
+    def test_empty_array_with_a_nonzero_count_is_refused(self):
+        self.assertFalse(safe(self.gh("[]", 3)))
+
+    def test_first_100_of_166_is_refused_even_with_a_forbidden_file_at_150(self):
+        full = n_files(166, {149: "docs/order.pdf"})
+        gh = FakeGH(pr(files=full), api_out=files_pages(full[:100]))
+        self.assertFalse(safe(gh))
+        # and the same 166 files, complete, are caught by the forbidden-file check
+        self.assertFalse(safe(FakeGH(pr(files=full))))
+
+    def test_count_and_list_must_agree_in_both_directions(self):
+        self.assertFalse(safe(self.gh(arr("a", "b"), 3)))
+        self.assertFalse(safe(self.gh(arr("a", "b", "c", "d"), 3)))
+
+    def test_missing_or_unusable_count_is_refused(self):
+        for bad in (None, "3", True, 3.0, -1, [], {}):
+            self.assertFalse(safe(self.gh(arr("a", "b", "c"), bad)), repr(bad))
+        pull = pr(files=[{"path": "a"}])
+        del pull["changedFiles"]
+        self.assertFalse(safe(FakeGH(pull, api_out=arr("a"))))
+
+    def test_evaluate_alone_also_refuses_without_a_matching_count(self):
+        p = pr(files=[{"path": "backend/a.py"}])
+        del p["changedFiles"]
+        self.assertFalse(rules(g.evaluate(p, CFG))["files"])
+        self.assertFalse(rules(g.evaluate(pr(files=[{"path": "a"}], changedFiles=2), CFG))["files"])
+
+    def test_zero_files_with_a_zero_count_is_a_valid_empty_list(self):
+        self.assertTrue(safe(self.gh("[]", 0)))
+
+    def test_more_than_3000_changed_files_stops_at_the_cap_not_in_an_error(self):
+        full = n_files(3000)
+        gh = FakeGH(pr(files=full, changedFiles=3500), api_out=files_pages(full))
+        got = g.fetch_pr(gh, CFG, 7)
+        ev = g.evaluate(got, CFG)
+        self.assertFalse(rules(ev)["files"])
+        self.assertIn("cannot be fully verified; split the change",
+                      [r["msg"] for r in ev["results"] if r["rule"] == "files"][0])
+
+    def test_the_cap_holds_even_when_the_list_came_back_short(self):
+        gh = FakeGH(pr(files=n_files(10), changedFiles=3000), api_out=files_pages(n_files(10)))
+        self.assertFalse(safe(gh))
+
+    def test_pr_that_moves_while_it_is_being_read_is_refused(self):
+        gh = FakeGH(pr(files=n_files(5)), head_after="c" * 40)
+        self.assertFalse(safe(gh))
+        self.assertTrue(safe(FakeGH(pr(files=n_files(5)))))
+
+    def test_merge_does_not_happen_on_an_unproven_list(self):
+        gh = FakeGH(pr(files=n_files(166, {149: "docs/order.pdf"})), api_out=files_pages(n_files(100)))
+        out = []
+        try:
+            code = g.cmd_merge(gh, CFG, 7, AUTHOR, out=out.append)
+        except g.GateError:
+            code = 2
+        self.assertNotEqual(code, 0)
+        self.assertEqual(gh.merged(), [])
+
+
+class MalformedFileListTests(unittest.TestCase):
+    """Finding 2: malformed pages and entries fail closed."""
+
+    def gh(self, api_out, count=1):
+        return FakeGH(pr(files=[{"path": "backend/a.py"}], changedFiles=count), api_out=api_out)
+
+    def test_each_malformed_output_is_refused(self):
+        cases = {
+            "message object": json.dumps({"message": "unexpected response"}),
+            "empty entry": "[{}]",
+            "empty filename": json.dumps([{"filename": ""}]),
+            "numeric filename": json.dumps([{"filename": 5}]),
+            "null filename": json.dumps([{"filename": None}]),
+            "list filename": json.dumps([{"filename": ["a"]}]),
+            "string entry": json.dumps(["a.py"]),
+            "null entry": json.dumps([None]),
+            "scalar": "5",
+            "string page": json.dumps("a.py"),
+            "bad entry beside a good one": json.dumps([{"filename": "backend/ok.py"}, {}]),
+            "bad entry in a later page": arr("a.py") + "[{}]",
+            "message after a good page": arr("a.py") + json.dumps({"message": "rate limited"}),
+            "truncated json": arr("a.py")[:-3],
+            "trailing garbage": arr("a.py") + "oops",
+            "mixed array of arrays": json.dumps([[{"filename": "a.py"}], "x"]),
+            "nested twice": json.dumps([[[{"filename": "a.py"}]]]),
+            "bad previous_filename": json.dumps([{"filename": "a.py", "previous_filename": 5}]),
+            "empty previous_filename": json.dumps([{"filename": "a.py", "previous_filename": ""}]),
+        }
+        for label, out in cases.items():
+            self.assertFalse(safe(self.gh(out, 1)), label)
+            self.assertFalse(safe(self.gh(out, 2)), label)
+
+    def test_a_duplicate_path_is_an_error_not_silently_merged(self):
+        self.assertFalse(safe(self.gh(arr("a.py", "a.py"), 2)))
+        self.assertFalse(safe(self.gh(arr("a.py", "a.py"), 1)))
+        self.assertFalse(safe(self.gh(arr("a.py", "b.py") + arr("a.py"), 3)))
+        p = pr(files=[{"path": "a.py"}, {"path": "a.py"}], changedFiles=2)
+        self.assertFalse(rules(g.evaluate(p, CFG))["files"])
+
+    def test_a_record_without_a_path_is_refused_by_evaluate_too(self):
+        for bad in ({}, {"path": ""}, {"path": None}, {"path": 5}, {"path": "a", "previous_path": 5}):
+            p = pr(files=[{"path": "backend/a.py"}, bad], changedFiles=2)
+            self.assertFalse(rules(g.evaluate(p, CFG))["files"], repr(bad))
+
+    def test_all_three_page_shapes_still_read(self):
+        one, two = arr("a.py", "b.py"), arr("c.py")
+        self.assertTrue(safe(self.gh(one + two, 3)))
+        self.assertTrue(safe(self.gh(one + chr(10) + two, 3)))
+        self.assertTrue(safe(self.gh(json.dumps([json.loads(one), json.loads(two)]), 3)))
+        self.assertTrue(safe(self.gh(one, 2)))
+
+    def test_null_previous_filename_is_the_same_as_none(self):
+        out = json.dumps([{"filename": "a.py", "previous_filename": None}])
+        self.assertTrue(safe(self.gh(out, 1)))
+
+
+class RenameTests(unittest.TestCase):
+    """Finding 3: the old name of a renamed file is judged too."""
+
+    def run_rename(self, old, new, label):
+        files = [{"path": new, "previous": old}]
+        got = g.fetch_pr(FakeGH(pr(files=files, labels=[{"name": label}])), CFG, 7)
+        return got, g.evaluate(got, CFG)
+
+    def test_protected_file_renamed_away_raises_tier_3(self):
+        for old, new, label in (("reader.py", "backend/ordinary.py", "tier-2"),
+                                (".github/workflows/check.yml", "docs/check.yml", "tier-1"),
+                                ("ROLES.md", "docs/roles-copy.md", "tier-1"),
+                                ("tools/gate/po_gate.py", "tools/other/po_gate.py", "tier-2")):
+            _, ev = self.run_rename(old, new, label)
+            self.assertEqual(ev["tier"], 3, old)
+
+    def test_forbidden_file_renamed_away_is_blocked(self):
+        for old, new in (("output/private.csv", "docs/public.csv"), ("data/orders.csv", "docs/x.csv"),
+                         (".env", "docs/env-notes.txt"), ("scan.png", "docs/scan.txt")):
+            _, ev = self.run_rename(old, new, "tier-1")
+            self.assertFalse(rules(ev)["files"], old)
+
+    def test_forbidden_file_renamed_into_place_is_still_blocked(self):
+        _, ev = self.run_rename("docs/a.txt", "output/b.csv", "tier-1")
+        self.assertFalse(rules(ev)["files"])
+
+    def test_code_renamed_into_docs_is_not_tier_1(self):
+        _, ev = self.run_rename("backend/tiers.py", "docs/tiers.md", "tier-1")
+        self.assertEqual(ev["tier"], 2)
+
+    def test_ordinary_rename_passes(self):
+        got, ev = self.run_rename("backend/a.py", "backend/b.py", "tier-2")
+        self.assertTrue(rules(ev)["files"])
+        self.assertEqual(ev["tier"], 2)
+
+    def test_the_cap_counts_a_rename_once(self):
+        files = [{"path": f"backend/new{i}.py", "previous": f"backend/old{i}.py"} for i in range(2000)]
+        gh = FakeGH(pr(files=files))
+        self.assertTrue(safe(gh))
+
+    def test_rename_swapping_two_names_is_not_a_duplicate(self):
+        files = [{"path": "backend/a.py", "previous": "backend/b.py"},
+                 {"path": "backend/b.py", "previous": "backend/a.py"}]
+        self.assertTrue(safe(FakeGH(pr(files=files))))
+
+    def test_a_merge_of_a_protected_rename_needs_carlos_approval(self):
+        files = [{"path": "backend/ordinary.py", "previous": "reader.py"}]
+        gh = FakeGH(pr(files=files, labels=[{"name": "tier-2"}]))
+        code, _ = (lambda out: (g.cmd_merge(gh, CFG, 7, AUTHOR, out=out.append), out))([])
+        self.assertEqual(code, 1)
+        self.assertEqual(gh.merged(), [])
 
 
 class MergeTests(unittest.TestCase):

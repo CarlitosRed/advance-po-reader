@@ -53,7 +53,7 @@ SECRETS = [
 ]
 # "files" is not asked here: `gh pr view --json files` stops at 100 entries. fetch_pr reads the full list instead.
 VIEW_FIELDS = ("number,title,state,isDraft,baseRefName,headRefName,headRefOid,author,labels,"
-               "body,statusCheckRollup,comments,reviews")
+               "body,changedFiles,statusCheckRollup,comments,reviews")
 # GitHub lists at most 3000 files of a pull request; at that count the list may be cut off.
 MAX_FILES = 3000
 
@@ -210,32 +210,65 @@ def repo_of(gh, cfg):
 
 def parse_json_pages(raw):
     """Read the output of `gh api --paginate`: one JSON array per page, written one after another
-    ('[...][...]'), or a single array, or an array of arrays (`--slurp`). Returns one flat list."""
-    dec, pos, items = json.JSONDecoder(), 0, []
+    ('[...][...]'), a single array, or an array of arrays (`--slurp`). Returns one flat list of entries.
+    Anything else (empty output, an error object, a scalar, a page that mixes shapes, trailing text)
+    is refused: the gate must never read 'nothing useful' as 'no files'."""
     raw = raw or ""
+    if not raw.strip():
+        raise GateError("the changed-file list came back empty; cannot verify the files")
+    dec, pos, items = json.JSONDecoder(), 0, []
     while True:
         while pos < len(raw) and raw[pos].isspace():
             pos += 1
         if pos >= len(raw):
             return items
-        page, pos = dec.raw_decode(raw, pos)
-        for entry in page if isinstance(page, list) else [page]:
-            if isinstance(entry, list):
-                items.extend(entry)
-            else:
-                items.append(entry)
+        try:
+            page, pos = dec.raw_decode(raw, pos)
+        except ValueError as exc:
+            raise GateError(f"the changed-file list is not valid JSON ({exc}); cannot verify the files")
+        if not isinstance(page, list):
+            raise GateError("the changed-file list is not a JSON array (got an error or another object); "
+                            "cannot verify the files")
+        if page and all(isinstance(e, list) for e in page):
+            page = [entry for sub in page for entry in sub]
+        for entry in page:
+            if not isinstance(entry, dict):
+                raise GateError("the changed-file list has an entry that is not an object; cannot verify the files")
+            items.append(entry)
 
 
 def fetch_files(gh, repo, number):
-    """The complete changed-file list, as [{"path": ...}], read page by page (100 per page)."""
+    """The changed-file list as [{"path": new name, "previous_path": old name (renames only)}], read page by
+    page (100 per page). Every entry needs a non-empty text `filename`; a path may appear only once."""
     raw = gh(["api", f"repos/{repo}/pulls/{number}/files?per_page=100", "--paginate"])
-    return [{"path": f.get("filename", "")} for f in parse_json_pages(raw)]
+    files, seen = [], set()
+    for entry in parse_json_pages(raw):
+        name = entry.get("filename")
+        if not isinstance(name, str) or not name:
+            raise GateError("the changed-file list has an entry without a file name; cannot verify the files")
+        if name in seen:
+            raise GateError(f"the changed-file list names '{name}' twice; cannot verify the files")
+        seen.add(name)
+        rec = {"path": name}
+        prev = entry.get("previous_filename")
+        if prev is not None:
+            if not isinstance(prev, str) or not prev:
+                raise GateError(f"the changed-file list has a bad previous name for '{name}'; cannot verify the files")
+            rec["previous_path"] = prev
+        files.append(rec)
+    return files
 
 
 def fetch_pr(gh, cfg, number):
+    """The pull request as `gh pr view` reports it, plus the complete file list. `changedFiles` is GitHub's own
+    count; `evaluate` compares it with the list, so a list that came back short or empty cannot pass. The PR is
+    looked at again after the list is read: if its head or count moved meanwhile, the read is refused."""
     repo = repo_of(gh, cfg)
     pr = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", VIEW_FIELDS]))
     pr["files"] = fetch_files(gh, repo, number)
+    again = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", "headRefOid,changedFiles"]))
+    if again.get("headRefOid") != pr.get("headRefOid") or again.get("changedFiles") != pr.get("changedFiles"):
+        raise GateError("the pull request changed while its file list was being read; run the check again")
     return pr
 
 
@@ -247,7 +280,24 @@ def evaluate(pr, cfg):
 
     head = pr.get("headRefOid") or ""
     branch = pr.get("headRefName") or ""
-    files = [f.get("path", "") for f in (pr.get("files") or [])]
+    records = pr.get("files") or []
+    files, problems = [], []   # files: every name seen, the new name and, for a rename, the old one
+    new_names = []
+    for rec in records:
+        path = rec.get("path") if isinstance(rec, dict) else None
+        prev = rec.get("previous_path") if isinstance(rec, dict) else None
+        if not isinstance(path, str) or not path:
+            problems.append("a file record has no path")
+        elif prev is not None and (not isinstance(prev, str) or not prev):
+            problems.append(f"'{path}' has an unusable previous name")
+        else:
+            new_names.append(path)
+            files.extend([path] + ([prev] if prev else []))
+    files = list(dict.fromkeys(files))
+    if len(set(new_names)) != len(new_names):
+        problems.append("a path is listed twice")
+    expected = pr.get("changedFiles")
+    count_ok = isinstance(expected, int) and not isinstance(expected, bool) and expected >= 0
     labels = [lb.get("name") for lb in (pr.get("labels") or [])]
     sig = read_signals(pr, cfg)
     a_vendor = author_vendor_of(cfg, branch)
@@ -285,8 +335,15 @@ def evaluate(pr, cfg):
             add("tier", True, tier_labels[0])
 
     # files
-    if len(files) >= MAX_FILES:
+    if max(len(records), expected if count_ok else 0) >= MAX_FILES:
         add("files", False, f"{MAX_FILES} or more changed files: the file list cannot be fully verified; split the change")
+    elif not count_ok:
+        add("files", False, "GitHub's changed-file count is missing, so the file list cannot be verified as complete")
+    elif problems:
+        add("files", False, f"the file list is malformed ({problems[0]}); it cannot be verified")
+    elif len(new_names) != expected:
+        add("files", False, f"the file list has {len(new_names)} files but GitHub counts {expected}; "
+            "it may be incomplete, so it cannot be verified")
     else:
         bad = [f for f in files if match_any(f, cfg["forbidden_globs"]) and not match_any(f, cfg["scan_allow"])]
         add("files", not bad, "no forbidden files" if not bad else f"forbidden files changed: {', '.join(bad[:5])}")
