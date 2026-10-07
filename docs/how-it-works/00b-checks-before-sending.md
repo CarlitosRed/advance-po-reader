@@ -44,13 +44,13 @@ Gray is a check. Red is a stop with nothing sent. Green is the shortcut that reo
 
 ## Worked example (invented)
 In live mode, a person drops `PO-TEST-021.pdf`, a 2-page made-up order of 300 KB.
-1. The name ends in `.pdf`. The browser asks the app for the run counter, which begins "2 of 5 live runs used", so it is not blocked.
+1. The name ends in `.pdf`. The browser asks the app for the counter. No prices are set in this example, so it counts runs and begins "2 of 5 live runs used"; it is not blocked.
 2. The browser fingerprints the file and shows "This sends this document to OpenAI. Cost is usually a few cents. Send it?" The person presses **Send**.
 3. The app on the same computer checks the file: it is not empty, under the size limit, a real unlocked PDF with 2 pages. It saves a copy under a random name and returns the fingerprint. It is the same as the browser's.
 4. No earlier reading of this file exists, so a run is created with a permission record that names this fingerprint and the typed reviewer name.
 5. The run counter is checked again, the saved copy is read back and its fingerprint compared, the key and permission are found. An attempt row marked "unknown outcome" is saved. Only then is the provider called.
 
-If instead the counter had begun "5 of 5 live runs used" at step 1, nothing would have been uploaded, and the page would say "The live-run limit for this demo is reached, so nothing was sent."
+If instead the counter had begun "5 of 5 live runs used" at step 1 (or, with prices set, the estimated spend had reached the cost cap), nothing would have been uploaded, and the page would say "The live-run limit for this demo is reached, so nothing was sent."
 
 ## The checks, in order
 | # | Where | Check | If it fails |
@@ -77,7 +77,7 @@ From [`SpendGuard`, lines 79-115](https://github.com/CarlitosRed/advance-po-read
 - It reads the selected database, so a fresh demo database starts the count from zero ([`poc_demo_support.py` lines 136-139](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_demo_support.py#L136-L139)).
 
 ## What a person sees
-- Before the upload: a counter line that begins, for example, "2 of 5 live runs used", and the box "Before we read it", with the file name and size, and **Send** or **Cancel**.
+- Before the upload: a counter line that begins, for example, "2 of 5 live runs used" (or "Estimated spend ..." when prices are set), and the box "Before we read it", with the file name and size, and **Send** or **Cancel**.
 - On a stop: one plain sentence (for example "The live-run limit for this demo is reached, so nothing was sent.", "That PDF is password-protected. Choose an unprotected file.").
 - The name on the permission record is the reviewer name typed on that device, or "POC owner" if none ([`poc-demo-ui.js` lines 50-52](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc-demo-ui.js#L50-L52)). It is a typed name, not a login.
 
