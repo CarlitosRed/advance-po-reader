@@ -23,7 +23,7 @@ const NOT_SEARCHED = "This line was not searched in the catalog: it is not clear
 const EXACT = "A printed code matched exactly; please check the match against the line.";
 const NOTE = "The reading of this line carries a note: “Unit price may exclude tax; product classification is clear”.";
 const BLANK_CELL = "No code was read under “Code”; the match comes from a code in the description.";
-const NO_CODE = "No code was read on this line; the match comes from a code in the description.";
+const NO_CODE = "The match comes from a code in the description; please check it.";
 const NAME_ONLY = "Matched by an approximate search on the description; please check it.";
 const NAME_OR_CODE = "Matched by an approximate search on the name or code; please check it.";
 const FOUND_NONE = "The catalog search found no product for this line.";
@@ -63,8 +63,19 @@ expect("line-4", "hint_blank_cell", BLANK_CELL, (s, r) => {
   assert.equal(r.identifiers[0].source_label, "Code");
   assert.equal(r.identifiers[0].raw_value, null);
 });
-// Control: the same description with no identifier entry at all.
-expect("line-5", "hint_no_code", NO_CODE, s => assert.equal(s.method, "description_code_hint"));
+// Round-6 finding: the same description with no identifier entry at all. The code GOAL-002 WAS read, in the description
+// (the API records raw_token GOAL-002), so the sentence must not say that no code was read.
+expect("line-5", "hint_no_code", NO_CODE, (s, r) => {
+  assert.deepEqual(r.identifiers, []);
+  assert.equal(r.description.raw_value, "Synthetic vermilion bracket code GOAL-002");
+  assert.equal(r.quantity.raw_value, "1");
+  assert.equal(r.unit.raw_value, "EA");
+  assert.equal(s.method, "description_code_hint");
+  assert.equal(s.tier, "probable");
+  assert.deepEqual(s.candidates.map(c => c.sku), ["GOAL-002"]);
+  assert.ok(s.evidence.some(item => item.raw_token === "GOAL-002" && item.kind === "description_code_hint"), JSON.stringify(s.evidence));
+  assert.doesNotMatch(rule("line-5").text, /\bno code\b|not read|was read/i);
+});
 // Finding 4: a short numeric code printed in the description that the bounded extractors skip; found by the name search.
 expect("line-6", "approximate_name", NAME_ONLY, (s, r) => {
   assert.equal(s.method, "trigram");

@@ -92,6 +92,9 @@ function emptyTabCopy(tab, counts, filtering) {
 // order is the priority); when none is true the neutral fallback is shown. Nothing here says a printed code is close
 // to, different from or the same as the product, that a column is missing, or that a code is absent from the line.
 // Where a better explanation needs a fact the API does not give today, the sentence stays neutral.
+// A sentence that says something was not read or not found is scoped to exactly the field or search the precondition
+// proves ("under “Code”", "the catalog search"); "no identifier has a value" never becomes "no code was read on the line",
+// because a code can be read in the description.
 // tests/goal/reasons.cjs (table) and tests/goal/reasons-generated.cjs (all combinations) check this table.
 const SEARCH_NOT_RUN = /explicit three-way decision/i;           // backend/tiers.py placeholder for an unknown source row
 const SEARCH_FAILED = /exceeds the bounded search contract/i;     // backend/service.py when retrieval input is too large
@@ -196,7 +199,7 @@ const REASON_RULES = [
   {id: "hint_blank_cell", when: f => HINT_METHODS.includes(f.method) && !f.printed && f.blankLabels.length > 0,
     say: f => "No code was read under " + joinWords(f.blankLabels.map(label => "“" + label + "”")) + "; the match comes from a code in the description."},
   {id: "hint_no_code", when: f => HINT_METHODS.includes(f.method) && !f.printed,
-    say: () => "No code was read on this line; the match comes from a code in the description."},
+    say: () => "The match comes from a code in the description; please check it."},
   {id: "hint_rough", when: f => f.method === "description_code_hint_trigram",
     say: () => "Matched approximately from a code in the description; please check it."},
   {id: "approximate_code", when: f => f.method === "trigram" && f.printed,

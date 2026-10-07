@@ -6,6 +6,10 @@
 //   1. soundness: the sentence shown is one whose precondition holds for that combination;
 //   2. priority: it is the first holding precondition in the documented order, so there is exactly one primary reason;
 //   3. the neutral fallback is used only when no more specific precondition holds.
+//   4. no unproven negative claim: a precondition is not enough for a sentence that says "no/not/none ... read/found/printed/
+//      shown". Every such sentence must be scoped to what the precondition proves (see NEGATIVE_CLAIMS): the one scoped to
+//      a printed label is checked against the not_present identifier of exactly that label; the "search found no product"
+//      one against the API's own finished-empty reason. A global "no code was read" fails here for every combination.
 // And over the whole space: every sentence is reachable, and no sentence is shown outside its precondition.
 // Fictional data only; loads just the marked block of web/local-reader/workflow.js.
 const assert = require("node:assert/strict");
@@ -131,6 +135,19 @@ function truth(id, row, s) {
   }
   throw new Error("no oracle for " + id);
 }
+// Negative reading/finding claims (either word order). A shown sentence that matches must be one of these, and its claim is
+// then verified against the raw inputs; any other match is an unreviewed overclaim.
+const NEGATIVE = /\b(?:no|not|none|never|nothing)\b[^.;:]*\b(?:read|found|printed|shown|seen)\b|\b(?:read|found|printed|shown|seen)\b[^.;:]*\b(?:no|not|none|never|nothing)\b/i;
+const NEGATIVE_CLAIMS = {
+  hint_blank_cell: (text, row) => {
+    const named = [...text.matchAll(/“([^”]+)”/g)].map(match => match[1]);
+    return /^No code was read under “[^”]+”(?:, “[^”]+”)*(?: and “[^”]+”)?;/.test(text) && named.length > 0 &&
+      named.every(label => row.identifiers.some(item => item.state === "not_present" && blank(item.raw_value) &&
+        String(item.source_label).trim().replace(/\s+/g, " ").startsWith(label.replace(/…$/, ""))));
+  },
+  searched_none: (text, row, s) => text === "The catalog search found no product for this line." && s.reason === EMPTY && s.method === "none" &&
+    s.candidates.length === 0,
+};
 assert.deepEqual(Array.from(REASON_RULES, rule => rule.id), ORDER, "the documented priority order is the rule order");
 
 const seen = new Map();
@@ -154,6 +171,12 @@ for (const kind of ROW_KINDS) for (const note of NOTES) for (const [, list, reas
     assert.equal(got.id, holding[0], "not the first holding precondition: " + JSON.stringify({row, s}));
     // 3. neutral fallback only when nothing more specific holds
     if (got.id === "not_sure" || got.id === "check") assert.deepEqual(holding.filter(id => id !== "not_sure" && id !== "check"), [], "fallback used though a specific sentence holds");
+    // 4. a negative reading/finding claim must be a reviewed, scoped one whose own fact holds
+    if (NEGATIVE.test(got.text)) {
+      assert.ok(NEGATIVE_CLAIMS[got.id] && NEGATIVE_CLAIMS[got.id](got.text, row, oracleSuggestion),
+        "unproven negative claim: " + JSON.stringify(got.text) + " " + JSON.stringify({row, s}));
+    }
+    assert.doesNotMatch(got.text, /no code was read on this line/i);
     assert.equal(typeof got.text, "string");
     assert.ok(got.text.length > 0);
     seen.set(got.id, (seen.get(got.id) || 0) + 1);

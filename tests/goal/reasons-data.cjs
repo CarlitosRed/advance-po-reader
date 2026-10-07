@@ -16,7 +16,7 @@ const reason = id => context.api.plainReason(row(id), suggestion(id));
 
 const NO_MATCH = "The catalog search found no product for this line.";
 const NAME_ONLY = "Matched by an approximate search on the description; please check it.";
-const NO_CODE_HINT = "No code was read on this line; the match comes from a code in the description.";
+const NO_CODE_HINT = "The match comes from a code in the description; please check it.";
 const CONFLICT = "The app found conflicting readings on this line; please check it.";
 const HINT = "Matched from a code in the description; please check it against the printed line.";
 const NAME = "Matched by an approximate search on the name or code; please check it.";

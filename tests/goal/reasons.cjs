@@ -56,7 +56,7 @@ const EXACT = "A printed code matched exactly; please check the match against th
 const NORM = "Matched after ignoring spaces, punctuation and capital letters in a printed code; please check it.";
 const NOT_SEARCHED = "This line was not searched in the catalog: it is not clear what kind of line it is.";
 const FOUND_NONE = "The catalog search found no product for this line.";
-const NO_HINT_CODE = "No code was read on this line; the match comes from a code in the description.";
+const NO_HINT_CODE = "The match comes from a code in the description; please check it.";
 const ignoredEvidence = [{kind: "description_hint_ignored", extractor: "numeric", reason: "measurement", length: 4}];
 // [name, row, suggestion, rule id, sentence]
 const cases = [

@@ -261,7 +261,7 @@ fs.mkdirSync(output, {recursive: true});
     assert.equal(reasons[4], "The app was unsure how to read this line's quantity.");
     assert.match(reasons[5], /^The catalog has both '.+' and '.+'\.$/);
     assert.equal(reasons[6], "Matched after ignoring spaces, punctuation and capital letters in a printed code; please check it.");
-    assert.equal(reasons[7], "No code was read on this line; the match comes from a code in the description.");
+    assert.equal(reasons[7], "The match comes from a code in the description; please check it.");
     assert.equal(reasons[1], "Matched by an approximate search on the description; please check it.");
     assert.doesNotMatch(reasons.join(" "), /tier|trigram|canonical|evidence/i);
     assert.equal(await page.locator("#tab-cards .could-label").first().innerText(), "Could also be:");
