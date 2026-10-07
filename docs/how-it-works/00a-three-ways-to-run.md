@@ -3,15 +3,15 @@
 [Back to the map](README.md) | Next: [Gate 0b, checks before anything is sent](00b-checks-before-sending.md)
 
 ## In one minute
-The same app can be started in three different ways. **Only the live way ever sends a document to an AI provider.** The other two show the screens and the review steps without any real reading, so what they show says nothing about how well the AI reads real orders.
+The same app can be started in three different ways. **Of the three, only the live way sends a document to an AI provider.** (Separate command-line helper scripts for one-off probes exist too; they are not part of the demo page.) The other two show the screens and the review steps without any real reading, so what they show says nothing about how well the AI reads real orders.
 
 | | **Free sample** (the default) | **Rehearsal** | **Live** |
 | --- | --- | --- | --- |
 | Who writes the answer | A fixed, hand-written fictional answer, looked up by the exact bytes of the file | One canned answer from a pretend connection, the same whatever file is sent | The AI model, over the real internet |
-| Reads my own file? | No. A file whose bytes are not one of the registered samples is refused: "This free preview can only read the sample orders." | No. The canned answer does not depend on the file's content | Yes, after the person confirms that exact file |
-| Real internet allowed? | Blocked in the program | Blocked in the program (the pretend connection is used instead) | Yes. The program does not block it ([`poc-demo.py` lines 171-172](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc-demo.py#L171-L172)) |
+| Reads my own file? | No. A file whose bytes are not one of the registered samples is refused: "This free preview can only read the sample orders." | No. The canned answer does not depend on the file's content | Yes, through the demo page, after the person confirms that exact file |
+| Real internet allowed? | The program blocks the HTTP client the provider code uses | The same block (the pretend connection is used instead) | Yes. The program does not block it ([`poc-demo.py` lines 171-172](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc-demo.py#L171-L172)) |
 | Key needed? | No | No (a made-up one is used inside the program) | Yes, in the server's ignored settings file |
-| Costs money? | No | No | Yes |
+| Costs money? | No | No | It can |
 | What it is good for | Trying the screens with invented orders | Trying the live screens (confirm box, cost counter, waiting, errors) with no key and no network | A real reading of one authorized file |
 
 ## How the three ways meet
@@ -25,7 +25,7 @@ flowchart TD
   FREE --> CHECK["Same strict check of the answer (gate 1)"]
   REH --> CHECK
   LIVE --> CHECK
-  CHECK --> REST["Then gates 2 to 6 are the same"]
+  CHECK --> REST["Then gates 2 to 6 run the same code"]
   classDef done fill:#d8f0e4,stroke:#167055,color:#000
   classDef later fill:#fff3cd,stroke:#b58900,color:#000
   classDef risk fill:#f8d7da,stroke:#a02c2c,color:#000
@@ -39,15 +39,15 @@ Green is no money and no real reading. Amber is the only way that can spend mone
 
 ## Worked example (invented)
 Order `PO-TEST-020` is a made-up one-page PDF, saved on a computer.
-- **Free sample:** dropping it on the upload page shows "This free preview can only read the sample orders", because its bytes are not one of the registered samples. The same page offers the four sample orders instead.
+- **Free sample:** dropping it on the upload page shows "This free preview can only read the sample orders", because its bytes are not one of the registered samples. The same page offers the sample orders instead.
 - **Rehearsal:** dropping it shows the Send box and the cost counter, then lines appear. They are the canned sample lines, not lines from `PO-TEST-020`.
 - **Live:** dropping it shows the Send box. Only after "Send" is the file read by the real model, and the lines are whatever it wrote down.
 
 ## What each way really does
 **Free sample.**
 - Answers come from a registry keyed by the file's SHA-256 fingerprint and media type. Unknown bytes get the error `poc_unknown_fixture_bytes` ([`FixedProvider`, lines 329-351](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_demo_support.py#L329-L351)). The registry holds the generated sample files, plus any extra fictional surrogates stored in the demo's own data folder ([`poc-demo.py` lines 36-43](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc-demo.py#L36-L43)).
-- The program replaces the provider functions and the internet transport with ones that stop with an error, and refuses to open any file whose name starts with `.env` ([`offline_boundary`, lines 26-60](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_demo_support.py#L26-L60)).
-- The server also answers `poc_offline_only_use_demo_entry` to any request to create a run with a provider other than the fictional one ([`poc-demo.py` lines 49-57](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc-demo.py#L49-L57)).
+- The program replaces the provider functions and the internet transport with ones that stop with an error, and, through Python's usual file-opening calls, refuses to open any file whose name starts with `.env` ([`offline_boundary`, lines 26-60](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_demo_support.py#L26-L60)).
+- The server also answers `poc_offline_only_use_demo_entry` to any request to create a run whose provider is not the fictional one (`synthetic`) ([`poc-demo.py` lines 49-57](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc-demo.py#L49-L57)).
 - The catalog is the 150 invented products, unless a private catalog file outside the repository is named ([`load_catalog`, lines 167-208](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_demo_support.py#L167-L208)).
 
 **Rehearsal.**
