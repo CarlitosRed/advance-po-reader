@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from conftest import ROOT, PRODUCTS, ok, process, product_row, review_body
+from conftest import ROOT, PRODUCTS, field, ok, process, product_row, review_body
 
 pytestmark = pytest.mark.goal
 
@@ -122,6 +122,49 @@ def test_goal_9_plain_reasons_match_what_the_real_review_api_returns(desk, tmp_p
     assert completed.returncode == 0, completed.stdout + completed.stderr + json.dumps(
         {key: (value["method"], value["tier"], value["tier_reason"], [c["sku"] for c in value["candidates"]]) for key, value in by_row.items()})
     assert "plain reasons on real data passed" in completed.stdout
+
+
+def test_goal_9_reason_sentences_state_only_what_the_real_api_data_proves(desk, tmp_path):
+    """Round-5 review findings and their controls, on real review-API data (fictional): an unsearched unknown row, a
+    price note on a product row, a blank Code cell, a short code printed in the description, a normalized match."""
+    node = _node()
+    latch = "Synthetic ultramarine locking latch assembly"
+    ok(desk.client.post("/catalog/import", json={"vendor_id": desk.vendor["id"],
+                                                 "products": [{"sku": "77", "description": latch}]}))
+    vermilion, role = PRODUCTS[1]["description"], "customer_item_number"
+    gadget = "Synthetic unrelated gadget nobody sells"
+    note = "Unit price may exclude tax; product classification is clear"
+    priced = product_row(3, code="GOAL-002", description=vermilion, quantity="1")
+    priced["uncertainty"] = note
+    blank_cell = product_row(4, description=vermilion + " code GOAL-002", quantity="1")
+    blank_cell["identifiers"] = [{**field(None, "line-4", "Code", state="not_present"), "source_role": "vendor_sku"}]
+    crowded = product_row(10, code="X-0", description=vermilion, quantity="1")
+    crowded["identifiers"] = [{**crowded["identifiers"][0], "raw_value": f"X-{index}"} for index in range(21)]
+    rows = [
+        product_row(1, code="GOAL-002", description=vermilion, quantity="1", kind="unknown"),     # never searched
+        product_row(2, code="GOAL-002", description=vermilion, quantity="1"),                      # same data, product: found
+        priced,                                                                                   # price note, product clear
+        blank_cell,                                                                               # empty Code cell + description code
+        product_row(5, description=vermilion + " code GOAL-002", quantity="1"),                  # no identifier entry at all
+        product_row(6, description=latch + " code 77", quantity="1"),                            # short code in the description
+        _with_role(product_row(7, code="CUST-5", description=latch, quantity="1"), role),        # name search, unrelated code
+        product_row(8, description=gadget, quantity="1"),                                         # searched, nothing found
+        product_row(9, code="goal-002", description=gadget, quantity="1"),                        # capitals only: normalized
+        crowded,                                                                                  # 21 identifiers: search input too large
+    ]
+    result = process(desk, rows)
+    seed = tmp_path / "reasons-truth.json"
+    seed.write_text(json.dumps({"rows": result.result["extraction"]["rows"], "suggestions": result.suggestions}), encoding="utf-8")
+    completed = _run(node, "reasons-truth.cjs", str(seed))
+    assert completed.returncode == 0, completed.stdout + completed.stderr + json.dumps(
+        {item["row_id"]: (item["method"], item["tier"], item["reason"], [c["sku"] for c in item["candidates"]]) for item in result.suggestions})
+    assert "plain reasons truth regressions passed" in completed.stdout
+
+
+def test_goal_9_every_reason_combination_is_checked_against_an_independent_oracle():
+    completed = _run(_node(), "reasons-generated.cjs")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "24 sentences all reachable" in completed.stdout
 
 
 def test_goal_9_a_review_finishes_without_opening_ignored_lines_or_any_agree_click(desk):

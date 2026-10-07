@@ -14,12 +14,14 @@ const suggestion = id => data.suggestions.find(s => s.row_id === id);
 const row = id => data.rows.find(r => r.row_id === id);
 const reason = id => context.api.plainReason(row(id), suggestion(id));
 
-const NO_MATCH = "No catalog product matches this code or name.";
+const NO_MATCH = "The catalog search found no product for this line.";
+const NAME_ONLY = "Matched by an approximate search on the description; please check it.";
+const NO_CODE_HINT = "No code was read on this line; the match comes from a code in the description.";
 const CONFLICT = "The app found conflicting readings on this line; please check it.";
 const HINT = "Matched from a code in the description; please check it against the printed line.";
 const NAME = "Matched by an approximate search on the name or code; please check it.";
 const EXACT = "A printed code matched exactly; please check the match against the line.";
-const NORM = "Matched after ignoring spaces and punctuation in a printed code; please check it.";
+const NORM = "Matched after ignoring spaces, punctuation and capital letters in a printed code; please check it.";
 const TWO = "2 catalog products could match this line; pick the right one.";
 // Every sentence states a fact the API data proves (method, tier_reason, candidates, a hard-to-read field). None says a
 // printed code is close to, different from or the same as the product.
@@ -27,11 +29,11 @@ const expected = {
   "line-1": NO_MATCH,
   "line-2": NORM,
   "line-3": CONFLICT,
-  "line-4": "No product code on this line; matched by name only.",
-  "line-5": "No code column on this line; the code was found inside the description.",
+  "line-4": NAME_ONLY,
+  "line-5": NO_CODE_HINT,
   "line-6": "3 catalog products could match this line; pick the right one.",
   "line-7": "The catalog has both 'D6224-2' and 'WERNER D6224-2'.",
-  "line-9": "Part of this line is hard to read.",
+  "line-9": "The app was unsure how to read this line's quantity.",
   "line-10": NORM,
   "line-11": CONFLICT,
   "line-12": CONFLICT,
@@ -52,7 +54,7 @@ const expected = {
   "line-28": EXACT,
   "line-29": CONFLICT,
   // ...and a page with no identifier column.
-  "line-30": "No product code on this line; matched by name only.",
+  "line-30": NAME_ONLY,
 };
 const seen = {};
 for (const [id, text] of Object.entries(expected)) seen[id] = reason(id);
@@ -70,5 +72,5 @@ assert.equal(suggestion("line-26").method, "exact");
 assert.equal(suggestion("line-26").candidates[0].sku, "ÉX-88");
 assert.equal(suggestion("line-30").method, "trigram");
 // No sentence may say a printed code is close to, different from, or not the same as the product.
-for (const id of Object.keys(expected)) assert.doesNotMatch(reason(id), /does not match|not the catalog|different|differently|close to|not the same|written/i, id);
+for (const id of Object.keys(expected)) assert.doesNotMatch(reason(id), /does not match|not the catalog|different|differently|close to|not the same|written|no code column|no product code|name only/i, id);
 console.log("plain reasons on real data passed");

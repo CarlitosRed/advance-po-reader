@@ -87,19 +87,48 @@ function emptyTabCopy(tab, counts, filtering) {
   return {text: "No totals, notes or charges were found, and no line was marked as not a product.", goto: other};
 }
 // ---- Plain reasons: one short sentence for why a line is in Check. Pure: data in, a sentence out. ----
-// Inputs are fields the review API already returns (candidates, method, tier, tier_reason, evidence entries with no
-// values) plus the extracted row. First matching case wins; the order is the table in tests/goal/reasons.cjs.
+// RULE: every sentence is a row of REASON_RULES with a precondition (`when`) over concrete facts of the review API data
+// (reasonFacts). A sentence is shown only when its precondition is true for this line; the first true row wins (the
+// order is the priority); when none is true the neutral fallback is shown. Nothing here says a printed code is close
+// to, different from or the same as the product, that a column is missing, or that a code is absent from the line.
+// Where a better explanation needs a fact the API does not give today, the sentence stays neutral.
+// tests/goal/reasons.cjs (table) and tests/goal/reasons-generated.cjs (all combinations) check this table.
+const SEARCH_NOT_RUN = /explicit three-way decision/i;           // backend/tiers.py placeholder for an unknown source row
+const SEARCH_FAILED = /exceeds the bounded search contract/i;     // backend/service.py when retrieval input is too large
+const SEARCH_EMPTY = "No candidate found in the supplied tenant/vendor catalog";   // backend/catalog.py, search finished
+function textOf(value) {
+  return String(value ?? "").trim();
+}
 function hasPrintedCode(row) {
   return printedCodes(row).length > 0;
 }
 function printedCodes(row) {
-  return (row?.identifiers || []).map(item => String(item?.raw_value ?? "").trim()).filter(Boolean);
+  return (row?.identifiers || []).map(item => textOf(item?.raw_value)).filter(Boolean);
 }
 function fieldIsUnclear(item) {
   return Boolean(item) && (["uncertain", "unreadable"].includes(item.state) || (item.alternative_readings || []).length > 0);
 }
+// Which of the fields the server checks (code, description, quantity, unit) are marked unclear, in reading order.
+function unclearFields(row) {
+  return [["code", (row?.identifiers || []).some(fieldIsUnclear)], ["description", fieldIsUnclear(row?.description)],
+    ["quantity", fieldIsUnclear(row?.quantity)], ["unit", fieldIsUnclear(row?.unit)]].filter(pair => pair[1]).map(pair => pair[0]);
+}
 function hasUnclearReading(row) {
-  return [...(row?.identifiers || []), row?.description, row?.quantity, row?.unit].some(fieldIsUnclear);
+  return unclearFields(row).length > 0;
+}
+function clip(value, limit) {
+  const flat = textOf(value).replace(/\s+/g, " ");
+  return flat.length > limit ? flat.slice(0, limit - 1).trimEnd() + "…" : flat;
+}
+// Printed labels of identifier cells that were read as not present (state not_present with a printed label); only used
+// when no identifier has a value.
+function blankCodeLabels(row) {
+  const labels = (row?.identifiers || []).filter(item => item?.state === "not_present" && !textOf(item.raw_value) && textOf(item.source_label))
+    .map(item => clip(item.source_label, 30));
+  return [...new Set(labels)];
+}
+function joinWords(words) {
+  return words.length > 1 ? words.slice(0, -1).join(", ") + " and " + words[words.length - 1] : words[0] || "";
 }
 // Two catalog products where one code is the other with a printed vendor prefix ("WERNER D6224-2" and "D6224-2").
 // Same shape as the server's tier rule: letters-only prefix, then a space, dash or slash before the shorter code.
@@ -113,40 +142,82 @@ function vendorPrefixPair(candidates) {
   }
   return null;
 }
-// RULE: a sentence only states a fact that is literally true of fields the API returns for this suggestion (number of
-// candidates, no candidate, method, tier_reason, evidence kinds, a field marked hard to read, a catalog prefixed twin).
-// Nothing here says the printed code is close to, different from, or the same as the product: when in doubt the
-// sentence is neutral. tests/goal/reasons.cjs lists every sentence with the fact it relies on.
-function plainReason(row, suggestion) {
+// The API facts the sentences rely on. A search that did not run, failed, or finished empty is told apart by the API's
+// own `reason` text; any other text is "unknown", which only ever gives neutral wording.
+function reasonFacts(row, suggestion) {
   const candidates = suggestion?.candidates || [];
   const method = suggestion?.method || "none";
-  const tierReason = String(suggestion?.tier_reason || "");
-  const evidence = suggestion?.evidence || [];
+  const apiReason = textOf(suggestion?.reason);
+  const tierReason = textOf(suggestion?.tier_reason);
   const printed = hasPrintedCode(row);
-  if (candidates.length > 1) {
-    const pair = vendorPrefixPair(candidates);
-    if (pair) return "The catalog has both '" + pair[0] + "' and '" + pair[1] + "'.";
-    return candidates.length + " catalog products could match this line; pick the right one.";
-  }
-  if (!candidates.length) return "No catalog product matches this code or name.";
-  if (/too many code-like readings/i.test(tierReason)) return "This line has too many codes to check against the catalog.";
-  if (/lookup budget/i.test(tierReason)) return "The app skipped its catalog check on this line; please check the match.";
-  if (/conflict/i.test(tierReason)) return "The app found conflicting readings on this line; please check it.";
-  if (hasUnclearReading(row)) return "Part of this line is hard to read.";
-  if (row && (row.row_kind !== "product" || row.uncertainty)) return "The app could not tell for sure that this line is a product.";
-  if (method === "description_code_hint" || method === "description_numeric_code_hint") {
-    return printed ? "Matched from a code in the description; please check it against the printed line."
-      : "No code column on this line; the code was found inside the description.";
-  }
-  if (method === "description_code_hint_trigram") return "Matched approximately from a code in the description; please check it.";
-  if (method === "trigram") return printed ? "Matched by an approximate search on the name or code; please check it."
-    : "No product code on this line; matched by name only.";
-  if (evidence.some(item => ["description_hint_ignored", "code_reading_ignored"].includes(item?.kind))) {
-    return "Other codes or sizes on this line were set aside; please check the match.";
-  }
-  if (method === "normalized" && printed) return "Matched after ignoring spaces and punctuation in a printed code; please check it.";
-  if (method === "exact" && printed) return "A printed code matched exactly; please check the match against the line.";
-  return "The app is not sure enough to confirm this one by itself.";
+  return {
+    count: candidates.length,
+    pair: vendorPrefixPair(candidates),
+    rowKind: row ? row.row_kind ?? null : null,
+    note: textOf(row?.uncertainty),
+    search: candidates.length ? "found" : SEARCH_NOT_RUN.test(apiReason) ? "not_run" : SEARCH_FAILED.test(apiReason) ? "failed" :
+      apiReason === SEARCH_EMPTY && method === "none" ? "finished_empty" : "unknown",
+    tooMany: /^too many code-like readings/i.test(tierReason),
+    budget: /lookup budget/i.test(tierReason),
+    conflict: /readings conflict with the candidate/i.test(tierReason),
+    unclear: unclearFields(row),
+    printed,
+    blankLabels: printed ? [] : blankCodeLabels(row),
+    nothingToSearch: Boolean(row) && !printed && !textOf(row.description?.raw_value),
+    method,
+    ignored: (suggestion?.evidence || []).some(item => ["description_hint_ignored", "code_reading_ignored"].includes(item?.kind)),
+    tier: suggestion?.tier || "uncertain",
+  };
+}
+const HINT_METHODS = ["description_code_hint", "description_numeric_code_hint"];
+// id, precondition over reasonFacts, sentence. Order = priority.
+const REASON_RULES = [
+  {id: "look_alikes_twin", when: f => f.count > 1 && Boolean(f.pair),
+    say: f => "The catalog has both '" + f.pair[0] + "' and '" + f.pair[1] + "'."},
+  {id: "look_alikes", when: f => f.count > 1, say: f => f.count + " catalog products could match this line; pick the right one."},
+  {id: "not_searched", when: f => f.count === 0 && f.search === "not_run" && f.rowKind === "unknown",
+    say: () => "This line was not searched in the catalog: it is not clear what kind of line it is."},
+  {id: "search_failed", when: f => f.count === 0 && f.search === "failed",
+    say: () => "The app could not run its catalog search on this line; please check it."},
+  {id: "nothing_to_search", when: f => f.count === 0 && f.search === "finished_empty" && f.nothingToSearch,
+    say: () => "This line has no code or description to search the catalog with."},
+  {id: "searched_none", when: f => f.count === 0 && f.search === "finished_empty",
+    say: () => "The catalog search found no product for this line."},
+  {id: "no_suggestion", when: f => f.count === 0, say: () => "No suggestion is available for this line."},
+  {id: "too_many_readings", when: f => f.tooMany, say: () => "This line has too many code-like readings to check against the catalog."},
+  {id: "check_skipped", when: f => f.budget, say: () => "The app skipped its catalog check on this line; please check the match."},
+  {id: "conflict", when: f => f.conflict, say: () => "The app found conflicting readings on this line; please check it."},
+  {id: "unclear_reading", when: f => f.unclear.length > 0,
+    say: f => "The app was unsure how to read this line's " + joinWords(f.unclear) + "."},
+  {id: "not_a_product", when: f => f.rowKind === "unknown", say: () => "The app could not tell for sure that this line is a product."},
+  {id: "row_note", when: f => Boolean(f.note), say: f => "The reading of this line carries a note: “" + clip(f.note, 110) + "”."},
+  {id: "hint_with_code", when: f => HINT_METHODS.includes(f.method) && f.printed,
+    say: () => "Matched from a code in the description; please check it against the printed line."},
+  {id: "hint_blank_cell", when: f => HINT_METHODS.includes(f.method) && !f.printed && f.blankLabels.length > 0,
+    say: f => "No code was read under " + joinWords(f.blankLabels.map(label => "“" + label + "”")) + "; the match comes from a code in the description."},
+  {id: "hint_no_code", when: f => HINT_METHODS.includes(f.method) && !f.printed,
+    say: () => "No code was read on this line; the match comes from a code in the description."},
+  {id: "hint_rough", when: f => f.method === "description_code_hint_trigram",
+    say: () => "Matched approximately from a code in the description; please check it."},
+  {id: "approximate_code", when: f => f.method === "trigram" && f.printed,
+    say: () => "Matched by an approximate search on the name or code; please check it."},
+  {id: "approximate_name", when: f => f.method === "trigram" && !f.printed,
+    say: () => "Matched by an approximate search on the description; please check it."},
+  {id: "set_aside", when: f => f.ignored, say: () => "Other codes or sizes on this line were set aside; please check the match."},
+  {id: "normalized", when: f => f.method === "normalized" && f.printed,
+    say: () => "Matched after ignoring spaces, punctuation and capital letters in a printed code; please check it."},
+  {id: "exact", when: f => f.method === "exact" && f.printed,
+    say: () => "A printed code matched exactly; please check the match against the line."},
+  {id: "not_sure", when: f => f.tier !== "certain", say: () => "The app is not sure enough to confirm this one by itself."},
+  {id: "check", when: () => true, say: () => "Please check this match against the line."},
+];
+function plainReasonRule(row, suggestion) {
+  const facts = reasonFacts(row, suggestion);
+  const rule = REASON_RULES.find(item => item.when(facts));
+  return {id: rule.id, text: rule.say(facts)};
+}
+function plainReason(row, suggestion) {
+  return plainReasonRule(row, suggestion).text;
 }
 // How many lines per page have no exact spot on the page (their snapshot shows the whole page instead).
 function wholePageCounts(payload, groups) {
