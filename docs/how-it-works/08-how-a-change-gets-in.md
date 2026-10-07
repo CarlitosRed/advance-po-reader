@@ -11,7 +11,7 @@ Nobody changes the project directly. Every change is a **pull request**: a propo
 2. A **different** reviewer from the **other AI company** reads the change and writes either "go" on the plan, or "Approved at `<commit>`" on the exact version it checked. Anthropic's Claude work is reviewed by OpenAI's Codex, and the reverse. The author never approves its own work.
 3. **Automatic checks** (CI) run the tests and scan for forbidden files and secrets.
 4. For changes that touch money or trust (the rules, the model prompt, scripts, security files), **Carlos** types his own approval.
-5. The merge happens only through a small **gate** program that checks all of the above against the exact version being merged and writes a record into the history. (This is the rule for landing on `main`. The version 1 route into the integration branch is the one planned exception; see the table below.)
+5. The merge happens only through a small **gate** program that checks all of the above against the exact version being merged and writes a record into the history. (This is the rule for landing on `main`. The version 1 route into the integration branch is the one exception; see the table below.)
 6. Any new push after an approval cancels the approval: the reviewer must look again.
 
 ## One change, start to finish
@@ -83,9 +83,10 @@ gitGraph
 ```
 | | Before | After (today) |
 | --- | --- | --- |
-| Where the v1 code is | Spread over six stacked pull requests (#13, #14, #15, #16, #18, #19). Five have their own approval by Codex; #14 has none of its own and merges as a stack with #15 (`decisions.md`, 2026-10-07) | Together on the branch `integration/ui-and-matching` (head `7426663` when this page was written) |
+| Where the v1 code is | Spread over six stacked pull requests (#13, #14, #15, #16, #18, #19), plus #21. Five of the six have their own approval by Codex; #14 has none of its own and merges as a stack with #15 (`decisions.md`, 2026-10-07). #21 was approved by Codex at `51e79cc` | Together on the branch `integration/ui-and-matching` (head `a76aa4a` when this page was updated; it contains #21 as `a9c6fe3`) |
 | In `main` | No | **Still no, and not part of version 1.** `main` is behind; the stack first has to land on `codex/worktree-standards`, and that branch has to reach `main` (task T-014, on hold per `tasks/merge-plan-2026-10-06.md`). That landing is a later, version 2 job |
-| Planned next (version 1) | | Carlos's choice (`decisions.md`, 2026-10-07): after PR #21 is approved, merge #21 into `integration/ui-and-matching`, **without the merge gate** (the gate only merges pull requests aimed at `main`), then tag `poc-v1` on that branch head. Not done yet |
+| Done for version 1 | | Carlos's choice (`decisions.md`, 2026-10-07): PR #21 was merged into `integration/ui-and-matching` as `a9c6fe3`, **without the merge gate** (the gate only merges pull requests aimed at `main`); the merge commit's message says "Merged into integration/ui-and-matching on Carlos's option A (no gate, not main)". |
+| Planned next (version 1) | | Tag `poc-v1` on the branch head. Not done yet: `git ls-remote --tags origin` listed no tag with that name when this page was updated |
 | Later (version 2) | | Landing on `main` (T-014) goes through the whole gate described below, with Carlos typing the Tier 3 approvals himself |
 
 ## The three levels (tiers) of a change
@@ -139,4 +140,4 @@ In the base: `backend-goal-checks.yml` (job `backend-goal`: the whole backend te
 - Not measured: review turnaround time or cost per pull request.
 
 ## Status
-In use (PR #10 is on `main`). The version 1 route is different from the general rules above: after PR #21 is approved it goes into the integration branch with no gate and a `poc-v1` tag; the gated landing on `main` is a version 2 job.
+In use (PR #10 is on `main`). The version 1 route is different from the general rules above: PR #21 went into the integration branch with no gate (merged as `a9c6fe3`); the `poc-v1` tag is still to come; the gated landing on `main` is a version 2 job.

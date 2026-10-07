@@ -85,7 +85,7 @@ Order `PO-TEST-004`: line 1 `ACME-1001`, quantity `020.00`, unit `EA`, price `3.
 (The app wraps every cell, header included, in quotes. The second quantity is blank because `1,000` is ambiguous. The history holds two `approve` events by "Sam Test".)
 
 ## What a person sees
-- Toasts such as "Confirmed." and "Moved to Not products."; a progress bar; a Summary with "N products confirmed" and a table (ID, Product, Qty, Price, with "As printed:" underneath).
+- Toasts such as "Confirmed." and "Moved to Ignored lines."; a progress bar; a Summary with "N products confirmed" and a table (ID, Product, Qty, Price, with "As printed:" underneath).
 - Under **Details**: the source file name, its SHA-256 fingerprint, the run id, and "Review history · N event(s)".
 - "One last step: Finish the review to lock your answers. They cannot be changed afterwards."
 

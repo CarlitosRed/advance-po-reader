@@ -6,7 +6,7 @@
 Not every printed line is something we sell. Orders also print subtotals, shipping, taxes and notes ("deliver to dock 4"). Before any product is looked up, each line gets a label from the AI model (gate 1), and the app uses that label to decide what happens to the line:
 
 - **Product line:** goes on to the product lookup and **must be answered by a person**.
-- **Total, subtotal, charge, tax or note:** never looked up, never required. It is shown in an optional tab (**Not products** in this base; the draft PR #21, head `e1088a0`, renames it **Ignored lines** and shows "optional" instead of a "to review" count; coming in PR #21, not in this base).
+- **Total, subtotal, charge, tax or note:** never looked up, never required. It is shown in an optional tab called **Ignored lines**, marked "optional" instead of a count of lines to do. These lines count as done from the start, so they do not keep the Summary or Finish from being reached ([`assignTabs`, lines 48-49](https://github.com/CarlitosRed/advance-po-reader/blob/a76aa4a866e2929cb3cead1109b1b9391b3e9279/web/local-reader/workflow.js#L48-L49), [`tabCounts`, line 67](https://github.com/CarlitosRed/advance-po-reader/blob/a76aa4a866e2929cb3cead1109b1b9391b3e9279/web/local-reader/workflow.js#L67)).
 - **Continuation:** a wrapped second line of a description. It is shown together with the product above it and is not a line of its own.
 - **Unknown:** the model could not tell. It must say why. It goes to the **Check** tab and a person must answer it.
 
@@ -17,7 +17,7 @@ A person can also say "this is not a product" for a line the model called a prod
 flowchart TD
   A["A printed line, as written down by the model"] --> B{"What label did it get?"}
   B -->|"product"| C["Product line"]
-  B -->|"charge, tax, subtotal, total, note"| D["Not products tab: optional glance"]
+  B -->|"charge, tax, subtotal, total, note"| D["Ignored lines tab: optional glance"]
   B -->|"continuation"| E["Shown inside the product above it"]
   B -->|"unknown"| F["Check tab: a person must answer"]
   C --> G["Gate 3: look the product up in the catalog"]
@@ -34,9 +34,9 @@ Order `PO-TEST-002` as the model wrote it down:
 | --- | --- | --- | --- |
 | 1 | `ACME-1001  Brass hinge 50mm  20` | product | Looked up in the catalog (gate 3) |
 | 2 | `with 4 screws per hinge` (wrapped, directly below line 1) | continuation | Shown as part of line 1's description |
-| 3 | `Freight charge  12.00` | charge | Not products tab |
-| 4 | `Subtotal  240.00` | subtotal | Not products tab |
-| 5 | `Please deliver to dock 4` | note | Not products tab |
+| 3 | `Freight charge  12.00` | charge | Ignored lines tab |
+| 4 | `Subtotal  240.00` | subtotal | Ignored lines tab |
+| 5 | `Please deliver to dock 4` | note | Ignored lines tab |
 | 6 | `AC?E-?00?  smudged  5` | unknown, reason "unclassified text" | Check tab, no suggestion, person answers |
 
 The person has to answer lines 1 and 6. Lines 3, 4 and 5 can be ignored without blocking the finish.
@@ -44,8 +44,8 @@ The person has to answer lines 1 and 6. Lines 3, 4 and 5 can be ignored without 
 ## What a person sees
 - Product lines are numbered "Line 1", "Line 2" and so on; the optional lines are called "Printed line".
 - A continuation never gets its own card; its text appears under the product.
-- In **Not products** each system-labelled line shows "Read as" (Charge, Tax, Subtotal, Total, Note), the printed text and the amount. Two buttons: **Agree, not a product**, or **Actually a product**.
-- **Honest limit:** those two buttons are remembered only on this device (browser storage). The server cannot yet change a line's label, so a line flagged "Actually a product" is **not** added to the spreadsheet, and the page says so. (`web/local-reader/workflow.js`, `handleTabAction` and the "Flagged on this device only" text.)
+- In **Ignored lines** each system-labelled line shows "Read as" (Charge, Tax, Subtotal, Total, Note), the printed text and the amount. Two buttons: **Agree, not a product**, or **Actually a product**.
+- **Honest limit:** those two buttons are remembered only on this device (browser storage). The server cannot yet change a line's label, so a line flagged "Actually a product" is **not** added to the spreadsheet, and the page says so. ([`handleTabAction`, lines 878-881](https://github.com/CarlitosRed/advance-po-reader/blob/a76aa4a866e2929cb3cead1109b1b9391b3e9279/web/local-reader/workflow.js#L878-L881) and the "Flagged on this device only" text, [line 679](https://github.com/CarlitosRed/advance-po-reader/blob/a76aa4a866e2929cb3cead1109b1b9391b3e9279/web/local-reader/workflow.js#L679).)
 - Product lines that a person marked "Not a product" go to the same tab with the name of who marked it.
 
 ## Rules behind it (checked in code)
@@ -59,10 +59,10 @@ The person has to answer lines 1 and 6. Lines 3, 4 and 5 can be ignored without 
 - Labels and consistency rules: [`backend/contracts.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/contracts.py) (`ExtractedRow`, `ExtractionPayload._validate_item_groups`).
 - Prompt wording for labels and continuations: [`backend/providers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/providers.py) (`EXTRACTION_PROMPT`, rules 4 to 7).
 - Who needs an answer: [`backend/review_summary.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_summary.py) (`effective_row_role`, `resolution_blockers`), [`backend/tiers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/tiers.py) (`review_suggestions`).
-- Tab placement: [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js) (`rowRoleOf`, `assignTabs`).
+- Tab placement: [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/a76aa4a866e2929cb3cead1109b1b9391b3e9279/web/local-reader/workflow.js) (`rowRoleOf`, `assignTabs`).
 
 ## Built by PR
-[#15](https://github.com/CarlitosRed/advance-po-reader/pull/15) (unknown lines must carry a reason, so they pass the strict check); [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16) (the three tabs, including Not products); [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7) (explicit answers for unclear lines). PR [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) (not in this base) renames the tab and makes it optional. The row kinds and roles themselves were built earlier (exact PR not verified).
+[#15](https://github.com/CarlitosRed/advance-po-reader/pull/15) (unknown lines must carry a reason, so they pass the strict check); [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16) (the three tabs, then named Sure, Check and Not products); [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7) (explicit answers for unclear lines). PR [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) (merged as `a9c6fe3`) renamed the tab to Ignored lines and made it optional. The row kinds and roles themselves were built earlier (exact PR not verified).
 
 ## How we know it works
 - Tests: `tests/goal/test_goal_tabs.py` (every line is placed in exactly one tab), `tests/goal/test_goal_tabs_data.py` and `tests/backend/test_poc_demo_tabs.py` (a sample with every kind of line fills all three tabs), `tests/backend/test_review_summary.py` (document details no longer need an answer).
@@ -71,4 +71,4 @@ The person has to answer lines 1 and 6. Lines 3, 4 and 5 can be ignored without 
 - Not measured: how often the model calls a real product a note, or the reverse.
 
 ## Status
-In version 1 (the Not products tab). The "Ignored lines" name and the "optional" wording are coming in PR #21 (head `e1088a0`, still in review), which is part of the version 1 scope but not in this base. I read its diff: it leaves the two buttons and the "flagged on this device only" behaviour on these lines unchanged.
+In version 1 (the Ignored lines tab, with the "optional" wording). PR #21 left the two buttons and the "flagged on this device only" behaviour on these lines unchanged (read at `a76aa4a`, [lines 678-681](https://github.com/CarlitosRed/advance-po-reader/blob/a76aa4a866e2929cb3cead1109b1b9391b3e9279/web/local-reader/workflow.js#L678-L681)).
