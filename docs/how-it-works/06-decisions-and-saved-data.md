@@ -26,7 +26,7 @@ flowchart TD
   V -->|"a rule is broken"| E["Plain error, nothing saved"]
   V -->|"all rules hold"| W["One event appended to the history"]
   W --> S["Summary recomputed from the history"]
-  S --> F{"Every line answered and no blockers?"}
+  S --> F{"Every product and unknown line answered?"}
   F -->|"no"| P
   F -->|"yes"| SUMM["Summary screen"]
   SUMM -->|"Download as spreadsheet (needs at least one confirmed product)"| C["confirmed-products.csv"]
@@ -35,16 +35,19 @@ flowchart TD
   B -->|"no"| R["Finish review: locked"]
   R -->|"download still works"| C
 ```
+Only unanswered product and unknown lines keep the Summary from appearing. The page and warning acknowledgements are offered on the Summary itself, next to **Finish review**, and the download button stays on even while Finish is disabled ([`renderSummary`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js#L256-L263), [lines 279-295](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js#L279-L295)). The download is disabled only when no product is confirmed.
+
+One tap does not always mean one saved event. A press on a displayed suggestion for a line the app called Uncertain saves the choice first and the approval second (two events); **Confirm all visible** saves one approval per visible Sure line, one after the other, and if a later one fails the earlier ones stay saved ([`confirmEntry` and `bulkConfirm`, lines 692-714](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js#L692-L714)).
 
 ## The rules the server checks first (`review_run` in `backend/service.py`)
 - The line's evidence must be the line's own page and rectangle, never another line's.
 - A continuation line or a totals/notes line cannot be approved, excluded or classified as a product.
 - The chosen product must be in the candidate list saved for that line, or be one a person explicitly chose or added for that line; it must be active and inside the catalog scope of the run.
 - An Uncertain line cannot be approved until one of the three answers has been saved for it, and "no match" is refused for it.
-- A "new product" needs a stable key, so a double click never creates two products; the same key with different content is refused.
-- After **Finish**, nothing more can be saved on that run; changing anything needs a new reading.
+- A "new product" needs a stable key. Repeating exactly the same save returns the event saved earlier instead of adding a second product, and the same key with different content is refused ([`review_run`, lines 238-246](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py#L238-L246)).
+- After **Finish**, no new answer can be saved on that run; changing anything needs a new reading ([line 245](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py#L245)). The one thing that still comes back is the earlier event, when someone repeats an exact "new product" save.
 
-**Finish is blocked** (`resolution_blockers` in `backend/review_summary.py`) while: any product or unknown line is unanswered; any page failed (needs a new reading); a partly read page has not been acknowledged; or the reading carries warnings that have not been acknowledged.
+**Finish is blocked** (`resolution_blockers` in `backend/review_summary.py`, [lines 18-39](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_summary.py#L18-L39)) while: any product or unknown line is unanswered, or the reading has no product or unknown line at all; any page failed (needs a new reading); a partly read page has not been acknowledged; or the reading carries warnings that have not been acknowledged.
 
 ## What is saved, and why it can be trusted
 Each answer is a row in `review_events` (`ReviewEvent`, `backend/models.py`): who (reviewer name), when, why (reason), which line, which evidence rectangle, the old value, the new value, the chosen product, and a running sequence number per run. The database itself rejects any later `UPDATE` or `DELETE` on these rows (trigger `review_events_immutable`, migration `0002_local_backend.py`), and the same holds for the saved candidate lists, source document records and catalog products. Once the model's answer is stored on the run (`run.result`), a database trigger (`processing_runs_guard`) refuses to change it: corrections are separate events laid over it. The person can open "Review history" under Details to see every event.

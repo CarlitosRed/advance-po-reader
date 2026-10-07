@@ -1,6 +1,6 @@
 # How the Advance PO Reader works, in plain language
 
-You do not need to program, or know anything about AI, to follow this. The app reads a customer's purchase order (a PDF), turns each printed line into a suggestion from our product list, and **a person confirms every product**. This folder explains each decision the app makes along the way, one short page per decision ("gate"), with a small picture, an invented example, and links to the pull request (the proposed change) and to the code that does it. Code links point at a fixed commit (the base `7426663`, or for the two files that live only elsewhere, the commit of PR #9 or of `main`), so they keep showing exactly what was read.
+You do not need to program, or know anything about AI, to follow this. The app reads a customer's purchase order (a PDF), turns each printed line into a suggestion from our product list, and **a person confirms every product**. This folder explains each decision the app makes along the way, one short page per decision ("gate"). Gates 0a and 0b come before the reading, and 1b covers what happens when a reading does not finish, with a small picture, an invented example, and links to the pull request (the proposed change) and to the code that does it. Code links point at a fixed commit (the base `7426663`, or for the two files that live only elsewhere, the commit of PR #9 or of `main`), so they keep showing exactly what was read.
 
 All examples in these pages are invented (codes such as `ACME-1001`). No real order, customer, supplier or catalog code appears here.
 
@@ -9,13 +9,17 @@ All examples in these pages are invented (codes such as `ACME-1001`). No real or
 ## The whole flow on one page
 ```mermaid
 flowchart TD
-  U["A person uploads a purchase order PDF"] --> G1["Gate 1: the AI model reads it"]
+  U["A person adds a purchase order PDF or photo"] --> M{"Gate 0a: free sample, rehearsal or live?"}
+  M -->|"free sample or rehearsal: no real reading"| V
+  M -->|"live"| PRE{"Gate 0b: checks before sending"}
+  PRE -->|"a check fails"| STOP["Stopped: nothing sent"]
+  PRE -->|"all pass"| G1["Gate 1: the AI model reads it"]
   G1 --> V{"Does the answer pass the strict check?"}
-  V -->|"no"| X["Rejected: a plain message, no lines shown"]
-  V -->|"yes"| G2["Gate 2: sort each line"]
+  V -->|"no, or a failed or stopped run"| X["Gate 1b: a plain message, no lines shown"]
+  V -->|"yes: completed, or partial with doubts flagged"| G2["Gate 2: sort each line"]
   G2 -->|"total, note, charge, tax"| NP["Not products tab: optional"]
   G2 -->|"product"| G3["Gate 3: look in our catalog"]
-  G2 -->|"unknown: no lookup, no suggestion"| CHECK
+  G2 -->|"unknown: no automatic lookup, no suggestion"| CHECK
   G3 --> G4["Gate 4: confidence tier"]
   G4 -->|"certain"| SURE["Sure tab"]
   G4 -->|"probable or uncertain"| CHECK["Check tab"]
@@ -32,8 +36,8 @@ flowchart TD
   classDef plain fill:#eef1f4,stroke:#4d5f70,color:#000
   class G1,G2,G3,G4,G5,G6,SURE,CHECK,FIN,OUT done
   class SN,NP later
-  class X risk
-  class U,V,CH plain
+  class X,STOP risk
+  class U,M,PRE,V,CH plain
 ```
 Green is in version 1. Amber is optional or not in version 1. Red is a stop. Gray is structure.
 
@@ -44,7 +48,10 @@ Two rules hold at every step: **the app never approves a product by itself** (ev
 ## The gates
 | Gate | What it decides | Page | Pull request | Main code files | Status |
 | --- | --- | --- | --- | --- | --- |
+| 0a | Free sample, rehearsal or live: where the answer comes from | [0a](00a-three-ways-to-run.md) | [#12](https://github.com/CarlitosRed/advance-po-reader/pull/12), [#14](https://github.com/CarlitosRed/advance-po-reader/pull/14) | [`scripts/poc-demo.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc-demo.py), [`scripts/poc_demo_support.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_demo_support.py), [`scripts/poc_live_support.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_live_support.py) | In version 1 |
+| 0b | The checks before anything is sent: file, permission, cost limit | [0b](00b-checks-before-sending.md) | [#14](https://github.com/CarlitosRed/advance-po-reader/pull/14) | [`backend/uploads.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/uploads.py), [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py), [`scripts/poc_live_support.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/scripts/poc_live_support.py) | In version 1 |
 | 1 | Reading the PDF with the AI model, and the strict check of its answer | [01](01-reading-the-pdf.md) | [#14](https://github.com/CarlitosRed/advance-po-reader/pull/14), [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15), [#18](https://github.com/CarlitosRed/advance-po-reader/pull/18) | [`backend/providers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/providers.py), [`backend/contracts.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/contracts.py), [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py) | In version 1 |
+| 1b | When a reading fails, stops or finishes partly, and when a new reading is needed | [1b](01b-when-a-reading-fails-or-stops.md) | [#14](https://github.com/CarlitosRed/advance-po-reader/pull/14), [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15) | [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py) (`process_run`, `cancel_run`), [`gate_a/contracts.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/gate_a/contracts.py) | In version 1 |
 | 2 | Sorting each line: product, or total, note, charge, tax | [02](02-sorting-each-line.md) | [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15), [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16); [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) renames the tab | [`backend/contracts.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/contracts.py), [`backend/review_summary.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_summary.py), [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js) | In version 1 |
 | 3 | Finding the product in our catalog | [03](03-finding-the-product.md) | [#18](https://github.com/CarlitosRed/advance-po-reader/pull/18), [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) | [`backend/catalog.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/catalog.py), [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py) | In version 1 |
 | 4 | The confidence tiers: certain, probable, uncertain | [04](04-confidence-tiers.md) | [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7), [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) | [`backend/tiers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/tiers.py) | In version 1 |
@@ -60,7 +67,7 @@ Measured by running the stored readings of the 33 sample orders, with no new spe
 
 | | Measured on the 33 sample orders |
 | --- | --- |
-| Orders read and completed | 33 of 33 |
+| Orders with a reading accepted for review | 33 of 33 (five of them ended `partial`, "review required", not fully completed) |
 | Product lines found (matches the reference count for every order) | 150 |
 | Lines the app calls Certain (start in Sure) | 120 of 150 |
 | Lines the app calls Probable | 13 |

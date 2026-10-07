@@ -1,6 +1,6 @@
 # Gate 2: Sorting each line (product, or total / note / charge / tax)
 
-[Back to the map](README.md) | Previous: [Gate 1](01-reading-the-pdf.md) | Next: [Gate 3, finding the product](03-finding-the-product.md)
+[Back to the map](README.md) | Previous: [Gate 1b, when a reading fails or stops](01b-when-a-reading-fails-or-stops.md) | Next: [Gate 3, finding the product](03-finding-the-product.md)
 
 ## In one minute
 Not every printed line is something we sell. Orders also print subtotals, shipping, taxes and notes ("deliver to dock 4"). Before any product is looked up, each line gets a label from the AI model (gate 1), and the app uses that label to decide what happens to the line:

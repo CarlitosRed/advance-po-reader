@@ -78,7 +78,7 @@ Catalog: `ACME-1001` Brass hinge 50mm; `ACME-1002` Brass hinge 75mm; `ACME-2001`
 | No code; "Brass hinge" fits two products | Uncertain | Two candidates |
 
 ## What a person sees
-- Certain lines are in **Sure**; Probable and Uncertain lines are in **Check**, with the pill "Probably right" or "Needs a look". In this base the stored reason text is shown only inside the "Details" of the one-line view; the draft PR #21 (not in this base, still in review) adds one short sentence per line in Check (see [gate 5](05-the-review-screen.md)).
+- Certain lines are in **Sure**; Probable and Uncertain lines are in **Check**, with the pill "Probably right" or "Needs a look". In this base the stored reason text is shown only inside the "Details" of the one-line view; the draft PR #21 (not in this base, still in review) adds a short explanation line on Check cards (see [gate 5](05-the-review-screen.md)).
 - For an Uncertain line the server insists that the person first saves one of three answers (pick a product, add a new one, or "not a product") before approving; the three-tab screen does both steps with one click on **Confirm** (`confirmEntry` in `web/local-reader/workflow.js`). "No match" is refused for an Uncertain line.
 
 ## Where it lives
