@@ -153,14 +153,29 @@ def bad_path(path):
     return None
 
 
+REF_FORBIDDEN = set("~^:?*[" + chr(92))   # plus space, DEL and every control character (caught by odd_character)
+
+
 def bad_branch(name):
-    """Why a branch name from GitHub cannot be trusted, or None: text with no space of any kind and no
-    Unicode control, format, surrogate, private-use or unassigned character."""
+    """Why a branch name from GitHub cannot be trusted, or None. Exact, non-normalizing form of Git's own rules
+    (git check-ref-format): no space or Unicode control/hidden character, none of ~ ^ : ? * [ or a backslash, no
+    '..' or '@{', no leading '-', no empty component ('//', leading or trailing '/'), no component starting with
+    '.' or ending in '.lock', no trailing '.', and not the single character '@'. Nothing is repaired."""
     if not isinstance(name, str) or not name:
         return "is not text"
     if any(odd_character(c, allow_space=False) for c in name):
         return "has a space, control or hidden character"
+    if any(c in REF_FORBIDDEN for c in name):
+        return "has a character Git does not allow in a branch name (~ ^ : ? * [ or a backslash)"
+    if name == "@" or name.startswith("-") or name.endswith(".") or ".." in name or "@{" in name:
+        return "is not a valid Git branch name"
+    for part in name.split("/"):
+        if not part or part.startswith(".") or part.endswith(".lock"):
+            return "is not a valid Git branch name (empty part, or a part starting with '.' or ending in '.lock')"
     return None
+
+
+REPO_NAME = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 
 
 def check_identity(got, number, where):
@@ -270,11 +285,12 @@ def read_signals(pr, cfg):
 # ---------------------------------------------------------------- check
 
 def repo_of(gh, cfg):
-    if cfg.get("repo"):
-        return cfg["repo"]
-    repo = gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).strip()
+    repo = cfg.get("repo") or gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).strip()
     if not repo:
         raise GateError("could not detect the repository; run inside the repo folder or set 'repo' in gate.json")
+    if not isinstance(repo, str) or not REPO_NAME.fullmatch(repo) or repo.startswith("-") \
+            or any(part in (".", "..") for part in repo.split("/")):
+        raise GateError(f"the repository name {repo!r} is not a plain owner/name; refusing to continue")
     cfg["repo"] = repo
     return repo
 

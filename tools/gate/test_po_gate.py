@@ -970,6 +970,117 @@ class UnicodeAndRootedPathTests(unittest.TestCase):
         self.assertTrue(safe(FakeGH(pull)))
 
 
+# Round 6: Git's own branch-name grammar (git check-ref-format). The 23 values Codex found that passed.
+BAD_GIT_BRANCHES = [
+    "codex/../x", "codex/a..b", "codex/./x", "codex/.hidden/x", "codex/x.lock", "codex/x.lock/y",
+    "codex//x", "codex/x/", "/codex/x", "//server/share/x", "codex/x.", "codex/a@{b",
+    "codex/a~b", "codex/a^b", "codex/a:b", "codex/a?b", "codex/a*b", "codex/a[b", "codex/a" + BS + "b",
+    "C:/x", "C:x", BS + BS + "server" + BS + "share" + BS + "x", "-codex/x",
+]
+# more shapes of the same class, and the single character @
+MORE_BAD_GIT_BRANCHES = ["@", "codex/@{", ".codex/x", "codex/.x", "codex/", "/", "//",
+                         "codex/a..", "..", ".", "-", "--x", "codex/a b", "codex/a" + chr(127) + "b", "x.lock",
+                         "codex/a/.lock", "a/b.lock/c"]
+GOOD_GIT_BRANCHES = ["codex/some-task", "claude/t-021-gate-full-file-list", "main", "feature", "codex/v1.2.3",
+                     "codex/task-42", "codex/caf" + chr(0xe9), "codex/" + chr(0x65e5) + chr(0x672c), "a@b", "codex/a]b",
+                     "codex/x.locked", "codex/a.lock.b", "codex/a_b/c-d", "codex/UPPER"]
+
+
+def git_accepts_branch(name):
+    return subprocess.run(["git", "check-ref-format", "--branch", name], capture_output=True).returncode == 0
+
+
+class GitBranchGrammarTests(unittest.TestCase):
+
+    def run_gate(self, field, bad, where):
+        pull = pr(files=[{"path": "backend/ordinary.py"}])
+        after = {}
+        if where in ("first", "both"):
+            pull[field] = bad
+        if where in ("second", "both"):
+            after[field] = bad
+        gh = FakeGH(pull, after=after)
+        out = []
+        try:
+            code = g.cmd_merge(gh, CFG, 7, AUTHOR, out=out.append)
+        except g.GateError:
+            code = 2
+        return gh, code
+
+    def test_invalid_branches_never_reach_the_merge(self):
+        for bad in BAD_GIT_BRANCHES + MORE_BAD_GIT_BRANCHES:
+            for field in ("headRefName", "baseRefName"):
+                for where in ("first", "second", "both"):
+                    gh, code = self.run_gate(field, bad, where)
+                    self.assertNotEqual(code, 0, (field, repr(bad), where))
+                    self.assertEqual(gh.merged(), [], (field, repr(bad), where))
+
+    def test_invalid_branches_are_refused_by_fetch_pr_itself(self):
+        for bad in BAD_GIT_BRANCHES + MORE_BAD_GIT_BRANCHES:
+            for field in ("headRefName", "baseRefName"):
+                self.assertFalse(safe(FakeGH(pr(files=[{"path": "backend/ordinary.py"}], **{field: bad}))),
+                                 (field, repr(bad)))
+
+    def test_valid_branch_names_still_pass(self):
+        for good in GOOD_GIT_BRANCHES:
+            pull = pr(files=[{"path": "backend/ordinary.py"}], headRefName=good)
+            self.assertTrue(safe(FakeGH(pull)), repr(good))
+            pull = pr(files=[{"path": "backend/ordinary.py"}], baseRefName=good)
+            self.assertTrue(safe(FakeGH(pull)), repr(good))
+
+    def test_a_clean_codex_branch_merges_through_the_whole_path(self):
+        gh = FakeGH(pr())
+        self.assertEqual(g.cmd_merge(gh, CFG, 7, AUTHOR, out=[].append), 0)
+
+    def test_matrix_agrees_with_git_check_ref_format(self):
+        """Everything git rejects, the gate rejects; everything in the good list, both accept."""
+        try:
+            git_accepts_branch("main")
+        except OSError:
+            self.skipTest("git not available")
+        for name in BAD_GIT_BRANCHES + MORE_BAD_GIT_BRANCHES:
+            if name != "@":     # git's branch mode accepts a lone @; the gate refuses it (no real branch is called that)
+                self.assertFalse(git_accepts_branch(name), repr(name))
+            self.assertIsNotNone(g.bad_branch(name), repr(name))
+        for name in GOOD_GIT_BRANCHES:
+            self.assertTrue(git_accepts_branch(name), repr(name))
+            self.assertIsNone(g.bad_branch(name), repr(name))
+
+    def test_every_printable_ascii_character_agrees_with_git(self):
+        """Exhaustive: each printable ASCII character alone and in several positions inside a name."""
+        try:
+            git_accepts_branch("main")
+        except OSError:
+            self.skipTest("git not available")
+        for c in range(33, 127):
+            ch = chr(c)
+            for name in (ch, "a" + ch + "b", "a/" + ch, ch + "/a", "a" + ch, ch + "a", "a." + ch):
+                if not git_accepts_branch(name):
+                    self.assertIsNotNone(g.bad_branch(name), repr(name))
+                elif name != "@":
+                    self.assertIsNone(g.bad_branch(name), repr(name))
+
+
+class RepoNameTests(unittest.TestCase):
+    """Round 6 sweep: the repository name is an identity value too."""
+
+    def test_odd_repository_names_are_refused(self):
+        for bad in ("", "owner", "owner/", "/name", "a/b/c", "o wner/name", "owner/na" + NL + "me", "owner" + NL + "/n",
+                    "../x", "owner/..", "owner/name?x", "owner/name#1", "owner:x/name", "own" + chr(0x200b) + "er/name",
+                    "owner/name" + BS, "-owner/name"):
+            gh = FakeGH(pr())
+            detected = lambda args, _g=gh, _b=bad: _b + NL if args[:2] == ["repo", "view"] else _g(args)
+            with self.assertRaises(g.GateError, msg=repr(bad)):
+                g.fetch_pr(detected, dict(CFG, repo=""), 7)
+            if bad:   # an empty configured repo means "detect it", which is the first check above
+                with self.assertRaises(g.GateError, msg=repr(bad)):
+                    g.fetch_pr(gh, dict(CFG, repo=bad), 7)
+
+    def test_normal_repository_names_pass(self):
+        for good in ("CarlitosRed/advance-po-reader", "a/b", "o-w_n.er/name.with.dots"):
+            self.assertEqual(g.repo_of(FakeGH(pr()), dict(CFG, repo=good)), good)
+
+
 class MergeTests(unittest.TestCase):
     def run_merge(self, gh, merged_as=AUTHOR, **kw):
         lines = []
