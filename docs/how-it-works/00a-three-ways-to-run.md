@@ -40,8 +40,8 @@ Green is no money and no real reading. Amber is the only way that can spend mone
 ## Worked example (invented)
 Order `PO-TEST-020` is a made-up one-page PDF, saved on a computer.
 - **Free sample:** dropping it on the upload page shows "This free preview can only read the sample orders", because its bytes are not one of the registered samples. The same page offers the sample orders instead.
-- **Rehearsal:** dropping it shows the Send box and the cost counter, then lines appear. They are the canned sample lines, not lines from `PO-TEST-020`.
-- **Live:** dropping it shows the Send box. Only after "Send" is the file read by the real model, and the lines are whatever it wrote down.
+- **Rehearsal:** the first time it is dropped, below the run limit, it shows the Send box and the cost counter, then lines appear. They are the canned sample lines, not lines from `PO-TEST-020`.
+- **Live:** the first time it is dropped, below the run limit, it shows the Send box. Only after "Send" is the file read by the real model, and the lines are whatever it wrote down.
 
 ## What each way really does
 **Free sample.**
