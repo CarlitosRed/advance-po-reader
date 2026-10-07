@@ -14,31 +14,45 @@ const suggestion = id => data.suggestions.find(s => s.row_id === id);
 const row = id => data.rows.find(r => r.row_id === id);
 const reason = id => context.api.plainReason(row(id), suggestion(id));
 
+const NO_MATCH = "No catalog product matches this code or name.";
+const CONFLICT = "The app found conflicting readings on this line; please check it.";
+const HINT = "Matched from a code in the description; please check it against the printed line.";
+const NAME = "Matched by an approximate search on the name or code; please check it.";
+const EXACT = "A printed code matched exactly; please check the match against the line.";
+const NORM = "Matched after ignoring spaces and punctuation in a printed code; please check it.";
+const TWO = "2 catalog products could match this line; pick the right one.";
+// Every sentence states a fact the API data proves (method, tier_reason, candidates, a hard-to-read field). None says a
+// printed code is close to, different from or the same as the product.
 const expected = {
-  "line-1": "No catalog product matches this code or name.",
-  "line-2": "The printed code is written a little differently from the catalog code.",
-  "line-3": "A code in the description does not match the printed code.",
+  "line-1": NO_MATCH,
+  "line-2": NORM,
+  "line-3": CONFLICT,
   "line-4": "No product code on this line; matched by name only.",
   "line-5": "No code column on this line; the code was found inside the description.",
   "line-6": "3 catalog products could match this line; pick the right one.",
   "line-7": "The catalog has both 'D6224-2' and 'WERNER D6224-2'.",
   "line-9": "Part of this line is hard to read.",
-  "line-10": "The printed code is an alternate code for this product, written a little differently.",
-  "line-11": "The printed code is not the catalog's main code for this product.",
-  "line-12": "A code in the description does not match this product.",
-  "line-13": "A code in the description does not match the printed code.",
-  "line-14": "The printed code is not the catalog's main code for this product.",
-  "line-15": "2 catalog products could match this line; pick the right one.",
-  "line-16": "The printed code is not the catalog's main code for this product.",
-  // Printed codes under customer roles (no customer alias exists): identical values are never called a mismatch.
-  "line-17": "The printed code is this product's code; the match came from the description.",
-  "line-18": "The printed code is this product's code; the match came from the description.",
-  "line-19": "Matched from the description; the printed code is the same code, written differently.",
-  "line-20": "Matched from the code in the description; please check the printed code.",
-  "line-21": "The printed code is this product's code, but the match came from the name.",
-  "line-22": "Matched from the code in the description; please check the printed code.",
-  "line-23": "The printed code does not match, but a code in the description does.",
-  "line-24": "A code in the description does not match this product.",
+  "line-10": NORM,
+  "line-11": CONFLICT,
+  "line-12": CONFLICT,
+  "line-13": CONFLICT,
+  "line-14": EXACT,
+  "line-15": TWO,
+  "line-16": CONFLICT,
+  "line-17": HINT, "line-18": HINT, "line-19": HINT, "line-20": HINT, "line-22": HINT,
+  "line-21": NAME,
+  "line-23": CONFLICT,
+  "line-24": CONFLICT,
+  // Reported cases: exact name with an unrelated customer-role identifier is only "found by name"...
+  "line-25": NAME,
+  // ...a non-ASCII value literally equal to the catalog code (same-value customer alias) is never called a mismatch...
+  "line-26": EXACT,
+  // ...ASCII and non-ASCII aliases beside an unrelated name, a vendor alias beside the exact name...
+  "line-27": EXACT,
+  "line-28": EXACT,
+  "line-29": CONFLICT,
+  // ...and a page with no identifier column.
+  "line-30": "No product code on this line; matched by name only.",
 };
 const seen = {};
 for (const [id, text] of Object.entries(expected)) seen[id] = reason(id);
@@ -50,6 +64,11 @@ assert.equal(suggestion("line-8").tier, "certain");
 assert.equal(suggestion("line-17").method, "description_code_hint");
 assert.equal(suggestion("line-18").method, "description_numeric_code_hint");
 assert.equal(suggestion("line-17").candidates[0].sku, "GOAL-002");
-// Nothing that says a printed code differs may be shown when a printed code equals the product's main code.
-for (const id of ["line-17", "line-18", "line-19", "line-21"]) assert.doesNotMatch(reason(id), /does not match|not the catalog|different from|bdiffers?b/, id);
+// The two reported reproductions are really these retrievals (no near-but-different code is provable from them).
+assert.equal(suggestion("line-25").method, "trigram");
+assert.equal(suggestion("line-26").method, "exact");
+assert.equal(suggestion("line-26").candidates[0].sku, "ÉX-88");
+assert.equal(suggestion("line-30").method, "trigram");
+// No sentence may say a printed code is close to, different from, or not the same as the product.
+for (const id of Object.keys(expected)) assert.doesNotMatch(reason(id), /does not match|not the catalog|different|differently|close to|not the same|written/i, id);
 console.log("plain reasons on real data passed");

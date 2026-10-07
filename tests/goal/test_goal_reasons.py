@@ -21,6 +21,10 @@ EXTRA = [{"sku": "GOAL-010", "description": "Synthetic cobalt ladder long"},
          {"sku": "WERNER D6224-2", "description": "Synthetic anchor strap kit"},
          {"sku": "4801239", "description": "Synthetic teal hinge"}]
 
+# A non-ASCII catalog code whose same-value alias is held under a customer role (the normalization key of such a value is empty).
+UNICODE = {"sku": "ÉX-88", "description": "Synthetic unique amber latch", "aliases": [
+    {"value": "ÉX-88", "source_role": "customer_item_number"}]}
+
 
 ALIASES = {"sku": "GOAL-002", "description": PRODUCTS[1]["description"], "aliases": [
     {"value": "CUSTOM-77", "source_role": "customer_item_number"}, {"value": "OLD-77", "source_role": "vendor_sku"}]}
@@ -51,7 +55,7 @@ def test_goal_9_plain_reason_table_covers_every_case():
 
 def test_goal_9_plain_reasons_match_what_the_real_review_api_returns(desk, tmp_path):
     node = _node()
-    ok(desk.client.post("/catalog/import", json={"vendor_id": desk.vendor["id"], "products": [*EXTRA, ALIASES]}))
+    ok(desk.client.post("/catalog/import", json={"vendor_id": desk.vendor["id"], "products": [*EXTRA, ALIASES, UNICODE]}))
     cobalt, vermilion = PRODUCTS[0]["description"], PRODUCTS[1]["description"]
     conflict = product_row(3, code="GOAL-001", description=cobalt + " GOAL-002", quantity="1")
     embedded = product_row(5, description=vermilion + ", code GOAL-002", quantity="1")
@@ -96,11 +100,23 @@ def test_goal_9_plain_reasons_match_what_the_real_review_api_returns(desk, tmp_p
         _with_role(product_row(24, code="GOAL-002", description=vermilion + " code ZZ-99", quantity="1"), role),       # unmatched labeled token
     ]
     third = process(desk, scoped)
-    suggestions = [*result.suggestions, *second.suggestions, *third.suggestions]
+    # Names and codes whose reason must stay neutral: an exact name with an unrelated customer-role identifier, a literally
+    # equal non-ASCII alias, an ASCII alias under its role, a vendor alias, and a page with no identifier column at all.
+    neighbours = [
+        _with_role(product_row(25, code="CUST-5", description=vermilion, quantity="1"), role),                          # exact name, unrelated customer code
+        _with_role(product_row(26, code="ÉX-88", description=UNICODE["description"], quantity="1"), role),         # non-ASCII, literally equal alias
+        _with_role(product_row(27, code="CUSTOM-77", description="Synthetic unrelated gadget nobody sells", quantity="1"), role),  # ASCII alias, odd name
+        _with_role(product_row(28, code="ÉX-88", description="Synthetic unrelated gadget nobody sells", quantity="1"), role),  # non-ASCII alias, odd name
+        product_row(29, code="OLD-77", description=vermilion, quantity="1"),                                              # vendor alias, exact name
+    ]
+    fourth = process(desk, neighbours)
+    bare = process(desk, [product_row(30, description=vermilion, quantity="1")], code_column=False)                      # no identifier column
+    suggestions = [*result.suggestions, *second.suggestions, *third.suggestions, *fourth.suggestions, *bare.suggestions]
     by_row = {item["row_id"]: item for item in suggestions}
     seed = tmp_path / "reasons-data.json"
     seed.write_text(json.dumps({"rows": [*result.result["extraction"]["rows"], *second.result["extraction"]["rows"],
-                                         *third.result["extraction"]["rows"]],
+                                         *third.result["extraction"]["rows"], *fourth.result["extraction"]["rows"],
+                                         *bare.result["extraction"]["rows"]],
                                 "suggestions": suggestions}), encoding="utf-8")
     completed = _run(node, "reasons-data.cjs", str(seed))
     assert completed.returncode == 0, completed.stdout + completed.stderr + json.dumps(
