@@ -97,7 +97,7 @@ From `ROLES.md`. Every pull request carries exactly one label.
 | 3 | Money and trust: `AGENTS.md`, `ROLES.md`, `PROJECT_GOAL.md`, `.github`, the gate, `backend/providers.py` (the model prompt), `scripts`, database migrations and a few more (exact list: `protected_paths` in `tools/gate/gate.json`) | yes | one, from the other company | yes, he types it himself |
 | 4 | Billing, spend limits, credentials, production, deleting data | not a pull request | not a pull request | humans only |
 
-The gate raises a label that is too low and never lowers one. This documentation pull request touches only `docs/how-it-works/`, which is the Tier 1 area.
+The gate raises a label that is too low and never lowers one. This documentation pull request touches only `docs/how-it-works/`, which is the Tier 1 area. This pull request is aimed at the integration branch, not at `main`, and the gate's state rule expects `main`, so how it will be merged is for Carlos and Claudio IT to decide (not verified).
 
 ## What the merge gate checks (`tools/gate/po_gate.py check <PR>`)
 State (open, not a draft, aimed at `main`); no active `hold` from anyone; a valid tier label; no forbidden files (PDFs, images, model files, keys, `.env*`, data folders) and fewer than 100 changed files; the required automatic checks passed on the exact head (`tests`, `gate-tests`, `scan`); for Tiers 2 and 3 a plan section, an evidence section and a cost section, a signed "go", and a signed "Approved at `<commit>`" matching the head from the other company; for Tier 3 Carlos's own approval of that commit. `merge` then squash-merges that exact commit and writes `Gate-Record: pass tier=N head=... reviewers=... owner=... by=...` into the history. The `Gate audit` workflow runs after every push to `main` and opens an issue if any new commit lacks that record.
@@ -119,7 +119,7 @@ In the base: `backend-goal-checks.yml` (job `backend-goal`: the whole backend te
 | Claudio IT | Platform and release: folders, GitHub housekeeping, CI, the gate | Anthropic |
 | Claudio PR review / Codex PR review | Independent reviewers; never push or merge | Anthropic / OpenAI |
 | Codex task chats, Chat task chats | Builders, one task each | OpenAI |
-| Claude task chats (such as the one that wrote this page) | Builders, one task each | Anthropic |
+| Claude task chats, such as "Claude · poc ui" (names seen in this project's pull requests; not listed in `ROLES.md`) | Builders, one task each | Anthropic |
 
 ## Where it lives
 - Rules and phrases: `ROLES.md` (on `main`). Product rules: `AGENTS.md` and `PROJECT_GOAL.md` (this base has both; the sections added by PR #10 are on `main`).
