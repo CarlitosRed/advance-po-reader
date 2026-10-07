@@ -45,7 +45,8 @@ function assignTabs(payload, suggestions, events, marks) {
       entry.tab = "not";
       entry.agreed = kept.agreed.includes(row.row_id);
       entry.flagged = kept.flagged.includes(row.row_id);
-      entry.done = entry.agreed || entry.flagged;
+      // Ignored lines are optional: they never count as work and never block the summary or Finish.
+      entry.done = true;
     } else {
       entry.lineIndex = lineIndex++;
       entry.status = rowStatusOf(row, events, suggestion);
@@ -63,23 +64,163 @@ function assignTabs(payload, suggestions, events, marks) {
   return groups;
 }
 function tabCounts(groups) {
-  return Object.fromEntries(TAB_IDS.map(id => [id, {total: groups[id].length, todo: groups[id].filter(e => !e.done).length}]));
+  return Object.fromEntries(TAB_IDS.map(id => [id, {total: groups[id].length, todo: id === "not" ? 0 : groups[id].filter(e => !e.done).length}]));
 }
-// The first tab that still has work; if everything is done, the first tab that has any line; an empty page opens on Sure.
+// The first tab that still has work; if everything is done, the first of Sure/Check that has any line; the optional
+// Ignored lines tab is only a first screen when it is the only tab with lines; an empty page opens on Sure.
 function defaultTabOf(counts) {
-  return TAB_IDS.find(id => counts[id].todo > 0) || TAB_IDS.find(id => counts[id].total > 0) || "sure";
+  return TAB_IDS.find(id => counts[id].todo > 0) || TAB_IDS.find(id => id !== "not" && counts[id].total > 0) ||
+    TAB_IDS.find(id => counts[id].total > 0) || "sure";
 }
 // Plain words for a tab with nothing to show, and the tab that is worth opening instead (or null).
 function emptyTabCopy(tab, counts, filtering) {
-  const other = TAB_IDS.find(id => id !== tab && counts[id].todo > 0) || TAB_IDS.find(id => id !== tab && counts[id].total > 0) || null;
+  // Ignored lines is optional, so it is only suggested from its own page.
+  const pool = tab === "not" ? TAB_IDS : TAB_IDS.filter(id => id !== "not");
+  const other = pool.find(id => id !== tab && counts[id].todo > 0) || pool.find(id => id !== tab && counts[id].total > 0) || null;
   if (filtering) return {text: "No line matches the filter.", goto: null};
-  if (counts[tab].total > 0) return {text: "Everything in this tab is done.", goto: TAB_IDS.find(id => id !== tab && counts[id].todo > 0) || null};
+  if (counts[tab].total > 0) return {text: "Everything in this tab is done.", goto: pool.find(id => id !== tab && counts[id].todo > 0) || null};
   if (tab === "sure") return {
     text: "No line was sure this time. That is normal: a line is only “sure” when its printed code matches exactly one product. " +
       (other ? "Every product line is in Check, where you confirm each one against its picture." : "There are no product lines to confirm."),
     goto: other};
   if (tab === "check") return {text: "Nothing needs a closer look. Every product line was sure or already answered.", goto: other};
   return {text: "No totals, notes or charges were found, and no line was marked as not a product.", goto: other};
+}
+// ---- Plain reasons: one short sentence for why a line is in Check. Pure: data in, a sentence out. ----
+// RULE: every sentence is a row of REASON_RULES with a precondition (`when`) over concrete facts of the review API data
+// (reasonFacts). A sentence is shown only when its precondition is true for this line; the first true row wins (the
+// order is the priority); when none is true the neutral fallback is shown. Nothing here says a printed code is close
+// to, different from or the same as the product, that a column is missing, or that a code is absent from the line.
+// Where a better explanation needs a fact the API does not give today, the sentence stays neutral.
+// A sentence that says something was not read or not found is scoped to exactly the field or search the precondition
+// proves ("under “Code”", "the catalog search"); "no identifier has a value" never becomes "no code was read on the line",
+// because a code can be read in the description.
+// tests/goal/reasons.cjs (table) and tests/goal/reasons-generated.cjs (all combinations) check this table.
+const SEARCH_NOT_RUN = /explicit three-way decision/i;           // backend/tiers.py placeholder for an unknown source row
+const SEARCH_FAILED = /exceeds the bounded search contract/i;     // backend/service.py when retrieval input is too large
+const SEARCH_EMPTY = "No candidate found in the supplied tenant/vendor catalog";   // backend/catalog.py, search finished
+function textOf(value) {
+  return String(value ?? "").trim();
+}
+function hasPrintedCode(row) {
+  return printedCodes(row).length > 0;
+}
+function printedCodes(row) {
+  return (row?.identifiers || []).map(item => textOf(item?.raw_value)).filter(Boolean);
+}
+function fieldIsUnclear(item) {
+  return Boolean(item) && (["uncertain", "unreadable"].includes(item.state) || (item.alternative_readings || []).length > 0);
+}
+// Which of the fields the server checks (code, description, quantity, unit) are marked unclear, in reading order.
+function unclearFields(row) {
+  return [["code", (row?.identifiers || []).some(fieldIsUnclear)], ["description", fieldIsUnclear(row?.description)],
+    ["quantity", fieldIsUnclear(row?.quantity)], ["unit", fieldIsUnclear(row?.unit)]].filter(pair => pair[1]).map(pair => pair[0]);
+}
+function hasUnclearReading(row) {
+  return unclearFields(row).length > 0;
+}
+function clip(value, limit) {
+  const flat = textOf(value).replace(/\s+/g, " ");
+  return flat.length > limit ? flat.slice(0, limit - 1).trimEnd() + "…" : flat;
+}
+// Printed labels of identifier cells that were read as not present (state not_present with a printed label); only used
+// when no identifier has a value.
+function blankCodeLabels(row) {
+  const labels = (row?.identifiers || []).filter(item => item?.state === "not_present" && !textOf(item.raw_value) && textOf(item.source_label))
+    .map(item => clip(item.source_label, 30));
+  return [...new Set(labels)];
+}
+function joinWords(words) {
+  return words.length > 1 ? words.slice(0, -1).join(", ") + " and " + words[words.length - 1] : words[0] || "";
+}
+// Two catalog products where one code is the other with a printed vendor prefix ("WERNER D6224-2" and "D6224-2").
+// Same shape as the server's tier rule: letters-only prefix, then a space, dash or slash before the shorter code.
+function vendorPrefixPair(candidates) {
+  const skus = (candidates || []).map(c => String(c?.sku ?? "").trim()).filter(Boolean);
+  for (const long of skus) for (const short of skus) {
+    if (long.length <= short.length + 1 || !long.toUpperCase().endsWith(short.toUpperCase())) continue;
+    if (!" -/".includes(long[long.length - short.length - 1])) continue;
+    const prefix = long.slice(0, long.length - short.length).split(/[\s/-]+/).filter(Boolean);
+    if (prefix.length && prefix.every(token => /^[A-Za-z]+$/.test(token))) return [short, long];
+  }
+  return null;
+}
+// The API facts the sentences rely on. A search that did not run, failed, or finished empty is told apart by the API's
+// own `reason` text; any other text is "unknown", which only ever gives neutral wording.
+function reasonFacts(row, suggestion) {
+  const candidates = suggestion?.candidates || [];
+  const method = suggestion?.method || "none";
+  const apiReason = textOf(suggestion?.reason);
+  const tierReason = textOf(suggestion?.tier_reason);
+  const printed = hasPrintedCode(row);
+  return {
+    count: candidates.length,
+    pair: vendorPrefixPair(candidates),
+    rowKind: row ? row.row_kind ?? null : null,
+    note: textOf(row?.uncertainty),
+    search: candidates.length ? "found" : SEARCH_NOT_RUN.test(apiReason) ? "not_run" : SEARCH_FAILED.test(apiReason) ? "failed" :
+      apiReason === SEARCH_EMPTY && method === "none" ? "finished_empty" : "unknown",
+    tooMany: /^too many code-like readings/i.test(tierReason),
+    budget: /lookup budget/i.test(tierReason),
+    conflict: /readings conflict with the candidate/i.test(tierReason),
+    unclear: unclearFields(row),
+    printed,
+    blankLabels: printed ? [] : blankCodeLabels(row),
+    nothingToSearch: Boolean(row) && !printed && !textOf(row.description?.raw_value),
+    method,
+    ignored: (suggestion?.evidence || []).some(item => ["description_hint_ignored", "code_reading_ignored"].includes(item?.kind)),
+    tier: suggestion?.tier || "uncertain",
+  };
+}
+const HINT_METHODS = ["description_code_hint", "description_numeric_code_hint"];
+// id, precondition over reasonFacts, sentence. Order = priority.
+const REASON_RULES = [
+  {id: "look_alikes_twin", when: f => f.count > 1 && Boolean(f.pair),
+    say: f => "The catalog has both '" + f.pair[0] + "' and '" + f.pair[1] + "'."},
+  {id: "look_alikes", when: f => f.count > 1, say: f => f.count + " catalog products could match this line; pick the right one."},
+  {id: "not_searched", when: f => f.count === 0 && f.search === "not_run" && f.rowKind === "unknown",
+    say: () => "This line was not searched in the catalog: it is not clear what kind of line it is."},
+  {id: "search_failed", when: f => f.count === 0 && f.search === "failed",
+    say: () => "The app could not run its catalog search on this line; please check it."},
+  {id: "nothing_to_search", when: f => f.count === 0 && f.search === "finished_empty" && f.nothingToSearch,
+    say: () => "This line has no code or description to search the catalog with."},
+  {id: "searched_none", when: f => f.count === 0 && f.search === "finished_empty",
+    say: () => "The catalog search found no product for this line."},
+  {id: "no_suggestion", when: f => f.count === 0, say: () => "No suggestion is available for this line."},
+  {id: "too_many_readings", when: f => f.tooMany, say: () => "This line has too many code-like readings to check against the catalog."},
+  {id: "check_skipped", when: f => f.budget, say: () => "The app skipped its catalog check on this line; please check the match."},
+  {id: "conflict", when: f => f.conflict, say: () => "The app found conflicting readings on this line; please check it."},
+  {id: "unclear_reading", when: f => f.unclear.length > 0,
+    say: f => "The app was unsure how to read this line's " + joinWords(f.unclear) + "."},
+  {id: "not_a_product", when: f => f.rowKind === "unknown", say: () => "The app could not tell for sure that this line is a product."},
+  {id: "row_note", when: f => Boolean(f.note), say: f => "The reading of this line carries a note: “" + clip(f.note, 110) + "”."},
+  {id: "hint_with_code", when: f => HINT_METHODS.includes(f.method) && f.printed,
+    say: () => "Matched from a code in the description; please check it against the printed line."},
+  {id: "hint_blank_cell", when: f => HINT_METHODS.includes(f.method) && !f.printed && f.blankLabels.length > 0,
+    say: f => "No code was read under " + joinWords(f.blankLabels.map(label => "“" + label + "”")) + "; the match comes from a code in the description."},
+  {id: "hint_no_code", when: f => HINT_METHODS.includes(f.method) && !f.printed,
+    say: () => "The match comes from a code in the description; please check it."},
+  {id: "hint_rough", when: f => f.method === "description_code_hint_trigram",
+    say: () => "Matched approximately from a code in the description; please check it."},
+  {id: "approximate_code", when: f => f.method === "trigram" && f.printed,
+    say: () => "Matched by an approximate search on the name or code; please check it."},
+  {id: "approximate_name", when: f => f.method === "trigram" && !f.printed,
+    say: () => "Matched by an approximate search on the description; please check it."},
+  {id: "set_aside", when: f => f.ignored, say: () => "Other codes or sizes on this line were set aside; please check the match."},
+  {id: "normalized", when: f => f.method === "normalized" && f.printed,
+    say: () => "Matched after ignoring spaces, punctuation and capital letters in a printed code; please check it."},
+  {id: "exact", when: f => f.method === "exact" && f.printed,
+    say: () => "A printed code matched exactly; please check the match against the line."},
+  {id: "not_sure", when: f => f.tier !== "certain", say: () => "The app is not sure enough to confirm this one by itself."},
+  {id: "check", when: () => true, say: () => "Please check this match against the line."},
+];
+function plainReasonRule(row, suggestion) {
+  const facts = reasonFacts(row, suggestion);
+  const rule = REASON_RULES.find(item => item.when(facts));
+  return {id: rule.id, text: rule.say(facts)};
+}
+function plainReason(row, suggestion) {
+  return plainReasonRule(row, suggestion).text;
 }
 // How many lines per page have no exact spot on the page (their snapshot shows the whole page instead).
 function wholePageCounts(payload, groups) {
@@ -381,11 +522,11 @@ function enhancePending() {
 /* ---------- Three-tab review page ---------- */
 const TAB_INFO = {
   sure: {title: "Sure", tone: "green", color: "#167055", todoWord: "to confirm",
-    intro: "The printed code matches exactly one product. Look at the picture, then confirm."},
+    intro: "The printed code matches exactly one product. Look at the picture, then tap the check mark."},
   check: {title: "Check", tone: "amber", color: "#c27a00", todoWord: "to check",
-    intro: "Likely or unclear matches. Confirm a suggestion, pick another product, or mark the line as not a product."},
-  not: {title: "Not products", tone: "gray", color: "#4d5f70", todoWord: "to review",
-    intro: "Totals, notes, charges, and lines marked as not a product. Agree, or say if one is really a product."}
+    intro: "Each line says why we are not sure. Confirm the best guess, pick another product, or mark the line as not a product."},
+  not: {title: "Ignored lines", tone: "gray", color: "#4d5f70", todoWord: "optional",
+    intro: "Totals, notes and charges the app ignored. You do not need to open this tab."}
 };
 const pageImages = new Map();
 
@@ -505,6 +646,11 @@ function snapshotHTML(entry, tab) {
     '" data-page="' + page + '" data-color="' + TAB_INFO[tab].color + '"' + (box ? ' data-bbox="' + escapeHTML(JSON.stringify(box)) + '"' : "") + '></canvas>' +
     '<div class="snap-skeleton">Loading the picture…</div><div class="snap-fallback"><span>No picture for this line. Use the printed text below.</span> <button type="button" class="link-button" data-act="retry-snap">Try again</button></div></div>';
 }
+// Sure tab: one sentence saying what the line matched.
+function lookedLikeHTML(c) {
+  return '<div class="proposal green"><span class="guess-label">Looks like</span><strong class="guess-name">' + escapeHTML(c.description) + '</strong><span class="guess-code">' + escapeHTML(c.sku) + '</span>' +
+    (c.origin === "review" ? '<small>Added by a reviewer</small>' : "") + '</div>';
+}
 function productCardHTML(c, label, tone) {
   return '<div class="proposal ' + tone + '"><span class="guess-label">' + label + '</span><strong class="guess-code">' + escapeHTML(c.sku) + '</strong><span class="guess-desc">' + escapeHTML(c.description) + '</span>' + (c.origin === "review" ? '<small>Added by a reviewer</small>' : "") + '</div>';
 }
@@ -550,10 +696,21 @@ function cardParts(entry, tab, resolved) {
   const shown = entry.boundId ? entry.candidates.filter(c => c.candidate_id === entry.boundId)
     : tab === "sure" ? entry.candidates.filter(c => c.candidate_id === entry.suggestion?.suggested_candidate_id).slice(0, 1)
     : entry.candidates.slice(0, 3);
-  const label = entry.boundId ? "Your choice · please confirm" : tab === "sure" ? "Matches the printed code" : entry.tier === "probable" ? "Best guess · please check" : "Possible match";
-  let proposal = shown.map((c, i) => productCardHTML(c, i === 0 ? label : "Also possible", tab === "sure" ? "green" : "amber") +
-    (resolved ? "" : '<button class="button primary confirm-button" data-act="confirm" data-cid="' + escapeHTML(c.candidate_id) + '">' + (shown.length > 1 ? "Confirm this one" : "Confirm") + '</button>')).join("");
-  if (!shown.length) proposal = '<p class="hint">No suggestion. Search the catalog, or mark the line as not a product.</p>';
+  let proposal = "";
+  if (tab === "sure") {
+    proposal = shown.map(c => lookedLikeHTML(c) + (resolved ? "" : '<button class="button primary confirm-button check-button" data-act="confirm" data-cid="' + escapeHTML(c.candidate_id) + '"><span aria-hidden="true">✓</span> This is the product</button>')).join("");
+  } else {
+    // Check: why we are not sure, then the best guess, then up to two other products it could be.
+    const [first, ...others] = shown;
+    const label = entry.boundId ? "Your choice · please confirm" : entry.tier === "probable" ? "Best guess · please check" : "Possible match";
+    proposal = (entry.boundId ? "" : '<p class="reason" data-reason>' + escapeHTML(plainReason(row, entry.suggestion)) + '</p>');
+    if (first) proposal += productCardHTML(first, label, "amber") +
+      (resolved ? "" : '<button class="button primary confirm-button" data-act="confirm" data-cid="' + escapeHTML(first.candidate_id) + '">Confirm</button>');
+    if (others.length) proposal += '<div class="could-be"><p class="could-label">Could also be:</p>' + others.slice(0, 2).map(c =>
+      '<div class="could-row"><span class="could-text"><strong>' + escapeHTML(c.sku) + '</strong> ' + escapeHTML(c.description) + '</span>' +
+      (resolved ? "" : '<button class="button secondary" data-act="confirm" data-cid="' + escapeHTML(c.candidate_id) + '">This one instead</button>') + '</div>').join("") + '</div>';
+  }
+  if (!shown.length) proposal += '<p class="hint">No suggestion. Search the catalog, or mark the line as not a product.</p>';
   let actions;
   if (resolved) actions = finished;
   else if (tab === "sure") actions = '<button class="link-button" data-act="move">Not right? Check it</button>';
@@ -593,10 +750,11 @@ function renderTabs() {
   const left = lines.filter(e => e.status === "unresolved").length;
   const total = lines.length;
   const show = ui.show[tab];
-  const list = groups[tab].filter(e => show === "all" || !e.done);
-  const tabs = TAB_IDS.map(id => '<button role="tab" id="tab-' + id + '" class="tab ' + TAB_INFO[id].tone + (counts[id].total ? "" : " is-empty") + '" aria-selected="' + (id === tab) + '" aria-controls="tab-panel" data-tab="' + id + '" tabindex="' + (id === tab ? 0 : -1) + '"><span class="tab-name">' + TAB_INFO[id].title + '</span><strong class="tab-count">' + counts[id].total + '</strong><small>' + (counts[id].todo ? counts[id].todo + " " + TAB_INFO[id].todoWord : (counts[id].total ? "all done" : "none")) + '</small></button>').join("");
+  // Ignored lines are always listed in full: nothing in that tab is ever "to do".
+  const list = groups[tab].filter(e => tab === "not" || show === "all" || !e.done);
+  const tabs = TAB_IDS.map(id => '<button role="tab" id="tab-' + id + '" class="tab ' + TAB_INFO[id].tone + (counts[id].total ? "" : " is-empty") + (id === "not" ? " quiet" : "") + '" aria-selected="' + (id === tab) + '" aria-controls="tab-panel" data-tab="' + id + '" tabindex="' + (id === tab ? 0 : -1) + '"><span class="tab-name">' + TAB_INFO[id].title + '</span><strong class="tab-count">' + counts[id].total + '</strong><small>' + (id === "not" ? (counts[id].total ? "optional" : "none") : counts[id].todo ? counts[id].todo + " " + TAB_INFO[id].todoWord : (counts[id].total ? "all done" : "none")) + '</small></button>').join("");
   const bulk = tab === "sure" && !resolved ? '<button id="bulk-confirm" class="button primary">Confirm all visible</button>' : "";
-  const toolbar = '<div class="tab-toolbar"><label class="sr-only" for="tab-filter">Filter lines</label><input id="tab-filter" class="search-input" type="search" maxlength="80" placeholder="Filter lines" value="' + escapeHTML(ui.query) + '"><div class="segmented" role="group" aria-label="Which lines"><button type="button" data-show="todo" aria-pressed="' + (show === "todo") + '">To do</button><button type="button" data-show="all" aria-pressed="' + (show === "all") + '">All</button></div>' + bulk + '</div>';
+  const toolbar = '<div class="tab-toolbar"><label class="sr-only" for="tab-filter">Filter lines</label><input id="tab-filter" class="search-input" type="search" maxlength="80" placeholder="Filter lines" value="' + escapeHTML(ui.query) + '">' + (tab === "not" ? "" : '<div class="segmented" role="group" aria-label="Which lines"><button type="button" data-show="todo" aria-pressed="' + (show === "todo") + '">To do</button><button type="button" data-show="all" aria-pressed="' + (show === "all") + '">All</button></div>') + '' + bulk + '</div>';
   const emptyCopy = list.length ? null : emptyTabCopy(tab, counts, false);
   const intro = TAB_INFO[tab].intro + (tab === "check" && !counts.sure.total && counts.check.total ? " Nothing was sure this time, so every product line is here." : "");
   const emptyHTML = emptyCopy ? '<div class="tab-empty" id="tab-empty"><p>' + emptyCopy.text + '</p>' +
@@ -739,7 +897,7 @@ function handleTabAction(button, card, entry, tab) {
       await refreshAfterReview();
       toggleMark("moved", rowId, false);
       delete state.tabs.edit[rowId];
-      toast("Moved to Not products.");
+      toast("Moved to Ignored lines.");
       renderDocument();
     });
     return;

@@ -40,7 +40,7 @@ assert.deepEqual(ids(groups.check), ["b", "c", "g"]);
 assert.deepEqual(ids(groups.not), ["e"]);
 assert.equal(groups.sure.length + groups.check.length + groups.not.length, rows.length - 1, "continuations belong to their parent line");
 assert.equal(groups.not[0].kind, "system");
-assert.deepEqual(plain(api.tabCounts(groups)), {sure: {total: 2, todo: 2}, check: {total: 3, todo: 3}, not: {total: 1, todo: 1}});
+assert.deepEqual(plain(api.tabCounts(groups)), {sure: {total: 2, todo: 2}, check: {total: 3, todo: 3}, not: {total: 1, todo: 0}});  // Ignored lines never count as work
 assert.deepEqual(Array.from(groups.sure, e => e.lineIndex), [0, 3], "line numbers count only product-like rows");
 
 // A certain row that has no suggested product cannot be confirmed in one click: it goes to Check.
@@ -71,6 +71,14 @@ groups = api.assignTabs(payload(rows), suggestions, [], {moved: ["a"], agreed: [
 assert.ok(ids(groups.check).includes("a") && !ids(groups.sure).includes("a"));
 assert.equal(groups.not[0].agreed, true);
 assert.equal(groups.not[0].done, true);
+// Without any Agree click an ignored line is still not work, and it never blocks anything.
+groups = api.assignTabs(payload(rows), suggestions, [], null);
+assert.equal(groups.not[0].agreed, false);
+assert.equal(groups.not[0].done, true, "an ignored line needs no click");
+assert.equal(api.tabCounts(groups).not.todo, 0);
+// Only product lines can leave work behind: with every Check and Sure line answered, nothing is left to do anywhere.
+const answered = api.assignTabs(payload(rows), suggestions, rows.filter(r => !["document_detail", "continuation"].includes(r.row_role)).map(r => event(r.row_id, "approve")), null);
+assert.deepEqual(Object.values(plain(api.tabCounts(answered))).map(c => c.todo), [0, 0, 0] );
 groups = api.assignTabs(payload(rows), suggestions, [], {flagged: ["e"]});
 assert.equal(groups.not[0].flagged, true);
 assert.equal(groups.not[0].done, true);
@@ -90,7 +98,11 @@ assert.match(api.emptyTabCopy("sure", counts, true).text, /filter/);
 const allDone = {sure: {total: 2, todo: 0}, check: {total: 1, todo: 0}, not: {total: 0, todo: 0}};
 assert.equal(api.defaultTabOf(allDone), "sure");
 assert.match(api.emptyTabCopy("sure", allDone, false).text, /done/);
-assert.equal(api.defaultTabOf({sure: {total: 0, todo: 0}, check: {total: 0, todo: 0}, not: {total: 2, todo: 0}}), "not");
+assert.equal(api.defaultTabOf({sure: {total: 0, todo: 0}, check: {total: 0, todo: 0}, not: {total: 2, todo: 0}}), "not", "ignored lines are a first screen only when nothing else has lines");
+// The optional tab is never the first screen or a suggested next stop while a product tab has lines.
+assert.equal(api.defaultTabOf({sure: {total: 0, todo: 0}, check: {total: 1, todo: 0}, not: {total: 2, todo: 0}}), "check");
+assert.equal(api.defaultTabOf({sure: {total: 1, todo: 1}, check: {total: 1, todo: 1}, not: {total: 2, todo: 0}}), "sure");
+assert.equal(api.emptyTabCopy("sure", {sure: {total: 0, todo: 0}, check: {total: 0, todo: 0}, not: {total: 2, todo: 0}}, false).goto, null, "Sure never sends the person to Ignored lines");
 assert.equal(api.defaultTabOf({sure: {total: 0, todo: 0}, check: {total: 0, todo: 0}, not: {total: 0, todo: 0}}), "sure");
 assert.equal(api.emptyTabCopy("sure", {sure: {total: 0, todo: 0}, check: {total: 0, todo: 0}, not: {total: 0, todo: 0}}, false).goto, null);
 

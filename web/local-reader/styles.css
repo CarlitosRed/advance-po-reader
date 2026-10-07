@@ -83,3 +83,13 @@
 .snap-banner{margin:0 0 12px}.snap-banner p{margin:0}.snap-banner p+p{margin-top:6px}
 @media(min-width:900px){.tab-card-body{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:22px;align-items:start}.snap-frame canvas{min-width:0}.tab-actions{display:flex;flex-wrap:wrap}}
 @media(max-width:540px){.tab{padding:8px 3px;min-height:72px}.tab .tab-name{font-size:14px}.tab small{font-size:12px}.tab-panel{padding:10px}.tab-card{padding:12px}.segmented button{padding:0 12px}}
+
+/* ---- Plain reasons, Sure check-mark, quiet Ignored lines ---- */
+.reason{margin:0;padding:10px 12px;border-radius:10px;background:var(--amber-soft);border:1px solid #ead3a8;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.could-be{display:grid;gap:6px}.could-label{margin:0;font-size:14px;color:var(--muted);font-weight:600}
+.could-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:white}
+.could-text{flex:1 1 200px;min-width:0;overflow-wrap:anywhere;font-size:15px}.could-text strong{font-family:Consolas,monospace;color:var(--navy)}.could-row .button{min-height:44px;flex:none}
+.proposal .guess-name{font-size:18px;color:var(--ink);overflow-wrap:anywhere}.proposal.green .guess-code{font-size:16px}
+.check-button{display:flex;align-items:center;justify-content:center;gap:10px;min-height:56px;font-size:18px}.check-button span{font-size:22px;line-height:1}
+.tab.quiet{min-height:64px}.tab.quiet .tab-count{font-size:20px;font-weight:600}.tab.quiet .tab-name,.tab.quiet small{font-weight:400}.tab.quiet:not([aria-selected=true]){background:var(--bg);border-color:var(--line);border-bottom-color:#b5c0cb}
+.tab-card.green .check-button{background:var(--green);border-color:var(--green);color:white}

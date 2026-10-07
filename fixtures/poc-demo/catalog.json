@@ -601,6 +601,18 @@
     {
       "sku": "POC-3005",
       "description": "Fictional reusable anchor D-ring replacement model 30"
+    },
+    {
+      "sku": "POC-3101",
+      "description": "Fictional anchor strap kit"
+    },
+    {
+      "sku": "FICT POC-3101",
+      "description": "Fictional anchor strap kit"
+    },
+    {
+      "sku": "POC-3201",
+      "description": "Fictional hand-crank emergency radio"
     }
   ]
 }
