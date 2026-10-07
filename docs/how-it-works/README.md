@@ -1,6 +1,6 @@
 # How the Advance PO Reader works, in plain language
 
-You do not need to program, or know anything about AI, to follow this. The app reads a customer's purchase order (a PDF), turns each printed line into a suggestion from our product list, and **a person confirms every product**. This folder explains each decision the app makes along the way, one short page per decision ("gate"), with a small picture, an invented example, and links to the pull request (the proposed change) and to the code that does it.
+You do not need to program, or know anything about AI, to follow this. The app reads a customer's purchase order (a PDF), turns each printed line into a suggestion from our product list, and **a person confirms every product**. This folder explains each decision the app makes along the way, one short page per decision ("gate"), with a small picture, an invented example, and links to the pull request (the proposed change) and to the code that does it. Code links point at a fixed commit (the base `7426663`, or for the two files that live only elsewhere, the commit of PR #9 or of `main`), so they keep showing exactly what was read.
 
 All examples in these pages are invented (codes such as `ACME-1001`). No real order, customer, supplier or catalog code appears here.
 
@@ -14,40 +14,44 @@ flowchart TD
   V -->|"no"| X["Rejected: a plain message, no lines shown"]
   V -->|"yes"| G2["Gate 2: sort each line"]
   G2 -->|"total, note, charge, tax"| NP["Not products tab: optional"]
-  G2 -->|"product, or not sure"| G3["Gate 3: look in our catalog"]
+  G2 -->|"product"| G3["Gate 3: look in our catalog"]
+  G2 -->|"unknown: no lookup, no suggestion"| CHECK
   G3 --> G4["Gate 4: confidence tier"]
   G4 -->|"certain"| SURE["Sure tab"]
   G4 -->|"probable or uncertain"| CHECK["Check tab"]
   SURE --> G5["Gate 5: the review screen"]
   CHECK --> G5
   G5 --> G6["Gate 6: a person decides, answers are saved"]
-  G6 --> OUT["Finish review, then a spreadsheet of confirmed products"]
+  G6 --> FIN["Finish review: locks the answers"]
+  G6 --> OUT["Spreadsheet of confirmed products: from the Summary, before or after Finish"]
   SN["Gate 7: Safety Net, independent counts and text check, NOT in version 1"] -.-> G6
   CH["Gate 8: how a change to all of this gets in: pull request, review, checks, merge gate"]
   classDef done fill:#d8f0e4,stroke:#167055,color:#000
   classDef later fill:#fff3cd,stroke:#b58900,color:#000
   classDef risk fill:#f8d7da,stroke:#a02c2c,color:#000
   classDef plain fill:#eef1f4,stroke:#4d5f70,color:#000
-  class G1,G2,G3,G4,G5,G6,SURE,CHECK,OUT done
+  class G1,G2,G3,G4,G5,G6,SURE,CHECK,FIN,OUT done
   class SN,NP later
   class X risk
   class U,V,CH plain
 ```
 Green is in version 1. Amber is optional or not in version 1. Red is a stop. Gray is structure.
 
+Two kinds of line skip the catalog lookup: totals, notes, charges and taxes (they never need an answer), and "unknown" lines (the model could not tell what they are; they always start in Check with no suggestion, and a person must pick a product, add one, or say it is not a product). The spreadsheet does not wait for Finish: once every line has an answer, the Summary offers the download, and Finish is a separate step that locks the answers.
+
 Two rules hold at every step: **the app never approves a product by itself** (even "Sure" needs a person's confirm), and **what was printed is never rewritten** (corrections are saved next to it).
 
 ## The gates
 | Gate | What it decides | Page | Pull request | Main code files | Status |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Reading the PDF with the AI model, and the strict check of its answer | [01](01-reading-the-pdf.md) | [#14](https://github.com/CarlitosRed/advance-po-reader/pull/14), [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15), [#18](https://github.com/CarlitosRed/advance-po-reader/pull/18) | `backend/providers.py`, `backend/contracts.py`, `backend/service.py` | In version 1 |
-| 2 | Sorting each line: product, or total, note, charge, tax | [02](02-sorting-each-line.md) | [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15), [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16); [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) renames the tab | `backend/contracts.py`, `backend/review_summary.py`, `web/local-reader/workflow.js` | In version 1 |
-| 3 | Finding the product in our catalog | [03](03-finding-the-product.md) | [#18](https://github.com/CarlitosRed/advance-po-reader/pull/18), [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) | `backend/catalog.py`, `backend/service.py` | In version 1 |
-| 4 | The confidence tiers: certain, probable, uncertain | [04](04-confidence-tiers.md) | [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7), [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) | `backend/tiers.py` | In version 1 |
-| 5 | The review screen: Sure, Check, Ignored lines, snapshots | [05](05-the-review-screen.md) | [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16), [#13](https://github.com/CarlitosRed/advance-po-reader/pull/13); plain reasons and check-mark in [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) | `web/local-reader/workflow.js`, `web/local-reader/app.js` | Tabs in version 1; #21 part coming (not in this base) |
-| 6 | What a person decides and what is saved: answers, history, spreadsheet, quantity format | [06](06-decisions-and-saved-data.md) | [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7), [#13](https://github.com/CarlitosRed/advance-po-reader/pull/13), [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16) | `backend/service.py` (`review_run`), `backend/review_summary.py`, `backend/review_answers.py`, `web/local-reader/workflow.js` | In version 1 |
-| 7 | The Safety Net: independent page counts, source-text check, typed acknowledgments | [07](07-safety-net.md) | [#9](https://github.com/CarlitosRed/advance-po-reader/pull/9) (plan to join the tabs: [#20](https://github.com/CarlitosRed/advance-po-reader/pull/20)) | `backend/coverage.py`, `backend/source_checks.py` (only on the #9 branch) | **Built, approved, NOT in version 1** |
-| 8 | How a change gets in: branches, pull requests, reviews by another AI, checks, the merge gate | [08](08-how-a-change-gets-in.md) | [#10](https://github.com/CarlitosRed/advance-po-reader/pull/10) (merged), [#11](https://github.com/CarlitosRed/advance-po-reader/pull/11) (open, version 2) | `ROLES.md`, `tools/gate/` (on `main`) | In use |
+| 1 | Reading the PDF with the AI model, and the strict check of its answer | [01](01-reading-the-pdf.md) | [#14](https://github.com/CarlitosRed/advance-po-reader/pull/14), [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15), [#18](https://github.com/CarlitosRed/advance-po-reader/pull/18) | [`backend/providers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/providers.py), [`backend/contracts.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/contracts.py), [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py) | In version 1 |
+| 2 | Sorting each line: product, or total, note, charge, tax | [02](02-sorting-each-line.md) | [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15), [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16); [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) renames the tab | [`backend/contracts.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/contracts.py), [`backend/review_summary.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_summary.py), [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js) | In version 1 |
+| 3 | Finding the product in our catalog | [03](03-finding-the-product.md) | [#18](https://github.com/CarlitosRed/advance-po-reader/pull/18), [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) | [`backend/catalog.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/catalog.py), [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py) | In version 1 |
+| 4 | The confidence tiers: certain, probable, uncertain | [04](04-confidence-tiers.md) | [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7), [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) | [`backend/tiers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/tiers.py) | In version 1 |
+| 5 | The review screen: Sure, Check, Ignored lines, snapshots | [05](05-the-review-screen.md) | [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16), [#13](https://github.com/CarlitosRed/advance-po-reader/pull/13); plain reasons and check-mark in [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) | [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js), [`web/local-reader/app.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/app.js) | Tabs in version 1; #21 part coming (not in this base) |
+| 6 | What a person decides and what is saved: answers, history, spreadsheet, quantity format | [06](06-decisions-and-saved-data.md) | [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7), [#13](https://github.com/CarlitosRed/advance-po-reader/pull/13), [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16) | [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py) (`review_run`), [`backend/review_summary.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_summary.py), [`backend/review_answers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_answers.py), [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js) | In version 1 |
+| 7 | The Safety Net: independent page counts, source-text check, typed acknowledgments | [07](07-safety-net.md) | [#9](https://github.com/CarlitosRed/advance-po-reader/pull/9) (plan to join the tabs: [#20](https://github.com/CarlitosRed/advance-po-reader/pull/20)) | [`backend/coverage.py`](https://github.com/CarlitosRed/advance-po-reader/blob/100f1d83bb385aeeb55527b7beb2fb675cdf916b/backend/coverage.py), [`backend/source_checks.py`](https://github.com/CarlitosRed/advance-po-reader/blob/100f1d83bb385aeeb55527b7beb2fb675cdf916b/backend/source_checks.py) (only on the #9 branch) | **Built, approved, NOT in version 1** |
+| 8 | How a change gets in: branches, pull requests, reviews by another AI, checks, the merge gate | [08](08-how-a-change-gets-in.md) | [#10](https://github.com/CarlitosRed/advance-po-reader/pull/10) (merged), [#11](https://github.com/CarlitosRed/advance-po-reader/pull/11) (open, version 2) | [`ROLES.md`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/ROLES.md), [`tools/gate/`](https://github.com/CarlitosRed/advance-po-reader/tree/427be1e2abe3e51759b30a623df66c014351db55/tools/gate) (on `main`) | In use |
 
 Also: [Glossary](glossary.md) (tier, catalog, alias, SKU and other words).
 

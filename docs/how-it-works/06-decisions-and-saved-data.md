@@ -3,7 +3,7 @@
 [Back to the map](README.md) | Previous: [Gate 5](05-the-review-screen.md) | Next: [Gate 7, the Safety Net](07-safety-net.md)
 
 ## In one minute
-**The app suggests; a person decides.** Every product line needs one saved answer from a named person. Each answer is written to a history that nobody, not even the app, can edit or delete afterwards. When all lines are answered the person presses **Finish review**, which locks the review. The confirmed products can then be downloaded as a spreadsheet (CSV). Quantities are shown in one standard format, but the printed text is always kept next to it.
+**The app suggests; a person decides.** Every product line needs one saved answer from a named person. Each answer is written to a history that nobody, not even the app, can edit or delete afterwards. When all lines are answered the app shows a Summary. From there the person can download the confirmed products as a spreadsheet (CSV) right away, with or without finishing; **Finish review** is a separate button that locks the review. Quantities are shown in one standard format, but the printed text is always kept next to it.
 
 ## What a person can decide
 | Decision (button) | Saved as | What it means |
@@ -28,8 +28,12 @@ flowchart TD
   W --> S["Summary recomputed from the history"]
   S --> F{"Every line answered and no blockers?"}
   F -->|"no"| P
-  F -->|"yes"| R["Finish review: locked"]
-  R --> C["Download spreadsheet"]
+  F -->|"yes"| SUMM["Summary screen"]
+  SUMM -->|"Download as spreadsheet (needs at least one confirmed product)"| C["confirmed-products.csv"]
+  SUMM --> B{"Does anything block Finish?"}
+  B -->|"yes: a partly read page or the warnings not yet acknowledged, or a failed page"| K["Finish stays disabled: acknowledge, or take a new reading"]
+  B -->|"no"| R["Finish review: locked"]
+  R -->|"download still works"| C
 ```
 
 ## The rules the server checks first (`review_run` in `backend/service.py`)
@@ -46,7 +50,7 @@ flowchart TD
 Each answer is a row in `review_events` (`ReviewEvent`, `backend/models.py`): who (reviewer name), when, why (reason), which line, which evidence rectangle, the old value, the new value, the chosen product, and a running sequence number per run. The database itself rejects any later `UPDATE` or `DELETE` on these rows (trigger `review_events_immutable`, migration `0002_local_backend.py`), and the same holds for the saved candidate lists, source document records and catalog products. Once the model's answer is stored on the run (`run.result`), a database trigger (`processing_runs_guard`) refuses to change it: corrections are separate events laid over it. The person can open "Review history" under Details to see every event.
 
 ## The spreadsheet (CSV)
-Made in the browser from the confirmed products (`downloadCSV` in `web/local-reader/workflow.js`). File name `confirmed-products.csv`, UTF-8 with a byte-order mark so Excel shows accents correctly. Seven columns, documented in `docs/poc-demo-runbook.md`:
+Made in the browser from the confirmed products (`downloadCSV` in `web/local-reader/workflow.js`). The **Download as spreadsheet** button is on the Summary, which appears once every product and unknown line has an answer. It works before Finish and after it, and it stays available even when Finish is blocked (for example by a partly read page nobody has acknowledged); it is greyed out only when no product is confirmed. Finishing changes nothing in the file; it only locks further answers. File name `confirmed-products.csv`, UTF-8 with a byte-order mark so Excel shows accents correctly. Seven columns, documented in `docs/poc-demo-runbook.md`:
 
 `product_id, product, description, quantity, unit, quantity_as_printed, price`
 
@@ -88,8 +92,8 @@ Order `PO-TEST-004`: line 1 `ACME-1001`, quantity `020.00`, unit `EA`, price `3.
 - Flags set on totals and notes lines stay on the device and never reach the server or the CSV ([gate 2](02-sorting-each-line.md)).
 
 ## Where it lives
-- `backend/service.py` (`review_run`), `backend/api_models.py` (`ReviewRequest`), `backend/review_answers.py` (the three answers), `backend/review_summary.py` (`reviewed_summary`, `resolution_blockers`), `backend/models.py` (`ReviewEvent`), `backend_migrations/versions/0002_local_backend.py` (append-only triggers), `backend_migrations/versions/0005_review_sequence.py`.
-- `web/local-reader/workflow.js` (`renderSummary`, `downloadCSV`, `csvCell`, `postReview`), `web/local-reader/app.js` (`normalizeQuantity`, `quantityDisplay`).
+- [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py) (`review_run`), [`backend/api_models.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/api_models.py) (`ReviewRequest`), [`backend/review_answers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_answers.py) (the three answers), [`backend/review_summary.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_summary.py) (`reviewed_summary`, `resolution_blockers`), [`backend/models.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/models.py) (`ReviewEvent`), [`backend_migrations/versions/0002_local_backend.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend_migrations/versions/0002_local_backend.py) (append-only triggers), [`backend_migrations/versions/0005_review_sequence.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend_migrations/versions/0005_review_sequence.py).
+- [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js) (`renderSummary`, `downloadCSV`, `csvCell`, `postReview`), [`web/local-reader/app.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/app.js) (`normalizeQuantity`, `quantityDisplay`).
 
 ## Built by PR
 [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7) (explicit three answers, the approval rules); [#13](https://github.com/CarlitosRed/advance-po-reader/pull/13) (summary screen, spreadsheet, standard quantity format); [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16) (answers from the tab cards). The history table and its triggers were built before these PRs (exact PR not verified).

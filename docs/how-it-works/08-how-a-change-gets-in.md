@@ -11,7 +11,7 @@ Nobody changes the project directly. Every change is a **pull request**: a propo
 2. A **different** reviewer from the **other AI company** reads the change and writes either "go" on the plan, or "Approved at `<commit>`" on the exact version it checked. Anthropic's Claude work is reviewed by OpenAI's Codex, and the reverse. The author never approves its own work.
 3. **Automatic checks** (CI) run the tests and scan for forbidden files and secrets.
 4. For changes that touch money or trust (the rules, the model prompt, scripts, security files), **Carlos** types his own approval.
-5. The merge happens only through a small **gate** program that checks all of the above against the exact version being merged and writes a record into the history.
+5. The merge happens only through a small **gate** program that checks all of the above against the exact version being merged and writes a record into the history. (This is the rule for landing on `main`. The version 1 route into the integration branch is the one planned exception; see the table below.)
 6. Any new push after an approval cancels the approval: the reviewer must look again.
 
 ## One change, start to finish
@@ -83,9 +83,10 @@ gitGraph
 ```
 | | Before | After (today) |
 | --- | --- | --- |
-| Where the v1 code is | Spread over six stacked pull requests, each approved on its own | Together on the branch `integration/ui-and-matching` (head `7426663` when this page was written) |
-| In `main` | No | **Still no.** `main` is behind; the stack first has to land on `codex/worktree-standards`, and that branch has to reach `main` (task T-014, on hold per `tasks/merge-plan-2026-10-06.md`) |
-| Planned next | | Merge in order through the gate on Carlos's word, then tag `poc-v1` (a plan in `decisions.md`, not done) |
+| Where the v1 code is | Spread over six stacked pull requests (#13, #14, #15, #16, #18, #19). Five have their own approval by Codex; #14 has none of its own and merges as a stack with #15 (`decisions.md`, 2026-10-07) | Together on the branch `integration/ui-and-matching` (head `7426663` when this page was written) |
+| In `main` | No | **Still no, and not part of version 1.** `main` is behind; the stack first has to land on `codex/worktree-standards`, and that branch has to reach `main` (task T-014, on hold per `tasks/merge-plan-2026-10-06.md`). That landing is a later, version 2 job |
+| Planned next (version 1) | | Carlos's choice (`decisions.md`, 2026-10-07): after PR #21 is approved, merge #21 into `integration/ui-and-matching`, **without the merge gate** (the gate only merges pull requests aimed at `main`), then tag `poc-v1` on that branch head. Not done yet |
+| Later (version 2) | | Landing on `main` (T-014) goes through the whole gate described below, with Carlos typing the Tier 3 approvals himself |
 
 ## The three levels (tiers) of a change
 From `ROLES.md`. Every pull request carries exactly one label.
@@ -122,11 +123,11 @@ In the base: `backend-goal-checks.yml` (job `backend-goal`: the whole backend te
 | Claude task chats, such as "Claude · poc ui" (names seen in this project's pull requests; not listed in `ROLES.md`) | Builders, one task each | Anthropic |
 
 ## Where it lives
-- Rules and phrases: `ROLES.md` (on `main`). Product rules: `AGENTS.md` and `PROJECT_GOAL.md` (this base has both; the sections added by PR #10 are on `main`).
-- Gate program, its settings and tests: `tools/gate/po_gate.py`, `tools/gate/gate.json`, `tools/gate/test_po_gate.py`, `tools/gate/README.md` (on `main`).
-- CI: `.github/workflows/` (in the base; the `main` version adds the gate jobs).
-- Folder rules for builders (one chat per folder, no shared data, backups): `docs/worktree-standards.md`.
-- Handoff note per task: `docs/agent-handoff.md`.
+- Rules and phrases: [`ROLES.md`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/ROLES.md) (on `main`). Product rules: [`AGENTS.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/AGENTS.md) and [`PROJECT_GOAL.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/PROJECT_GOAL.md) (this base has both; the sections added by PR #10 are on `main`).
+- Gate program, its settings and tests: [`tools/gate/po_gate.py`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/po_gate.py), [`tools/gate/gate.json`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/gate.json), [`tools/gate/test_po_gate.py`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/test_po_gate.py), [`tools/gate/README.md`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/README.md) (on `main`).
+- CI: [`.github/workflows/`](https://github.com/CarlitosRed/advance-po-reader/tree/742666345a97dd00c1ed0d9e1ab725618bed3110/.github/workflows) (in the base; the `main` version adds the gate jobs).
+- Folder rules for builders (one chat per folder, no shared data, backups): [`docs/worktree-standards.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/docs/worktree-standards.md).
+- Handoff note per task: [`docs/agent-handoff.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/docs/agent-handoff.md).
 
 ## Built by PR
 [#10](https://github.com/CarlitosRed/advance-po-reader/pull/10) (the operating model and the gate; merged into `main`); [#11](https://github.com/CarlitosRed/advance-po-reader/pull/11) (conflict guard; open, version 2).
@@ -138,4 +139,4 @@ In the base: `backend-goal-checks.yml` (job `backend-goal`: the whole backend te
 - Not measured: review turnaround time or cost per pull request.
 
 ## Status
-In use (PR #10 is on `main`). The pull requests of version 1 are still waiting for their merge in order, on Carlos's word.
+In use (PR #10 is on `main`). The version 1 route is different from the general rules above: after PR #21 is approved it goes into the integration branch with no gate and a `poc-v1` tag; the gated landing on `main` is a version 2 job.

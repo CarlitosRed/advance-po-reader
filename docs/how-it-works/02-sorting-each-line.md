@@ -6,7 +6,7 @@
 Not every printed line is something we sell. Orders also print subtotals, shipping, taxes and notes ("deliver to dock 4"). Before any product is looked up, each line gets a label from the AI model (gate 1), and the app uses that label to decide what happens to the line:
 
 - **Product line:** goes on to the product lookup and **must be answered by a person**.
-- **Total, subtotal, charge, tax or note:** never looked up, never required. It is shown in an optional tab (**Not products**; PR #21 renames it **Ignored lines**).
+- **Total, subtotal, charge, tax or note:** never looked up, never required. It is shown in an optional tab (**Not products** in this base; the draft PR #21, head `e1088a0`, renames it **Ignored lines** and shows "optional" instead of a "to review" count; coming in PR #21, not in this base).
 - **Continuation:** a wrapped second line of a description. It is shown together with the product above it and is not a line of its own.
 - **Unknown:** the model could not tell. It must say why. It goes to the **Check** tab and a person must answer it.
 
@@ -56,10 +56,10 @@ The person has to answer lines 1 and 6. Lines 3, 4 and 5 can be ignored without 
 - Older answers (schema 1.1) have no roles; the code derives them from the kind (`effective_row_role`).
 
 ## Where it lives
-- Labels and consistency rules: `backend/contracts.py` (`ExtractedRow`, `ExtractionPayload._validate_item_groups`).
-- Prompt wording for labels and continuations: `backend/providers.py` (`EXTRACTION_PROMPT`, rules 4 to 7).
-- Who needs an answer: `backend/review_summary.py` (`effective_row_role`, `resolution_blockers`), `backend/tiers.py` (`review_suggestions`).
-- Tab placement: `web/local-reader/workflow.js` (`rowRoleOf`, `assignTabs`).
+- Labels and consistency rules: [`backend/contracts.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/contracts.py) (`ExtractedRow`, `ExtractionPayload._validate_item_groups`).
+- Prompt wording for labels and continuations: [`backend/providers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/providers.py) (`EXTRACTION_PROMPT`, rules 4 to 7).
+- Who needs an answer: [`backend/review_summary.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_summary.py) (`effective_row_role`, `resolution_blockers`), [`backend/tiers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/tiers.py) (`review_suggestions`).
+- Tab placement: [`web/local-reader/workflow.js`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/web/local-reader/workflow.js) (`rowRoleOf`, `assignTabs`).
 
 ## Built by PR
 [#15](https://github.com/CarlitosRed/advance-po-reader/pull/15) (unknown lines must carry a reason, so they pass the strict check); [#16](https://github.com/CarlitosRed/advance-po-reader/pull/16) (the three tabs, including Not products); [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7) (explicit answers for unclear lines). PR [#21](https://github.com/CarlitosRed/advance-po-reader/pull/21) (not in this base) renames the tab and makes it optional. The row kinds and roles themselves were built earlier (exact PR not verified).
@@ -71,4 +71,4 @@ The person has to answer lines 1 and 6. Lines 3, 4 and 5 can be ignored without 
 - Not measured: how often the model calls a real product a note, or the reverse.
 
 ## Status
-In version 1 (the Not products tab). The optional "Ignored lines" wording is coming in PR #21, which is part of the version 1 scope but not in this base.
+In version 1 (the Not products tab). The "Ignored lines" name and the "optional" wording are coming in PR #21 (head `e1088a0`, still in review), which is part of the version 1 scope but not in this base. I read its diff: it leaves the two buttons and the "flagged on this device only" behaviour on these lines unchanged.

@@ -66,10 +66,10 @@ Some lines print two codes, for example `ACME-1001` and `ZED ACME-1001`. Finding
 - A search box on the card (by code or name) and **Not in the catalog? Add a new product**. A product added by a reviewer is labelled "Added by a reviewer" and is scoped to that run's catalog.
 
 ## Where it lives
-- `backend/catalog.py`: `retrieve_candidates` (the six steps), `_description_code_hints`, `_numeric_description_code_hints`, `normalize_identifier`, `CANONICAL_SKU_ROLES`, `import_products` (adding catalog products and aliases).
-- `backend/service.py`: `process_run` calls the lookup once per product line and saves the result.
-- `backend/pools.py`: which products are in scope.
-- `backend/review_answers.py`: a person's own search and "new product" answers.
+- [`backend/catalog.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/catalog.py): `retrieve_candidates` (the six steps), `_description_code_hints`, `_numeric_description_code_hints`, `normalize_identifier`, `CANONICAL_SKU_ROLES`, `import_products` (adding catalog products and aliases).
+- [`backend/service.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/service.py): `process_run` calls the lookup once per product line and saves the result.
+- [`backend/pools.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/pools.py): which products are in scope.
+- [`backend/review_answers.py`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/backend/review_answers.py): a person's own search and "new product" answers.
 
 ## Built by PR
 [#18](https://github.com/CarlitosRed/advance-po-reader/pull/18) (roles, so step 1 can fire) and [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) (prefix and second-code rules, in `backend/tiers.py`). The retrieval engine itself (`catalog-retrieval-v2`) was built earlier; its exact PR is not verified.
