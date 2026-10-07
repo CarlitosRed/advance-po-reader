@@ -765,6 +765,119 @@ class RenameStatusTests(unittest.TestCase):
         self.assertEqual(got["files"][0]["status"], "renamed")
 
 
+NL, CR, TAB, NUL, BS = chr(10), chr(13), chr(9), chr(0), chr(92)
+
+
+class StrictValueTests(unittest.TestCase):
+    """Round 3: every value the gate relies on is validated strictly (exact type, whole-string match) BEFORE it is
+    compared. Each bad value is tried in the first read only, the second read only, and both reads."""
+
+    SHA_BAD = [HEAD + NL, HEAD + CR + NL, " " + HEAD, HEAD + " ", TAB + HEAD, "A" * 40, "a" * 39, "a" * 41,
+               "g" * 40, "", None, 5, True, ["a" * 40], {"sha": HEAD}, "0x" + "a" * 38]
+    COUNT_BAD = [True, False, 1.0, 1.5, "1", None, -1, [], {}, 2]
+    NUMBER_BAD = ["7", 7.0, True, None, 8, [], 0]
+    NAME_BAD = ["", None, 5, ["main"], "main" + NL, " main", "main ", "ma" + TAB + "in", "main" + CR, NUL + "main", True]
+
+    def pull(self, **over):
+        return pr(files=[{"path": "backend/ordinary.py"}], **over)
+
+    def check(self, field, bad):
+        """Run the bad value as first-read-only, second-read-only and in both; each must be refused."""
+        for where in ("first", "second", "both"):
+            pull = self.pull()
+            after = {}
+            if where in ("first", "both"):
+                pull[field] = bad
+            if where in ("second", "both"):
+                after[field] = bad
+            self.assertFalse(safe(FakeGH(pull, after=after)), (field, repr(bad), where))
+            if field == "changedFiles":   # the file list is judged against the count; keep list and count in step
+                pass
+
+    def test_good_values_pass(self):
+        self.assertTrue(safe(FakeGH(self.pull())))
+
+    def test_commit_ids_are_matched_as_whole_strings(self):
+        for field in ("baseRefOid", "headRefOid"):
+            for bad in self.SHA_BAD:
+                self.check(field, bad)
+
+    def test_file_count_must_be_a_real_integer_and_equal_to_the_list(self):
+        for bad in self.COUNT_BAD:
+            self.check("changedFiles", bad)
+
+    def test_number_must_be_the_integer_asked_for(self):
+        for bad in self.NUMBER_BAD:
+            self.check("number", bad)
+
+    def test_branch_names_must_be_clean_non_empty_text(self):
+        for field in ("baseRefName", "headRefName"):
+            for bad in self.NAME_BAD:
+                self.check(field, bad)
+
+    def test_a_value_that_is_equal_but_not_identical_in_type_never_counts_as_unchanged(self):
+        for field, first, second in (("changedFiles", 1, True), ("changedFiles", 1, 1.0), ("number", 7, 7.0),
+                                     ("number", 7, True)):
+            self.assertFalse(safe(FakeGH(self.pull(), after={field: second})), (field, second))
+
+
+class StrictPathTests(unittest.TestCase):
+    """Round 3: file names, old names and statuses are validated as exact text; deny rules ignore case."""
+
+    def entry(self, **kw):
+        e = {"filename": "backend/ordinary.py", "status": "added"}
+        e.update(kw)
+        return json.dumps([e])
+
+    def run_entry(self, out):
+        return safe(FakeGH(pr(files=[{"path": "backend/ordinary.py"}]), api_out=out))
+
+    BAD_PATHS = ["x.pdf" + NL, "x.pdf" + CR, " reader.py", "reader.py ", "a" + TAB + "b.py", "a" + NUL + "b.py",
+                 "/abs.py", "./a.py", "a/./b.py", "a/../b.py", "../a.py", "a//b.py", "a" + BS + "b.py", "a/", ".", "..",
+                 "reader.py" + NL + "x"]
+
+    def test_bad_file_names_are_refused(self):
+        for bad in self.BAD_PATHS:
+            self.assertFalse(self.run_entry(self.entry(filename=bad)), repr(bad))
+
+    def test_bad_old_names_are_refused_for_every_status(self):
+        for bad in self.BAD_PATHS:
+            for status in ("renamed", "modified", "added"):
+                self.assertFalse(self.run_entry(self.entry(status=status, previous_filename=bad)), (status, repr(bad)))
+
+    def test_status_must_be_exact_lowercase_text(self):
+        for bad in ("added" + NL, " added", "added ", "ADDED", "Added", "renamed" + NL, "RENAMED", "added" + CR):
+            self.assertFalse(self.run_entry(self.entry(status=bad, previous_filename="backend/old.py")), repr(bad))
+
+    def test_evaluate_alone_refuses_bad_names_and_statuses(self):
+        for bad in self.BAD_PATHS:
+            self.assertFalse(rules(g.evaluate(pr(files=[{"path": bad}]), CFG))["files"], repr(bad))
+            rec = {"path": "backend/ordinary.py", "previous_path": bad}
+            self.assertFalse(rules(g.evaluate(pr(files=[rec]), CFG))["files"], repr(bad))
+        for bad in ("ADDED", "added" + NL, 5, None, "moved"):
+            rec = {"path": "backend/ordinary.py", "status": bad}
+            self.assertFalse(rules(g.evaluate(pr(files=[rec]), CFG))["files"], repr(bad))
+
+    def test_forbidden_files_are_caught_whatever_their_case(self):
+        for path in ("SCAN.PNG", "docs/Order.PDF", ".ENV", "a/.Env.Local", "Data/orders.csv", "OUTPUT/run.json",
+                     "x/Model.GGUF", "TMP/x.txt", ".VENV/lib/x.py"):
+            self.assertFalse(rules(g.evaluate(pr(files=[{"path": path}]), CFG))["files"], path)
+
+    def test_the_env_example_allowance_stays_exact(self):
+        self.assertTrue(rules(g.evaluate(pr(files=[{"path": ".env.example"}]), CFG))["files"])
+        self.assertFalse(rules(g.evaluate(pr(files=[{"path": ".ENV.EXAMPLE"}]), CFG))["files"])
+
+    def test_protected_files_raise_the_tier_whatever_their_case(self):
+        for path in ("Reader.py", "READER.PY", ".GitHub/workflows/x.yml", "tools/Gate/po_gate.py", "roles.md",
+                     "Scripts/run.py", "ALEMBIC/versions/x.py"):
+            ev = g.evaluate(pr(files=[{"path": path}], labels=[{"name": "tier-1"}]), CFG)
+            self.assertEqual(ev["tier"], 3, path)
+
+    def test_docs_shortcut_for_tier_1_stays_case_exact(self):
+        ev = g.evaluate(pr(files=[{"path": "DOCS/x.md"}], labels=[{"name": "tier-1"}]), CFG)
+        self.assertEqual(ev["tier"], 2)
+
+
 class MergeTests(unittest.TestCase):
     def run_merge(self, gh, merged_as=AUTHOR, **kw):
         lines = []
