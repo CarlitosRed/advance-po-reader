@@ -105,7 +105,7 @@ The raw rejected answer is not shown to the person. A developer-only tool (`scri
 ## How we know it works
 - Tests: `tests/backend/test_poc_prompt.py` fails if the prompt stops stating any contract rule; `tests/backend/test_contract_provider.py`, `tests/backend/test_service_failures.py`, `tests/backend/test_poc_live.py` and `tests/backend/test_live_command.py` use pretend providers (no network).
 - Reviews: Codex approved #15 at `2d038c8` and #18 at `e8fe9a4`. #14 is reviewed inside the #15 stack; its own page shows "Not approved at `b3e8156`" for a test-isolation finding that #15 resolves (not re-verified here).
-- Measured on the 33 sample orders (from `project-notes/advance-po-reader/decisions.md`, 2026-10-06): 33 of 33 orders completed and the number of product lines matched the reference list for all 33 (150 lines). One order (PO-06) was rejected once with `provider_payload_validation_failed` and passed on the next read; the rejection rate over many reads is not measured. Average 44 seconds per order and about $0.13 in total for all runs.
+- Measured on the 33 sample orders (from `project-notes/advance-po-reader/decisions.md`, 2026-10-06): 33 of 33 orders completed and the number of product lines matched the reference list for all 33 (150 lines). One of the 33 orders was rejected once with `provider_payload_validation_failed` and passed on the next read; the rejection rate over many reads is not measured. Average 44 seconds per order and about $0.13 in total for all runs.
 - Caveat: no human checked every printed code and quantity line by line; model accuracy on brand-new orders is not measured.
 
 ## Status
