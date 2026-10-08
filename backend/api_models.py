@@ -3,10 +3,18 @@ from typing import Annotated, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 from backend.catalog import ProductInput
+from backend.text_guard import reject_nul
 
 
 class RequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    @model_validator(mode="after")
+    def no_nul_text(self):
+        # Every persisted client string (and nested JSON string) is checked once, here.
+        for name in type(self).model_fields:
+            reject_nul(getattr(self, name))
+        return self
 
 
 class NameRequest(RequestModel):

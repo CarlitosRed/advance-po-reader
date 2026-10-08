@@ -192,6 +192,9 @@ class ExtractionPayload(Immutable):
 
     def _validate_item_groups(self, regions: dict) -> None:
         by_id = {row.row_id: row for row in self.rows}
+        # Pages may arrive in any order that covers 1..N; always resolve by the declared page number.
+        page_boxes = {(page.page_number, region.region_reference): region.bbox
+                      for page in self.pages for region in page.regions}
         groups: dict[str, list[ExtractedRow]] = {}
         for row in self.rows:
             if row.row_role is None:
@@ -210,12 +213,8 @@ class ExtractionPayload(Immutable):
                     raise ValueError("continuation and product item must be on the same source page")
                 if row.quantity.raw_value is not None or row.unit.raw_value is not None or row.unit_price.raw_value is not None or row.line_total.raw_value is not None or row.identifiers:
                     raise ValueError("continuations cannot carry independent item fields or identifiers")
-                source_boxes = [next(region.bbox for region in self.pages[ref.page_number - 1].regions
-                                     if region.region_reference == ref.region_reference)
-                                for ref in target.evidence]
-                continuation_boxes = [next(region.bbox for region in self.pages[ref.page_number - 1].regions
-                                           if region.region_reference == ref.region_reference)
-                                      for ref in row.evidence]
+                source_boxes = [page_boxes[(ref.page_number, ref.region_reference)] for ref in target.evidence]
+                continuation_boxes = [page_boxes[(ref.page_number, ref.region_reference)] for ref in row.evidence]
                 if not any(box.y1 <= following.y0 and following.y0 - box.y1 <= 0.08 and
                            box.x0 <= following.x1 and following.x0 <= box.x1
                            for box in source_boxes for following in continuation_boxes):

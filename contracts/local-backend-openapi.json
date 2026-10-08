@@ -1176,22 +1176,31 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "enum": [
-              "approve",
-              "no_match",
-              "acknowledge",
-              "correct",
-              "resolve",
-              "acknowledge_page",
-              "acknowledge_document",
-              "propose_candidate",
-              "this_is_product",
-              "new_product",
-              "not_a_product",
-              "not_product"
+            "anyOf": [
+              {
+                "enum": [
+                  "approve",
+                  "no_match",
+                  "acknowledge",
+                  "correct",
+                  "resolve",
+                  "acknowledge_page",
+                  "acknowledge_document",
+                  "propose_candidate",
+                  "this_is_product",
+                  "new_product",
+                  "not_a_product"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "not_product",
+                "deprecated": true,
+                "type": "string"
+              }
             ],
-            "title": "Action",
-            "type": "string"
+            "description": "Use not_a_product for exclusion. not_product is a deprecated legacy alias retained for existing clients and audit events.",
+            "title": "Action"
           },
           "candidate_ids": {
             "anyOf": [

@@ -143,7 +143,7 @@ class SyntheticProvider:
             return ProviderResult(None, "invalid_output", error_code="fixture_page_mismatch",
                                   model=FIXTURE_VERSION, synthetic=True,
                                   prompt_version="hand-authored-fixture-v1", actual_model=FIXTURE_VERSION)
-        return ProviderResult(payload, "succeeded", model=FIXTURE_VERSION,
+        return ProviderResult(payload, "succeeded", model=FIXTURE_VERSION, schema_version=payload.schema_version,
                               latency_ms=int((perf_counter() - started) * 1000), synthetic=True,
                               prompt_version="hand-authored-fixture-v1", actual_model=FIXTURE_VERSION)
 
