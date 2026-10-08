@@ -18,7 +18,7 @@ Plain meanings, in alphabetical order. All examples use invented data.
 | **Evidence** | The exact spot on the page (a rectangle) where a value was read. Every row and every value must point to one. |
 | **Gate** | One decision point in the flow. Each page of this folder explains one gate. |
 | **Hash (SHA-256)** | A fingerprint of a file. If one byte changes, the fingerprint changes. Used to prove the file that was approved for sending is the file that was sent. |
-| **Ignored lines / Not products (tab)** | The review tab for totals, notes, charges, taxes and lines a person marked "not a product". In this version it is named "Not products"; PR #21 renames it "Ignored lines" and makes it optional. |
+| **Ignored lines / Not products (tab)** | The review tab for totals, notes, charges, taxes and lines a person marked "not a product". In version 1 it is named "Ignored lines" and is optional (before PR #21 it was named "Not products"). |
 | **Model** | The AI program that reads the PDF page and writes down what is printed. It does not choose catalog products. |
 | **Normalized code** | A code with everything except letters and digits removed and capitals only. `acme-1001` and `ACME 1001` both become `ACME1001`. Used to find near-identical spellings. |
 | **PR (pull request)** | A proposed change to the code, reviewed before it is merged. "PR #19" is change number 19. |
