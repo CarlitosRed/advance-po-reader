@@ -1,3 +1,5 @@
+> Historical PR #9 artifact at `100f1d83bb385aeeb55527b7beb2fb675cdf916b`. In v1.1 integration these Safety Net rules apply only when `PO_BACKEND_SAFETY_NET_FINISH_BLOCKING` is ON; it defaults OFF. New controls are deferred to the separate UI track. See [current integration plan](integrate-safety-net-plan.md).
+
 # T-009 PR B: completeness, source grounding and F7/F8
 
 Owner: **Codex · goal gaps:**. Reviewer: Claudio · PR review. Updated: 2026-10-05.

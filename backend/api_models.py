@@ -11,9 +11,9 @@ class RequestModel(BaseModel):
 
 
 class PageSourceEvidence(RequestModel):
-    scope: Literal["page"] = "page"
+    scope: Literal["page"]
     page_number: StrictInt = Field(ge=1)
-    source_sha256: StrictStr = Field(pattern=r"^[a-f0-9]{64}$")
+    source_sha256: StrictStr = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
 
 
 class RegionReviewEvidence(EvidenceReference):
@@ -24,7 +24,7 @@ class DocumentSourceEvidence(RequestModel):
     scope: Literal["document"]
     source_document_id: UUID
     run_id: UUID
-    source_sha256: StrictStr = Field(pattern=r"^[a-f0-9]{64}$")
+    source_sha256: StrictStr = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
 
 
 # Unscoped region references remain valid for existing row clients/history.
@@ -32,6 +32,7 @@ ReviewEvidence = EvidenceReference | RegionReviewEvidence | PageSourceEvidence |
 
 
 class PageCountRequest(PageSourceEvidence):
+    scope: Literal["page"] = "page"
     product_count: StrictInt = Field(ge=0, le=100000)
     reviewer: StrictStr = Field(min_length=1, max_length=120)
     reason: StrictStr = Field(min_length=1, max_length=500)
@@ -123,12 +124,11 @@ class ReviewRequest(RequestModel):
                 raise ValueError("page/document acknowledgment requires source evidence and no row")
         elif not self.row_id or not self.evidence_reference:
             raise ValueError("row and source evidence required")
-        if self.action in {"acknowledge_page", "confirm_unavailable_page_text"}:
+        if self.action == "confirm_unavailable_page_text":
             if len(self.evidence_reference) != 1 or not isinstance(self.evidence_reference[0], PageSourceEvidence):
                 raise ValueError("one explicit page source reference required")
-        elif self.action == "acknowledge_document":
-            if len(self.evidence_reference) != 1 or not isinstance(self.evidence_reference[0], DocumentSourceEvidence):
-                raise ValueError("one explicit document source/run reference required")
+        elif self.action in {"acknowledge_page", "acknowledge_document"}:
+            pass  # The service selects typed ON or legacy OFF acknowledgment validation.
         elif self.action != "resolve" and any(not isinstance(ref, EvidenceReference) for ref in self.evidence_reference):
             raise ValueError("row actions require region evidence")
         if self.action == "approve":

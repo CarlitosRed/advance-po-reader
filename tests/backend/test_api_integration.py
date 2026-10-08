@@ -58,7 +58,7 @@ def api_engine():
 
 @pytest.fixture
 def api_settings(api_engine):
-    return Settings(_env_file=None, database_url=SecretStr(api_engine.url.render_as_string(hide_password=False)),
+    return Settings(_env_file=None, safety_net_finish_blocking=True, database_url=SecretStr(api_engine.url.render_as_string(hide_password=False)),
                     local_api_token=SecretStr(TOKEN), openai_api_key=None,
                     storage_directory=ROOT / "data" / "demo-agent" / "tests" / uuid4().hex)
 

@@ -17,7 +17,8 @@ from backend.coverage import page_coverage
 from backend.synthetic import fixture_payload
 from tests.goal.conftest import ROOT, PRODUCTS, ok, payload, process, product_row, review_body
 
-pytestmark = pytest.mark.goal
+pytestmark = [pytest.mark.goal, pytest.mark.usefixtures("safety_net_finish_blocking"),
+              pytest.mark.parametrize("safety_net_finish_blocking", [True], indirect=True)]
 
 
 def count_body(result, count, page=1, **extra):

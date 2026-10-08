@@ -1,3 +1,5 @@
+> Historical PR #9 artifact at `100f1d83bb385aeeb55527b7beb2fb675cdf916b`. In v1.1 integration these Safety Net rules apply only when `PO_BACKEND_SAFETY_NET_FINISH_BLOCKING` is ON; it defaults OFF. New controls are deferred to the separate UI track. See [current integration plan](integrate-safety-net-plan.md).
+
 # Goal acceptance scorecard — rerun October 5, 2026
 
 Execution: local isolated run. Suite: `python -m pytest -m goal`. Skips count as blocked; strict xfails are separate.

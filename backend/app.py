@@ -377,7 +377,8 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
             from backend.tiers import review_suggestions
             tiers = {value["row_id"]: value["tier"] for value in review_suggestions(session, tenant, run)}
             source = source_for(session, tenant, run.source_document_id)
-            return reviewed_summary(run, [serialize(event) for event in events], tiers, source)
+            return reviewed_summary(run, [serialize(event) for event in events], tiers, source,
+                                    safety_net_finish_blocking=configuration.safety_net_finish_blocking)
 
     @app.post("/runs/{run_id}/cancel", response_model=RunResponse)
     def cancel(run_id: UUID, request: Request):

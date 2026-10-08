@@ -244,7 +244,7 @@ def pg_trgm_available(session: Session) -> bool:
 def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID | None,
                         identifiers: list[dict], description: str | None,
                         limit: int = 5, *, vendor_ids: list[UUID] | None = None,
-                        pool_id: UUID | None = None) -> dict:
+                        pool_id: UUID | None = None, safety_net_finish_blocking: bool = False) -> dict:
     """Return a bounded candidate snapshot; exact hits do not auto-resolve.
 
     Unknown identifier roles can use explicitly supplied same-role aliases but
@@ -323,7 +323,7 @@ def retrieve_candidates(session: Session, tenant_id: UUID, vendor_id: UUID | Non
             if rows:
                 method = "normalized" if normalized else "exact"
                 return _result(method, [scoped_candidate(row, method) for row in rows], limit)
-    labeled_hints = _labeled_description_code_hints(description)
+    labeled_hints = _labeled_description_code_hints(description) if safety_net_finish_blocking else []
     if labeled_hints:
         rows = list(session.scalars(select(CatalogProduct).where(
             *scope, CatalogProduct.sku.in_([hint["raw_token"] for hint in labeled_hints])

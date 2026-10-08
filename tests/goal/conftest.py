@@ -58,7 +58,7 @@ def pytest_sessionfinish(session, exitstatus):
     destination = session.config.getoption("--goal-scorecard")
     if not destination:
         return
-    lines = ["# Goal acceptance scorecard — rerun October 5, 2026", "",
+    lines = ["# Goal acceptance scorecard — v1.1 backend integration, October 8, 2026", "",
              "Execution: " + os.environ.get("GOAL_TEST_EXECUTION", "local isolated run") + ". "
              "Suite: `python -m pytest -m goal`. Skips count as blocked; strict xfails are separate.", "",
              "T-007 acceptance suite; T-009 PR A plus PR B items 3/4/6 (independent counts, source grounding and F7/F8). "
@@ -79,7 +79,7 @@ def pytest_sessionfinish(session, exitstatus):
     lines += ["", f"Total: {counts['passed']} passed, {counts['xfail']} xfail, "
               f"{counts['blocked']} blocked, {counts['failed']} failed. Pytest exit status: {exitstatus}.", "",
               "## Remaining work", "",
-              "F7/F8 are implemented in item 6. PR #9 still requires exact-head review; "
+              "F7/F8 backend rules are available in the enabled mode. PR #20 requires independent exact-head review; "
               "CI execution and browser availability must be reported separately.", "",
               "## PR A behavior verified", "",
               "Goals 4–6 now pass: only Certain is initially preselected, every product still needs "
@@ -90,39 +90,20 @@ def pytest_sessionfinish(session, exitstatus):
               "the original strings and require fresh approval. Quantity/unit evidence "
               "must reference that row or a fully contained cell on the same page; unlinked shared headers "
               "are rejected. A clean throwaway database passes upgrade/downgrade/upgrade.", "",
-              "## PR B item 3 behavior verified", "",
-              "Each source page requires an independent, attributed reviewer product count "
-              "bound to its exact hash and run. Missing evidence and count mismatches block Finish; "
-              "zero with product rows is a mismatch, and empty pages need their own zero count. "
-              "Original product items are counted without continuations/details or row exclusions. "
-              "Count corrections append evidence and require a latest-event reference, reason and "
-              "independent-count-error attestation. A reported source discrepancy stays blocked in "
-              "the old run; a new run receives no copied count or product approvals. Matching counts "
-              "do not approve products. The local backend OpenAPI snapshot is compared with app.openapi().", "",
-              "## PR B item 4 behavior verified", "",
-              "Literal product descriptions and identifiers are compared only inside their declared "
-              "source regions on the hash-checked PDF. Unicode case-folding and whitespace normalization "
-              "preserve punctuation/numbers and require contiguous phrase token boundaries. Original "
-              "observations, literal decoded text and normalized evidence stay separately recorded. "
-              "Unsupported text needs attributed row source review; unavailable text retains all tiers "
-              "and needs one source-bound page confirmation for all affected rows. Neither action "
-              "approves products or clears count/row blockers. Legacy runs lacking grounding need "
-              "new processing. Goal 7's original assertion passes without an xfail. Browser cases "
-              "exercise text, photo and unsupported-row controls against the isolated API.", "",
-              "## PR B item 6 behavior verified", "",
-              "Explicitly labeled short, alphabetic and date-shaped codes (including A123/2026) "
-              "are bounded literal SKU retrieval hints within the authorized tenant/vendor/pool. "
-              "Tests execute with and without the actual pg_trgm extension in a disposable transaction. "
-              "Descriptions/identifiers remain literal, unlabeled dates/quantities/currency stay "
-              "conservative, conflicts veto Certain, and every product requires explicit approval. "
-              "Region evidence remains bound to the row; page acknowledgments name the exact hash/page "
-              "including partial pages without regions; document acknowledgments name source/hash/run. "
-              "The real website buttons send these scopes and cannot bypass row, grounding or count "
-              "blockers. Historical region audit evidence remains readable. OpenAPI is regenerated.", "",
-              ("Browser check: passed against the real review controls and test-owned API, including source-text confirmation and page/document acknowledgment controls."
+              "## v1.1 Safety Net modes", "",
+              "The server setting PO_BACKEND_SAFETY_NET_FINISH_BLOCKING defaults OFF. "
+              "The default mode preserves v1 processing, existing description-code retrieval and Finish behavior; "
+              "its two strict expected failures retain the historical grounding/completeness gaps. "
+              "The added PR #9 modules explicitly enable the setting and verify independent counts, "
+              "source confirmations and typed source-bound acknowledgments without approving products. "
+              "Mode regressions include PDF/PNG/JPG, legacy acknowledgments, mode transition, malformed "
+              "typed evidence and source integrity at Finish. This is fixed-provider evidence only.", "",
+              "New Safety Net UI controls and their browser proof are deferred to the new UI track. "
+              "No web file is changed by this integration. Current-tab browser checks below exercise OFF.", "",
+              ("Current v1 browser checks: passed locally against the isolated API."
                if any(r["status"] == "passed" and "website_three_answers" in r["test"] for r in RECORDS)
-               else "Browser check: not passed in this run. CI deliberately omits browser tooling; "
-                    "the resulting skip is visible as blocked goal 9, not a browser pass."), "",
+               else "Current v1 browser checks: not passed in this run; inspect explicit skip reasons. "
+                    "CI deliberately omits browser tooling. No new Safety Net UI is claimed."), "",
               "## Expected failures", ""]
     lines += [f"- `{record['test'].split('::')[-1]}`: {record['reason']}"
               for record in RECORDS if record["status"] == "xfail"]
@@ -224,14 +205,19 @@ class FixedJSONProvider:
 
 
 @pytest.fixture
-def desk(goal_engine, tmp_path, monkeypatch):
+def safety_net_finish_blocking(request):
+    return getattr(request, "param", False)
+
+
+@pytest.fixture
+def desk(goal_engine, tmp_path, monkeypatch, safety_net_finish_blocking):
     # Relocate only the configuration/storage boundary; all product logic stays real.
     monkeypatch.setattr(backend.config, "ROOT", tmp_path)
     monkeypatch.setattr(backend.uploads, "ROOT", tmp_path)
     settings = backend.config.Settings(_env_file=None,
         database_url=SecretStr(goal_engine.url.render_as_string(hide_password=False)),
         storage_directory=tmp_path / "data" / "uploads", local_api_token=SecretStr(TOKEN),
-        live_processing_enabled=False, openai_api_key=None)
+        live_processing_enabled=False, openai_api_key=None, safety_net_finish_blocking=safety_net_finish_blocking)
     provider = FixedJSONProvider()
     with TestClient(create_app(settings, engine=goal_engine, provider=provider),
                     base_url="http://127.0.0.1:8014", headers={"X-Local-Token": TOKEN}) as client:

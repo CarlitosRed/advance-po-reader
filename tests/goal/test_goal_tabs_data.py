@@ -8,7 +8,7 @@ import subprocess
 from PIL import Image
 import pytest
 
-from conftest import ROOT, PRODUCTS, ok, process, product_row
+from tests.goal.conftest import ROOT, PRODUCTS, ok, process, product_row
 
 pytestmark = pytest.mark.goal
 

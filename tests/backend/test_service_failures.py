@@ -132,7 +132,7 @@ def resource_factory(engine):
     with ExitStack() as stack:
         def factory(provider=None, kind="purchase_order", page_count=1):
             storage = Path(__file__).parents[2] / "data" / "contract-agent" / "tests" / uuid4().hex
-            settings = Settings(_env_file=None, database_url=os.environ["PO_BACKEND_CONTRACT_TEST_DATABASE_URL"],
+            settings = Settings(_env_file=None, safety_net_finish_blocking=True, database_url=os.environ["PO_BACKEND_CONTRACT_TEST_DATABASE_URL"],
                                 storage_directory=storage, live_processing_enabled=False, openai_api_key=None)
             source_bytes = generate_fixture(kind)
             if page_count > 1:

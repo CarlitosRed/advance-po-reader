@@ -303,3 +303,23 @@ No dotenv file, paid/live provider, real PO data, existing application service/
 database change, deployment, cart/order write or main push is involved.
 The sole external checkpoint is
 `C:\Users\carlo\dev\project-notes\audits\handoff-codex-goal-gaps-5-2026-10-05.md`.
+
+
+## PR #20 v1.1 backend Safety Net — October 8, 2026
+
+Codex · integration merged landing prep `398210a` normally, then selectively
+merged #9 `100f1d8` backend/tests/contracts with both parents (`cbe4eb6`). UI
+files were never edited for the safety merge; current scripts are unchanged.
+Implemented `PO_BACKEND_SAFETY_NET_FINISH_BLOCKING`, default OFF, including the
+OFF/ON transition rules, typed ON acknowledgments, source integrity at enabled
+Finish, and inherited count/source-check APIs. OFF preserves v1 processing,
+retrieval and Finish; ON exposes independent-count and source blockers.
+
+Only documented/deferred: new Safety Net UI controls and their browser proof.
+Stored counts-only snapshots confirm the historical 150 products and 33/33
+count matches; the supplied batch scorer cannot safely perform the requested
+fresh re-score under this task's limits. It reads PDFs and can make paid calls.
+The current plan, class/claim/state ledgers and local scorecard distinguish that
+limitation. Full evidence and checkpoint: external audit
+`project-notes/audits/codex-v11-safety-net-2026-10-08.md`. Independent review and
+Carlos's exact-head Tier 3 approval remain required. No PR approval or merge.

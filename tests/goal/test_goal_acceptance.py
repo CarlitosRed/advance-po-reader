@@ -50,12 +50,13 @@ def test_goal_1_separate_code_column_preserves_every_product_and_raw_quantity(de
     assert result.summary["approved_products"] == []
 
 
+@pytest.mark.parametrize("safety_net_finish_blocking", [False, True], indirect=True)
 def test_goal_2_code_inside_description_is_found_without_code_column(desk):
     rows = [product_row(1, description="Synthetic cobalt ladder, code GOAL-001", quantity="2")]
     result = process(desk, rows, code_column=False)
     assert result.result["extraction"]["rows"][0]["identifiers"] == []
     suggestion, = result.suggestions
-    assert suggestion["method"] == "description_labeled_code_hint"
+    assert suggestion["method"] == ("description_labeled_code_hint" if desk.settings.safety_net_finish_blocking else "description_code_hint")
     assert [c["sku"] for c in suggestion["candidates"]] == ["GOAL-001"]
     assert "GOAL-001" in str(suggestion["evidence"])
 
@@ -199,6 +200,9 @@ def test_goal_6_unknown_line_accepts_explicit_not_a_product_answer(desk):
                for r in summary["excluded_rows"])
 
 
+@pytest.mark.parametrize("safety_net_finish_blocking", [
+    pytest.param(False, marks=pytest.mark.xfail(strict=True, raises=AssertionError,
+        reason="v1 default OFF preserves the pre-Safety-Net gap")), True], indirect=True)
 def test_goal_7_invented_line_in_declared_region_is_rejected_or_flagged(desk):
     rows = two_products()
     baseline = process(desk, rows)
@@ -222,6 +226,9 @@ def test_goal_7_invented_line_in_declared_region_is_rejected_or_flagged(desk):
     assert result.run["state"] == "failed" or flagged or grounded_flag, result.run
 
 
+@pytest.mark.parametrize("safety_net_finish_blocking", [
+    pytest.param(False, marks=pytest.mark.xfail(strict=True, raises=AssertionError,
+        reason="v1 default OFF preserves the pre-Safety-Net gap")), True], indirect=True)
 def test_goal_8_missing_product_line_triggers_completeness_check(desk):
     rows = two_products()
     # The generated page still contains both products; JSON silently omits line-2.

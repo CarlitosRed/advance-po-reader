@@ -14,7 +14,8 @@ from backend.source_checks import normalize, phrase_supported
 from tests.goal.conftest import PRODUCTS, ok, payload, process, product_row, review_body
 from tests.goal.test_goal_coverage import count, finish, summary
 
-pytestmark = pytest.mark.goal
+pytestmark = [pytest.mark.goal, pytest.mark.usefixtures("safety_net_finish_blocking"),
+              pytest.mark.parametrize("safety_net_finish_blocking", [True], indirect=True)]
 
 
 def rows():
@@ -246,4 +247,4 @@ def test_goal_7_legacy_run_without_grounding_requires_new_processing(desk):
     from backend.review_summary import resolution_blockers
     from backend.contracts import ExtractionPayload
     assert "source_grounding_requires_new_processing_run" in resolution_blockers(
-        ExtractionPayload.model_validate(payload(rows())), [], grounding=[])
+        ExtractionPayload.model_validate(payload(rows())), [], grounding=[], safety_net_finish_blocking=True)

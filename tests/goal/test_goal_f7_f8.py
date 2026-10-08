@@ -14,7 +14,8 @@ from tests.goal.conftest import PRODUCTS, ok, payload, process, product_row, rev
 from tests.goal.test_goal_coverage import count, finish, summary
 from tests.goal.test_goal_grounding import from_bytes, pdf_pages, confirm
 
-pytestmark = pytest.mark.goal
+pytestmark = [pytest.mark.goal, pytest.mark.usefixtures("safety_net_finish_blocking"),
+              pytest.mark.parametrize("safety_net_finish_blocking", [True], indirect=True)]
 
 
 def document_ref(result, **extra):
@@ -49,7 +50,7 @@ def test_goal_2_labeled_literal_codes_with_and_without_actual_pg_trgm(goal_engin
             session.add(vendor); session.flush()
             import_products(session, tenant.id, vendor.id, [ProductInput(sku=code, description="Fictional distinct catalog item")])
             description = "Fictional fixture " + label + code
-            result = retrieve_candidates(session, tenant.id, vendor.id, [], description)
+            result = retrieve_candidates(session, tenant.id, vendor.id, [], description, safety_net_finish_blocking=True)
             assert result["method"] == "description_labeled_code_hint"
             assert [c["sku"] for c in result["candidates"]] == [code]
             assert result["evidence"][0]["raw_token"] == code
@@ -115,13 +116,13 @@ def test_goal_10_labeled_hints_are_tenant_vendor_pool_scoped_and_bounded(goal_en
                         namespace_id=namespace.id, product_id=UUID(product["candidate_id"]), source_row_number=int(product["sku"][1:]) + 1, raw_fields={"sku": product["sku"]}, attributes=[], detail_sections=[]))
         session.flush()
         result = retrieve_candidates(session, tenant.id, None, [],
-            "; ".join(f"code A{i}" for i in range(12)), limit=3, vendor_ids=[vendors[0].id], pool_id=pool.id)
+            "; ".join(f"code A{i}" for i in range(12)), limit=3, vendor_ids=[vendors[0].id], pool_id=pool.id, safety_net_finish_blocking=True)
         assert result["outcome"] == "ambiguous" and len(result["candidates"]) == 3
         assert len(result["evidence"]) == 10
         assert all(c["origin_vendor_id"] == str(vendors[0].id) and c["namespace_id"] == str(namespace.id)
                    for c in result["candidates"])
         assert retrieve_candidates(session, tenant.id, None, [], "code A11",
-            vendor_ids=[vendors[0].id], pool_id=pool.id)["candidates"] == []
+            vendor_ids=[vendors[0].id], pool_id=pool.id, safety_net_finish_blocking=True)["candidates"] == []
         transaction.rollback()
 
 

@@ -1,3 +1,5 @@
+> v1.1 backend integration, October 8: Safety Net defaults OFF. Inherited #9 backend tests explicitly enable it; original v1 grounding/completeness gaps remain strict expected failures under OFF. New Safety Net controls and their browser proof belong to the new UI track. See [mode ledger](integrate-safety-net-plan.md).
+
 # Goal acceptance tests (T-007)
 
 Owner: `Codex · goal tests`. Reviewer: Claudio. Assigned October 3, 2026.

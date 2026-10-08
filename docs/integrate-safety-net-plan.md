@@ -1,136 +1,165 @@
-# Three-tab review and safety-net integration plan
+# v1.1 Safety Net backend integration plan and claim ledger
 
-Author: **Codex · integration**. Status: plan only; implementation awaits the
-independent reviewer's `go`. Intended tier: **tier-3**, because the free-demo
-fixture generator and checked-in browser verifier under `scripts/` may need
-compatibility changes. This is a new draft PR, so the current project workflow
-applies even though PR #9 predates the gate.
-
-## Problem and exact inputs
-
-The approved tabs and matching stack has no controls for the independent page
-counts and source checks that PR #9 requires before Finish. Importing #9 alone
-would leave a review that cannot finish through the three-tab screen.
-
-- Base: `integration/ui-and-matching`,
-  `7d971391155e2ad367319d5b2ff19edcf50f9bbc`.
-- Safety net: `origin/codex/close-goal-gaps-b`,
-  `100f1d83bb385aeeb55527b7beb2fb675cdf916b`, PR #9 items 3, 4 and 6.
-- New branch: `codex/integrate-safety-net`.
-- New desk: `C:\Users\carlo\dev\advance-po-reader.worktrees\integration-safety-net`.
-
-The requested base is appropriate: it contains the combined tabs and matching
-stack, so this PR isolates the safety-net integration. It is not a PR to main.
-A read-only merge-tree simulation at these heads reproduces exactly six
-conflicting files. No working-tree merge has been started.
+Author: **Codex · integration**. PR #20, Tier 3, base `integration/ui-and-matching`.
+Carlos approved the revised backend-only scope in [signed go](https://github.com/CarlitosRed/advance-po-reader/pull/20#issuecomment-6064563292).
+The [original five conditions](https://github.com/CarlitosRed/advance-po-reader/pull/20#issuecomment-6023893815)
+apply to the backend, with current-screen controls deferred under that go.
 
 ## Plan
 
-1. After reviewer `go`, merge the pinned safety-net head into this branch.
-   Preserve both sides in `docs/agent-handoff.md`,
-   `docs/goal-acceptance-tests.md`, `tests/goal/review-controls.cjs`,
-   `tests/goal/test_goal_review_controls.py`, `web/local-reader/app.js` and
-   `web/local-reader/workflow.js`. Retain #9's backend, contract and regressions
-   alongside the existing matching changes. Check the combined backend diff
-   explicitly; do not change count, grounding, retrieval, tier or approval rules.
-2. Add page-count entry and attributed mistaken-count correction to the tabs
-   and summary. POST to the existing `/runs/{run_id}/page-counts` endpoint with
-   reviewer, reason, page number, exact source hash, product count and explicit
-   source-discrepancy flag. Corrections identify the prior count event and use
-   `correction_kind: "independent_count_error"`. An actual source discrepancy
-   stays blocked and offers a new source-bound run; never lower a count to hide
-   an omitted line. Independent counts remain separate from provider counts.
-3. Show source-grounding flags and literal comparisons on the affected row.
-   Provide source inspection and `confirm_source_text` with evidence covering
-   every flagged field region on that same row/page. Preserve the unsupported
-   result and keep source confirmation separate from product approval.
-4. Offer one `confirm_unavailable_page_text` control for each affected page.
-   Its evidence is `{scope: "page", page_number, source_sha256}`. It preserves
-   unavailable text and cannot clear product decisions or count mismatches.
-5. Send typed page/document acknowledgments: page evidence names scope, valid
-   source page and exact hash; document evidence names scope, source document,
-   run and exact hash. Include partial pages without regions. Generic
-   acknowledgments cannot clear the count, source or row-decision blockers.
-6. Keep Finish controlled by the current backend `can_finish_review` response.
-   Make all remaining blockers reachable even while rows still await answers;
-   an apparently completed tab must not imply the order can finish. Preserve
-   tabs, empty-tab handling, snapshots, explicit three-way decisions, separate
-   product approval, quantity standardization, CSV export and resolved review
-   immutability.
-7. Preserve the free demo with fictional fixture compatibility updates as
-   required by #9's page-count declarations. The fixture's provider declaration
-   must never become an independent reviewer count. Update the checked-in demo
-   verifier to exercise the added controls before Finish. Keep paid providers,
-   the provider prompt and existing running applications untouched.
+Bring #9's approved backend items 3, 4 and 6 onto landing prep while preserving
+the current v1 screen and default behavior. Normal landing merge: `0d432b10d4de39845e162a724ef54e404c7de1a0`,
+from `398210a1ac7188e8c1e8aa2abdabe3c3fe14c760`. Safety input:
+`100f1d83bb385aeeb55527b7beb2fb675cdf916b`.
 
-## Files and commit boundaries
+The selective two-parent safety merge `cbe4eb6` retains both histories. An `ours`
+merge established the parents without writing any UI file; `git apply --3way`
+applied the exact #9 diff for backend, contracts, tests, pytest configuration
+and documentation. Both documentation conflict sides were retained. #9's
+browser-control script and four-mode UI test changes were intentionally excluded:
+they require controls assigned to the separate new UI track. Existing v1 browser
+checks remain. This is a selective textual backend merge, not a claim of a full-tree #9 merge.
 
-- First implementation commit: merge #9 and resolve the six conflicts while
-  preserving the two existing test sets and documentation histories.
-- Second: combined controls and meaningful integration regressions in
-  `web/local-reader/{app.js,workflow.js,styles.css}` and `tests/goal/`, plus
-  test-fixture/import compatibility where needed in `tests/backend/`.
-- Third, if needed: fictional demo declarations and verifier compatibility in
-  `scripts/poc_demo_support.py`, `scripts/verify-poc-demo.{py,cjs}`,
-  `fixtures/poc-demo/`, and related demo tests/runbook.
-- Update the acceptance guide, measured integration scorecard and handoff with
-  actual results; retain historical scorecards as historical measurements.
+Add one setting, `Settings.safety_net_finish_blocking`, environment name
+`PO_BACKEND_SAFETY_NET_FINISH_BLOCKING`, default **false**. OFF preserves v1
+processing states, retrieval order (including the old description-code route),
+region acknowledgments and Finish. ON enables #9's source checks, independent
+counts, typed acknowledgments and labeled literal SKU hints; clean runs wait
+for independent coverage before becoming completed. Source confirmations and
+counts remain separate from product decisions in both modes. Count routes are
+available in both modes; OFF does not let them alter processing state.
 
-Push small commits to this same draft PR with signed exact-head evidence.
-Re-check remote input heads before merging. If an input moves, report it rather
-than silently incorporating unreviewed changes. No rebase, force-push,
-self-approval, self-review or merge of this PR is planned.
+No implementation changes under `web/`, no script/demo-page changes, no prompt,
+tier-policy, gate configuration, live provider, migration or production changes.
+Contract changes are additive except that ON requires typed acknowledgments.
+Historical OFF runs without grounding require a new processing run under ON;
+legacy region acknowledgments cannot silently acquire source-bound meaning.
+The new UI will drive the enabled APIs and build the controls once.
 
-## Validation
+## Risk and state ledger
 
-Create this desk's own `.venv-goal`; do not copy another desk's environment.
-Use fresh ignored worktree-local basetemp directories, generated fictional
-PDF/PNG/JPG bytes, fixed JSON and harness-owned disposable PostgreSQL.
-Keep dotenv and external-transport guards active.
+| State | Configuration / evidence | Meaning and limit |
+| --- | --- | --- |
+| S1 | OFF (default) | Current v1 Finish policy and known grounding/completeness gaps remain. |
+| S2 | ON, missing counts or source confirmation | API blocks Finish; product approval alone is insufficient. |
+| S3 | ON, partial page or document warning | Typed source/page/run acknowledgment required, separately from counts and decisions. |
+| S4 | OFF history reopened with ON | Missing grounding needs new processing; legacy acknowledgment is insufficient. |
+| S5 | ON, all checks and decisions satisfied | Finish may resolve; the endpoint rechecks stored source bytes. |
+| S6 | Resolved review | Existing immutability remains; events and source observations are retained. |
 
-Run both named suites with Node/Playwright and installed Edge enabled:
+## Claims ledger
 
-```text
-python -m pytest -c pytest.backend.ini --isolated-backend -q --basetemp=.backend-review-integration-1 -p no:cacheprovider --tb=short --junitxml=.backend-review-integration-1/results.xml
-python -m pytest -m goal -q --basetemp=.goal-review-integration-1 -p no:cacheprovider --tb=short --goal-scorecard=docs/goal-scorecard-integration-2026-10-06.md --junitxml=.goal-review-integration-1/results.xml
-python -m pip check
-git diff --check
-```
+Line references below are repository-relative implementation pins; the PR evidence
+comment supplies the immutable final head. Exceptions are deliberate mode boundaries.
 
-Compare JUnit case sets: every #9 goal regression and the tabs regressions must
-execute in both suites. Run all four inherited browser modes (text, photo,
-unsupported text, page/document acknowledgments) and the empty-tab browser test.
-Add real-button combined-flow coverage: a clean generated order reaches Finish
-through the tabs only after explicit decisions and independent counts; a
-mismatch stays blocked until a valid attributed count-error correction;
-source confirmation does not approve a row; unavailable-page confirmation and
-typed acknowledgments leave other blockers in place. Verify source observations
-and tiers remain unchanged, then reload the resolved review and verify CSV.
+| Claim | Exact condition | Exception | Implementation pin | State |
+| --- | --- | --- | --- | --- |
+| Safety Net defaults OFF | Settings created without explicit override | Environment may explicitly enable it; dotenv is not needed | `backend/config.py:27` | S1 |
+| Default demo Finish remains available after decisions | OFF, all original v1 blockers cleared | Partial pages/warnings still need the original region acknowledgments | `backend/service.py:235`, `backend/review_summary.py:18` | S1 |
+| Counts and grounding block Finish | ON, missing/mismatched independent counts or missing source confirmation | OFF retains original gaps | `backend/review_summary.py:18` | S2 |
+| Confirmation never approves a product | Source/page/count event only | A separate explicit product decision may already exist | `backend/review_summary.py:80` excludes source confirmation from latest decision | S2 |
+| Typed acknowledgment is bound to source and run | ON page/document acknowledgment | OFF accepts the original region evidence; ON ignores that legacy history | `backend/service.py:459`, `backend/review_summary.py:55` | S3, S4 |
+| Whole-document zero count can Finish | ON, independently confirmed zero, no other blockers | OFF retains the old zero-product unresolved-row policy | `backend/review_summary.py:18` | S5 |
+| Changed stored bytes prevent enabled Finish | ON resolve, exact stored hash checked | Summary is a projection, not a fresh file-integrity check | `backend/service.py:235` resolve branch | S5 |
+| Labeled hints use bounded exact SKU lookup | ON only | OFF uses the unchanged existing retrieval route; no tier policy changed | `backend/catalog.py:244` | S1, S2 |
+| Resolved review remains immutable | Any mode, resolved review | Existing idempotent replay rule is retained | `backend/service.py:235`, `backend/service.py:479` | S6 |
 
-Run the checked-in free-demo API and browser verifiers using only a newly owned
-runtime on a checked unused port. Leave all existing servers and desks intact.
-Verify fictional PDF/PNG/JPG cases, snapshots, quantities and CSV. Report local
-browser results separately from CI's deliberately absent browser tools.
+## Expected defect classes and sweeps
 
-Inspect exact-head CI for the backend-plus-goal and separate-goal steps and
-their JUnit case sets, then report pass/skip/xfail/failure counts explicitly.
-Gate A and legacy Python checks are separate evidence. A queued or cancelled
-job is not a passing test suite. No model-accuracy or production claim follows
-from these fixed-provider checks.
+- Mode boundaries: default/env setting, processing states, retrieval methods,
+  direct resolve vs summary, count-state synchronization, legacy history after
+  enabling. Exercise OFF and ON through actual API calls; retain original OFF
+  strict expected failures and ON positive cases.
+- Count request fields: strict nonnegative integer page/count, 64 lowercase hex
+  source hash, explicit boolean discrepancy, nonblank reviewer/reason, latest
+  correction UUID and count-error attestation. Sweep missing, malformed, stale,
+  cross-page/run/tenant and source-discrepancy cases in inherited #9 tests.
+- Review scope fields: action, row vs page vs document scope, region membership,
+  integer page, source hash, document/run UUID, extra fields and one-reference
+  cardinality. Sweep missing/renamed/case-changed scopes, newline/Unicode hashes,
+  boolean/float/outside pages, wrong document/run and persisted legacy events.
+- Source evidence: unsupported vs unavailable text, all flagged regions, exact
+  source bytes and separate product approval. Sweep PDF and generated PNG/JPG,
+  partial pages without regions, zero-product document and legacy missing checks.
+- Matching: inherited tenant/vendor/pool, bounded exact labeled hints and
+  pg_trgm-present/absent cases; OFF preserves the original method and tiers.
+- Preservation/platform: Windows PowerShell, owned native PostgreSQL, both
+  backend+goal and separate-goal JUnit inventories, current-tab browser flow,
+  byte-identical `web/`, scripts and gate.json against landing prep.
+- Documentation: claim/mode/pin/state ledger, historical #9 banners, checked
+  local links and Mermaid fences; distinguish local browser evidence from CI skips.
 
-## Evidence
+## Evidence protocol
 
-At plan publication: the new desk is clean, both input heads match the brief,
-PR #9 remains draft and unmerged, and merge-tree confirms the six conflicts.
-No integration implementation, test execution, demo launch or backend change
-has been performed. Results from prior PRs are reference evidence only.
+Baseline at landing prep: backend **373 passed**; goals **61 passed, 2 skipped,
+2 strict expected failures**. Final measured counts and JUnit preservation
+results are in `goal-scorecard-integration-2026-10-08.md`, the PR evidence
+comment and the external audit note. All new #9 goal modules explicitly enable
+Safety Net; current-screen browser tests exercise OFF. New Safety Net UI controls
+and condition 1's real-browser separation proof are deferred to the new UI.
+Backend separation, blocker API visibility and independent-count semantics are tested.
 
-Checkpoint and stop at approximately 60% context in
-`C:\Users\carlo\dev\project-notes\audits\handoff-codex-integration-2026-10-06.md`.
-Any earlier reviewer gate and unfinished work must be explicit in the handoff.
+Run both full suites with desk-local runtime/basetemp, injected fixed providers,
+actual disposable PostgreSQL and generated fictional source bytes. Run the free
+demo and checked-in current-tab verifier on a checked unused port, then stop
+only the owned server/cluster. Compare inherited goal test functions against
+both JUnit sets; compare inherited backend functions against backend+goal JUnit.
+Report browser exclusions as exclusions, not as executed proof.
+
+Run `pip check`, `git diff --check`, gate content scan over outgoing history,
+and gate merge dry-run. The dry-run cannot pass state while the explicitly
+requested base is non-main and the PR is draft; PM retargets after landing.
+Independent review and Carlos's exact-head approval remain pending.
+
+The supplied batch scorer has no stored-only mode: it reads originals and can
+fall back to a paid OpenAI call. Only its pure summary functions were used on
+saved counts-only JSON. Successful historical snapshots retain **150 product
+rows, count matches 33/33**, out of 351 total rows including non-products.
+This is aggregate snapshot verification, not a new-backend re-score of live
+stored runs. That requested proof remains limited by the no-real-PO/no-paid-call
+boundary and needs a strictly read-only counts-only harness before readiness.
+
+## Plain-English summary
+
+The backend can now require a person to check page counts and source evidence
+before Finish. The feature starts switched off, so the current demo still
+finishes through its existing tabs. The new UI will supply the added controls.
+No product is approved by confirming source text or entering a count. Local
+synthetic tests establish behavior; they do not measure model accuracy.
 
 ## Cost
 
-$0 API spend. No paid calls, `.env*` access, customer PO/catalog data in Git or
-comments, deployment, order write, or existing application service/database
-change is authorized.
+$0 API spend. No paid calls, dotenv opens, original PO reads, private catalog
+access, deployment, order write, self-approval or PR merge.
+
+## Delivery checkpoint: inherited history scan is blocked
+
+The required outgoing-history scan from the remote PR #20 head fails on
+inherited #9 fake key-shaped test strings in `950ca7e`, `53a092d`, `100f1d8`,
+and old branding images introduced by landing history `6daa449`. The final
+worktree contains no branding image changes relative to landing prep, and
+the current fixture already uses landing prep's neutral fictional test value.
+This cannot repair immutable ancestors. The requested normal merges retain
+those ancestors; no rebase, force push, gate/hook bypass or gate.json change
+is performed. A clean staged scan is final-tree evidence only. The branch
+is not delivery-ready while its required history scan fails.
+
+## Measured local checkpoint
+
+- Backend+goal: **542 passed, 2 strict expected failures, 0 skips, 0 failures/errors**.
+- Separate goals: **169 passed, 2 strict expected failures, 0 skips, 0 failures/errors**.
+- Original 65 goal cases map to **63 passed and the same 2 OFF expected failures**;
+  the baseline's two browser skips now pass locally.
+- Both JUnit suites contain all **73 inherited goal test function names** from
+  landing prep and #9; backend+goal also contains all **206 inherited backend
+  function names**. No missing function. #9's four UI mode variants are explicitly
+  excluded because those controls are deferred; function-name preservation is
+  not a claim that their UI parameter matrix executed.
+- Current demo start and browser verifier: **153 fictional products, 5 cases**;
+  PDF/PNG/JPG uploads, tabs, quantities, decisions, Finish and resolved reload pass;
+  **0 external browser requests, 0 page errors**. Owned port 8031 and demo
+  PostgreSQL stopped. No existing service was touched.
+- Local Markdown links: **0 broken** in changed docs; **0 Mermaid blocks**.
+- `pip check` and `git diff --check` pass. Gate.json, scripts and the complete
+  `web/` tree match landing prep. Final-tree scan and history scan are separate
+  evidence; the inherited history failure prevents delivery readiness.
