@@ -23,6 +23,8 @@ The exact private document/run references and receipts remain under ignored
 - Verified the current 8014 process and its parent executable in this
   worktree before stopping it. Restarted only the website with
   `scripts/start-local-website.ps1 -LiveDemo` in a hidden local process.
+  At that time this launcher had no spend cap and no private-token check (added later; see
+  [local-agent-demo.md](local-agent-demo.md)). A guided, capped alternative is `start-poc-demo.ps1 -Live`.
 - Read-only `backend.preflight --require-live` passed. The running server
   reports database ready, three real catalogs, 2,720 products, 33 library PDFs,
   key present, live processing enabled, and no configuration blockers.

@@ -19,7 +19,9 @@ later integration into the live checkout.
 
 - Existing PostgreSQL was restarted from its preserved cluster; no new
   cluster or migration was needed for recovery.
-- The website was restarted with `scripts/start-local-website.ps1 -LiveDemo`.
+- The website was restarted with `scripts/start-local-website.ps1 -LiveDemo`
+  (at that time with no spend cap and no private-token check; added later, see
+  [local-agent-demo.md](local-agent-demo.md). A capped alternative is `start-poc-demo.ps1 -Live`).
   Its existing backend key and saved source authorization remained available.
 - One previously authorized original PDF was processed once. The provider
   attempt succeeded and the saved run is partial with review required.

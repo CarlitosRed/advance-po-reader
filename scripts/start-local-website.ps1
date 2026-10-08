@@ -14,7 +14,8 @@ try {
         $env:PO_BACKEND_LIVE_PROCESSING_ENABLED = 'true'
     }
     # Settings loads this worktree's ignored .env.backend. No migration at startup.
-    & './.venv-backend/Scripts/python.exe' -m backend
+    # serve_backend.py = the plain backend server plus, when live is on, the private-token check and the spend cap.
+    & './.venv-backend/Scripts/python.exe' 'scripts/serve_backend.py'
     if ($LASTEXITCODE -ne 0) { throw 'Local website stopped with an error.' }
 } finally {
     if ($LiveDemo) {
