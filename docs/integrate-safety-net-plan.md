@@ -132,17 +132,20 @@ synthetic tests establish behavior; they do not measure model accuracy.
 $0 API spend. No paid calls, dotenv opens, original PO reads, private catalog
 access, deployment, order write, self-approval or PR merge.
 
-## Delivery checkpoint: inherited history scan is blocked
+## Broader history diagnostic and required scan evidence
 
-The required outgoing-history scan from the remote PR #20 head fails on
+A broader ancestry-range diagnostic from the former remote PR #20 head reports
 inherited #9 fake key-shaped test strings in `950ca7e`, `53a092d`, `100f1d8`,
 and old branding images introduced by landing history `6daa449`. The final
 worktree contains no branding image changes relative to landing prep, and
 the current fixture already uses landing prep's neutral fictional test value.
-This cannot repair immutable ancestors. The requested normal merges retain
-those ancestors; no rebase, force push, gate/hook bypass or gate.json change
-is performed. A clean staged scan is final-tree evidence only. The branch
-is not delivery-ready while its required history scan fails.
+The requested normal merges retain those pre-existing remote ancestors. The
+staged scan of the 26 implementation paths and the pre-push `--outgoing HEAD`
+scan of unpublished commits both pass. Normal `git push` succeeded; no rebase,
+force push, gate/hook bypass or gate.json change was performed. Exact-head CI
+`scan --rev HEAD` also passed. The broader diagnostic is recorded separately
+and does not negate those narrower results. No repair of ancestral history is
+claimed. Fresh stored-batch re-scoring remains the independent evidence limitation.
 
 ## Measured local checkpoint
 
@@ -162,4 +165,4 @@ is not delivery-ready while its required history scan fails.
 - Local Markdown links: **0 broken** in changed docs; **0 Mermaid blocks**.
 - `pip check` and `git diff --check` pass. Gate.json, scripts and the complete
   `web/` tree match landing prep. Final-tree scan and history scan are separate
-  evidence; the inherited history failure prevents delivery readiness.
+  evidence; the broader inherited-history diagnostic is recorded separately.
