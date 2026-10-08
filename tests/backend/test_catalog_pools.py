@@ -22,6 +22,7 @@ from backend.pools import configure_pool, pool_vendor_ids, validate_pool_candida
 from backend.synthetic import generate_fixture
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
+from tests.isolated_postgres import require_test_database_url
 
 TOKEN = "synthetic-all-products-token"
 
@@ -31,9 +32,10 @@ def engine():
     value = os.environ.get("PO_BACKEND_POOL_TEST_DATABASE_URL")
     if not value:
         pytest.skip("Set PO_BACKEND_POOL_TEST_DATABASE_URL to the isolated all-products PostgreSQL database")
-    url = make_url(value)
-    if url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"} or url.database not in {"gate_a_test_backend_all_products", "gate_a_test_backend_all_products_v2", "gate_a_test_backend_all_products_v3"} or url.query:
-        pytest.fail("All-products checks require their isolated loopback test database")
+    try:
+        url = require_test_database_url(value, names={"gate_a_test_backend_all_products", "gate_a_test_backend_all_products_v2", "gate_a_test_backend_all_products_v3"})
+    except ValueError as error:
+        pytest.fail(f"All-products checks require their isolated loopback test database: {error}")
     engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:
@@ -243,9 +245,10 @@ def test_0008_upgrade_preserves_existing_immutable_suggestions():
     value = os.environ.get("PO_BACKEND_POOL_MIGRATION_TEST_DATABASE_URL")
     if not value:
         pytest.skip("Set PO_BACKEND_POOL_MIGRATION_TEST_DATABASE_URL to a separate migration test database")
-    url = make_url(value)
-    if url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"} or url.database != "gate_a_test_backend_all_products_migration" or url.query:
-        pytest.fail("Migration history test requires its separate loopback database")
+    try:
+        url = require_test_database_url(value, names={"gate_a_test_backend_all_products_migration"})
+    except ValueError as error:
+        pytest.fail(f"Migration history test requires its separate loopback database: {error}")
     migration_engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config(str(ROOT / "backend.alembic.ini"))
     with migration_engine.connect() as connection:

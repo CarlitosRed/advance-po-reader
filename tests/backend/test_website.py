@@ -22,6 +22,7 @@ from backend.models import CatalogAlias, CatalogNamespace, CatalogProduct, Catal
 from backend.source_import import import_catalogs
 from backend.synthetic import generate_fixture
 from backend.uploads import digest
+from tests.isolated_postgres import require_test_database_url
 
 TOKEN = "synthetic-website-test-token"
 
@@ -31,10 +32,10 @@ def web_engine():
     value = os.environ.get("PO_BACKEND_API_TEST_DATABASE_URL")
     if not value:
         pytest.skip("Dedicated website PostgreSQL test database not configured")
-    url = make_url(value)
-    if (url.host not in {"localhost","127.0.0.1","::1"} or
-            not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows"))):
-        pytest.fail("Website tests require their own loopback test database")
+    try:
+        url = require_test_database_url(value)
+    except ValueError as error:
+        pytest.fail(f"Website tests require their own loopback test database: {error}")
     engine = create_engine(url)
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:
