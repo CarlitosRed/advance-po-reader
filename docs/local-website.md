@@ -22,7 +22,7 @@ mockup** design as the reference. No country is assigned to WernerCo.
 ## Implemented behavior
 
 - FastAPI serves the local HTML/CSS/JavaScript website and private APIs from the
-  same origin. The supplied Werner and SmarterCommerce brand pixels are reused.
+  same origin. The website uses plain text branding only; no logo images are shipped.
   The earlier mockup and its private Site are preserved.
 - Three real catalog namespaces contain 2,720 products: WernerCo 2,380,
   United Kingdom 160, Australia 180. IDs are never merged across namespaces.

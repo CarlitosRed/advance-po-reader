@@ -86,7 +86,7 @@ def main():
     shutil.copytree(ROOT/"web/local-reader",website.WEB,dirs_exist_ok=True)
     index=website.WEB/"index.html"
     index.write_text(index.read_text(encoding="utf-8").replace("Local workspace","Fictional offline QA")
-        .replace("Purchase Order Reader · SmarterCommerce","Fictional offline browser QA"),encoding="utf-8")
+        .replace("<title>Purchase Order Reader</title>","<title>Fictional offline browser QA</title>"),encoding="utf-8")
     app=create_app(settings,engine=engine,provider=provider)
     from fastapi.testclient import TestClient
     with TestClient(app,base_url="http://127.0.0.1:8016",headers={"X-Local-Token":settings.local_api_token.get_secret_value(),"X-Tenant-ID":tenant_id}) as client:
