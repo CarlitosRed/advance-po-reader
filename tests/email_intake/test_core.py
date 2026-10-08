@@ -54,7 +54,7 @@ class CoreTests(unittest.TestCase):
         self.drop.mkdir()
 
     def ledger(self):
-        return SpendLedger(self.base / "spend.sqlite3")
+        return SpendLedger(self.base / "spend.sqlite3", initialize=True)
 
     def test_closed_schema_categories_and_pairs(self):
         for category in PAIRS:
@@ -327,7 +327,7 @@ class CoreTests(unittest.TestCase):
                         attachment=("application/pdf", "x.pdf", b"%PDF-same-attachment"))
             (self.drop / f"{index}.eml").write_bytes(raw)
         results = run(self.drop, self.out)
-        self.assertEqual(results[1]["reason_code"], "CONFLICT")
+        self.assertEqual(results[1]["reason_code"], "unclear")
         self.assertEqual(len(list((self.out / "records").glob("*.json"))), 2)
 
     def test_body_pdf_one_page_literal_escape_and_no_truncation(self):
@@ -361,7 +361,7 @@ class CoreTests(unittest.TestCase):
         raw = email(attachment=("application/pdf", "x.pdf", b"%PDF-opaque-fictional"))
         (self.drop / "a.eml").write_bytes(raw)
         result = run(self.drop, self.out, FakeProvider({sha256(raw).hexdigest(): decision("order")}))[0]
-        self.assertEqual(result["reader_file_count"], 1)
+        self.assertEqual(result["reader_file_count"], 2)
         record = json.loads(next((self.out / "records").glob("*.json")).read_text())
         self.assertFalse(record["reader_files"][0]["derived"])
         self.assertEqual((self.out / record["reader_files"][0]["file"]).read_bytes(), b"%PDF-opaque-fictional")
@@ -401,7 +401,7 @@ class CoreTests(unittest.TestCase):
         with patch("os.environ.get", return_value=None), patch("builtins.print"), \
              patch("http.client.HTTPSConnection", side_effect=AssertionError("network forbidden")):
             self.assertEqual(cli.main(["--drop", str(self.drop), "--out", str(self.out), "--live",
-                                      "--ledger", str(self.base / "live.sqlite3")]), 0)
+                                      "--ledger", str(self.base / "live.sqlite3"), "--init-ledger"]), 0)
         record = json.loads(next((self.out / "records").glob("*.json")).read_text())
         self.assertEqual(record["reason_code"], "MISSING_KEY")
 

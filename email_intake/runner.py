@@ -48,9 +48,10 @@ def append_json(path, value):
         os.fsync(stream.fileno())
 
 
-def summary(record):
+def summary(record, *, reused=False):
     return {k: record[k] for k in ("intake_id", "lane", "category", "reason_code")} | {
-        "reader_file_count": len(record["reader_files"]), "needs_a_look_count": len(record["needs_a_look"])}
+        "reader_file_count": len(record["reader_files"]), "needs_a_look_count": len(record["needs_a_look"]),
+        "provider": record.get("provider", "unknown"), "reused": reused}
 
 
 def run(drop, out, provider=None):
@@ -85,7 +86,7 @@ def run(drop, out, provider=None):
                 # Immutable per-source outcome: a later --live run cannot silently
                 # turn a prior fake result into a model result or repeat a paid call.
                 previous = next(r for r in records if r["record_id"] == record_id)
-                results.append(summary(previous))
+                results.append(summary(previous, reused=True))
                 continue
             folder = safe_path(out / "sources" / iid)
             folder.mkdir(parents=True, exist_ok=True)
@@ -112,6 +113,8 @@ def run(drop, out, provider=None):
                     write_once(target, parsed.payloads[a["attachment_id"]])
                     a["retained_file"] = str(target.relative_to(out))
                 exact = next((r for r in records if r["intake_id"] == iid), None)
+                message_id_conflict = parsed.message_id is not None and any(
+                    r["intake_id"] != iid and r.get("message_id") == parsed.message_id for r in records)
                 related = [r["intake_id"] for r in records if r["intake_id"] != iid and (
                     (parsed.message_id is not None and r.get("message_id") == parsed.message_id)
                     or bool({a["sha256"] for a in parsed.attachments} &
@@ -120,15 +123,13 @@ def run(drop, out, provider=None):
                 if exact:
                     record["duplicate_of"] = exact["record_id"]
                     result, audit = pending("DUPLICATE"), None
-                elif related:
+                elif message_id_conflict:
                     result, audit = pending("CONFLICT"), None
                 else:
                     result, audit = provider.classify(parsed, iid)
                 record["classification"] = result.copy()
                 if audit is not None:
                     append_json(out / "calls.jsonl", {"intake_id": iid, **audit})
-                if related:
-                    result = pending("CONFLICT")
                 if not exact and (not parsed.body.strip() or any(not a["supported"] for a in parsed.attachments)):
                     result = pending("CONFLICT")
                 record.update(result)
@@ -141,7 +142,9 @@ def run(drop, out, provider=None):
                             record["reader_files"].append({"file": str(target.relative_to(out)),
                                 "attachment_id": a["attachment_id"], "sha256": a["sha256"],
                                 "derived": False, "human_selection_required": True})
-                    else:
+                    # The body remains a source candidate even when the message
+                    # also carries a supported document or signature image.
+                    if parsed.body.strip():
                         try:
                             data = render(parsed.body)
                             target = folder / "derived-body.pdf"

@@ -119,9 +119,10 @@ class LiveProvider:
         if self.ledger is None:
             return done(pending("LEDGER"))
         request = request_for(parsed, intake_id)
-        # UTF-8 bytes bound byte-level tokens conservatively; allow 2048 tokens
-        # for framing/schema overhead. Oversize evidence is never truncated.
-        if len(json.dumps(request, ensure_ascii=True).encode()) + 2048 > INPUT_BOUND:
+        # Count the entire serialized request once, including prompt, schema and
+        # framing. This byte ceiling is an admission estimate, not measured tokens.
+        # Oversize evidence is never truncated; usage is still checked at settlement.
+        if len(json.dumps(request, ensure_ascii=True).encode()) > INPUT_BOUND:
             return done(pending("LIMIT"))
         try:
             aid = self.ledger.reserve(intake_id)

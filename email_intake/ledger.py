@@ -35,29 +35,44 @@ def safe_path(path):
 
 
 class SpendLedger:
-    def __init__(self, path):
-        self.path = safe_path(path)
+    def __init__(self, path, *, initialize=False):
+        self.path = safe_path(path).resolve()
         if not self.path.parent.is_dir():
             raise LedgerError("LEDGER")
+        created = False
+        if not self.path.exists():
+            if not initialize:
+                raise LedgerError("LEDGER")
+            try:
+                # Exclusive creation cannot overwrite an existing spend history.
+                with self.path.open("xb"):
+                    pass
+                created = True
+            except FileExistsError:
+                pass
         try:
             with self.connect() as db:
                 db.execute("BEGIN IMMEDIATE")
-                db.execute("CREATE TABLE IF NOT EXISTS policy (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL)")
                 expected = json.dumps([1, CAP_NANO, INPUT_BOUND, OUTPUT_BOUND, INPUT_RATE, OUTPUT_RATE])
-                db.execute("INSERT OR IGNORE INTO policy VALUES (1, ?)", (expected,))
+                if created:
+                    db.execute("CREATE TABLE policy (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL)")
+                    db.execute("INSERT INTO policy VALUES (1, ?)", (expected,))
+                    db.execute("""CREATE TABLE attempts (
+                        id TEXT PRIMARY KEY, intake_id TEXT NOT NULL, charge INTEGER NOT NULL CHECK(charge>=0),
+                        state TEXT NOT NULL, input_tokens INTEGER, output_tokens INTEGER,
+                        reason_code TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
                 if db.execute("SELECT value FROM policy WHERE id=1").fetchone() != (expected,):
                     raise LedgerError("LEDGER")
-                db.execute("""CREATE TABLE IF NOT EXISTS attempts (
-                    id TEXT PRIMARY KEY, intake_id TEXT NOT NULL, charge INTEGER NOT NULL CHECK(charge>=0),
-                    state TEXT NOT NULL, input_tokens INTEGER, output_tokens INTEGER,
-                    reason_code TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+                db.execute("SELECT id FROM attempts LIMIT 1")
         except sqlite3.Error:
             raise LedgerError("LEDGER") from None
 
     @contextmanager
     def connect(self):
         safe_path(self.path)
-        db = sqlite3.connect(self.path, timeout=5)
+        # mode=rw refuses a deleted/mistyped file even after construction; only
+        # explicit initialization above may create a new cap.
+        db = sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True, timeout=5)
         try:
             db.execute("PRAGMA synchronous=FULL")
             with db:

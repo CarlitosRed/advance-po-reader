@@ -28,10 +28,15 @@ names appear only in local evidence records, never in stdout or call/digest logs
 Input originals are never removed. Keep output in an ignored private directory.
 
 Exact original bytes under another name create a duplicate link without another
-classification. A reused Message-ID or shared attachment hash with changed bytes
-creates a related record in `needs_a_look`, without spending on classification.
+classification. A reused Message-ID with changed bytes creates a related record
+in `needs_a_look`, without spending on classification. Shared attachment hashes
+are informational links: a signature logo or shared terms document does not block
+classification of a distinct message.
 Nothing is merged or overwritten. Re-running the same input and output returns
-the stored outcome, including a stored fake or pending outcome. A deliberate new
+the stored outcome, including a stored fake or pending outcome. Every stdout
+summary includes the original record's `provider` (`fake` or `live`) and a `reused`
+boolean. Thus offline-to-live and keyless-to-keyed reruns visibly report reuse;
+they make no new attempt and do not overwrite the original result. A deliberate new
 evaluation needs a separate output directory; a live ledger still prevents a second
 attempt for the same content identity, including after an unknown outcome.
 
@@ -50,7 +55,8 @@ and reader must still validate/select the source. Filenames are never storage pa
 Inline images are included in the manifest and the quiet net. HTML is converted
 locally, scripts/styles are removed, and remote resources are never fetched.
 
-For body-only orders, the standard-library renderer produces one derived PDF page
+For orders with body text, including those with supported attachments, the
+standard-library renderer also prepares one derived PDF page
 with a hash of the original parsed text. English/Spanish WinAnsi text that fits
 57 lines at 90 columns is supported. Other Unicode (including the colón symbol),
 control characters or overflow require a look with `PDF_LIMIT`; the full text and
@@ -62,10 +68,15 @@ The builder has made no paid calls. Carlos can later run the following only with
 fictional emails, an environment-provided key, and ONE shared phase-one ledger:
 
 ```powershell
-python scripts/email-intake.py --drop PATH_TO_FICTIONAL_MAIL --out output/live-email-review --live --ledger output/phase-one-spend.sqlite3
+python scripts/email-intake.py --drop PATH_TO_FICTIONAL_MAIL --out output/live-email-review --live --ledger output/phase-one-spend.sqlite3 --init-ledger
 ```
 
-The ledger's parent must already exist. No environment files are loaded. Without
+Use `--init-ledger` only for deliberate first creation; omit it on subsequent runs.
+A missing ledger without the flag exits 2 before key lookup or classification.
+The resolved absolute ledger path is printed to stderr; per-email JSONL stays on
+stdout. Reusing the flag never resets an existing ledger. Connections refuse a
+deleted ledger instead of recreating it. The ledger's parent must already exist.
+No environment files are loaded. Without
 `--live`, the CLI does not look up the API key or construct an HTTPS connection.
 With `--live`, a missing key/ledger stops calls and leaves a visible reason. The
 adapter sends subject, preserved text segments and attachment metadata; it excludes
@@ -77,8 +88,9 @@ incomplete responses and schema failures. No second model or hidden retry exists
 Each call commits a SQLite reservation before transport. The fixed $3 classifier
 ledger uses integer nanodollars and conservative Standard write-rate accounting
 ($0.125/M input, $0.50/M output), a 6,000 input-token reservation and 100 maximum
-output tokens: $0.0008 per reservation. Requests whose serialized UTF-8 byte count
-plus 2,048 framing/schema allowance exceeds 6,000 are rejected without truncation.
+output tokens: $0.0008 per reservation. Requests whose complete serialized byte
+count exceeds 6,000 are rejected without truncation. Prompt, schema and framing
+are already included in that count and receive no second allowance.
 Usage within bounds settles the reservation conservatively; missing, invalid or
 out-of-bound usage keeps the full reservation. Unknown transport outcomes retain
 their reservation across restart and block another attempt for the same identity.
@@ -98,6 +110,12 @@ than attempting recovery or repeating requests. Symlink creation was unavailable
 in the local Windows test environment; that test is explicitly skipped there.
 
 ## Evidence boundaries
+
+PR #29 scorer mapping: convert each final record to `id`, `category`, and `lane`,
+using the frozen source SHA to match its test ID. Omit the optional `reason_code`
+when exporting answers: the scorer's category reasons exclude local intake codes
+such as `CONFLICT`, `LIMIT`, and `PDF_LIMIT`. Keep those codes in the source records
+and report their counts alongside scorer metrics; never replace the final lane.
 
 The twelve scripted fixtures do not meet the design's 100+ fictional-order accuracy
 bar or week of shadow checking. Those remain later human-controlled acceptance
