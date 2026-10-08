@@ -37,6 +37,7 @@ def _lines(kind: str) -> list[tuple[float, str]]:
         lines.extend([(0.30, "SYN-001 | Synthetic blue widget adjustable support arm | 4 | EA | 432.2000 | 1728.8000"),
                       (0.35, "20 inch width; 16′ length; zinc-coated steel"),
                       (0.43, "SYN-002 | Synthetic red widget mounting bracket | [quantity blank] | EA | 18.00 | [line total blank]"),
+                      (0.49, "Synthetic accessory row with unclear item status"),
                       (0.56, "Freight charge | 12.00"), (0.62, "Order total | 1740.8000"),
                       (0.70, "Delivery note: synthetic fixture only; no live order." )])
     elif kind in ("purchase_order", "partial"):

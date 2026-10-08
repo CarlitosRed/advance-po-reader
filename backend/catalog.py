@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from backend.models import CatalogAlias, CatalogProduct, CatalogPoolMember, CatalogSourceProduct, Vendor
 from backend.pools import pool_product_scope
+from backend.text_guard import reject_nul
+from backend.text_guard import reject_nul
 
 CANONICAL_SKU_ROLES = frozenset({"sku", "vendor_sku", "vendor_product_code"})
 MAX_CANDIDATES = 20
@@ -57,7 +59,7 @@ class AliasInput(BaseModel):
     def not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Catalog strings cannot be blank")
-        return value
+        return reject_nul(value)
 
 
 class ProductInput(BaseModel):
@@ -71,7 +73,7 @@ class ProductInput(BaseModel):
     def not_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("Catalog strings cannot be blank")
-        return value
+        return reject_nul(value)
 
 
 def normalize_identifier(value: str) -> str:

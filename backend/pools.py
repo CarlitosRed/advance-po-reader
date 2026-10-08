@@ -79,6 +79,14 @@ def validate_pool_candidate(session: Session, tenant_id: UUID, pool_id: UUID | N
             CatalogSourceProduct.product_id == product_id).limit(1)))
 
 
+def _release_default(session: Session, tenant_id: UUID) -> None:
+    """Clear and flush the tenant's current default so the one-default index never sees two."""
+    current = default_pool(session, tenant_id)
+    if current is not None:
+        current.is_default = False
+        session.flush()
+
+
 def configure_pool(session: Session, tenant_id: UUID, name: str, namespace_ids: list[UUID], *, make_default: bool):
     """Create one immutable membership set, or verify an identical rerun."""
     if not name.strip() or not namespace_ids or len(namespace_ids) != len(set(namespace_ids)):
@@ -91,6 +99,8 @@ def configure_pool(session: Session, tenant_id: UUID, name: str, namespace_ids: 
     pool = session.scalar(select(CatalogPool).where(CatalogPool.tenant_id == tenant_id, CatalogPool.name == name))
     expected = {(n.vendor_id, n.id) for n in namespaces}
     if pool is None:
+        if make_default:
+            _release_default(session, tenant_id)
         pool = CatalogPool(tenant_id=tenant_id, name=name, is_default=make_default)
         session.add(pool)
         session.flush()
@@ -104,8 +114,7 @@ def configure_pool(session: Session, tenant_id: UUID, name: str, namespace_ids: 
         if actual != expected:
             raise ValueError("Existing pool has a different membership; create a versioned pool instead")
         if make_default and not pool.is_default:
-            current = default_pool(session, tenant_id)
-            if current is not None and current.id != pool.id:
-                current.is_default = False
+            _release_default(session, tenant_id)
             pool.is_default = True
+            session.flush()
     return pool
