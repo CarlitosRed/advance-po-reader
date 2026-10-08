@@ -121,6 +121,10 @@ class Resource:
                 assert self.review(run, "not_a_product", row_id).status_code == 201
         for row_id in ("line-3", "line-4"):
             assert self.review(run, "acknowledge", row_id).status_code == 201
+        assert self.client.post(f"/runs/{run['id']}/page-counts", headers=self.headers, json={
+            "page_number": 1, "source_sha256": self.source["sha256"], "product_count": 2,
+            "source_discrepancy": False, "reviewer": "Synthetic named reviewer",
+            "reason": "Counted the two printed products in the generated source"}).status_code == 201
 
 
 @pytest.fixture
@@ -236,7 +240,7 @@ def test_unknown_attempt_persisted_before_call_and_duplicate_request_does_not_ca
         assert duplicate.json()["error"] == "processing_in_progress_or_unknown_outcome"
         return outcome()
     provider.callback = callback
-    assert resource.process(run).json()["state"] == "completed"
+    assert resource.process(run).json()["state"] == "partial"
     assert provider.calls == 1
 
 
@@ -307,7 +311,7 @@ def test_candidate_search_limits_route_to_review_without_losing_long_literal(res
 def test_correction_after_approval_invalidates_resolution_and_preserves_original(resource_factory):
     resource = resource_factory(OfflineProvider(outcome()))
     run = resource.run()
-    assert resource.process(run).json()["state"] == "completed"
+    assert resource.process(run).json()["state"] == "partial"
     resource.acknowledge_rows(run)
     correction = resource.review(run, "correct", "line-1", field_name="quantity", new_value="4")
     assert correction.status_code == 201
@@ -346,7 +350,7 @@ def test_reprocess_creates_independent_attempt_and_preserves_prior_history(resou
     assert resource.result(first) == original
     assert resource.result(second)["extraction"] is None
     history = resource.client.get(f"/documents/{resource.source['id']}/runs", headers=resource.headers).json()["runs"]
-    assert {item["state"] for item in history} == {"completed", "failed"}
+    assert {item["state"] for item in history} == {"partial", "failed"}
     reviews = resource.client.get(f"/runs/{first['id']}/reviews", headers=resource.headers).json()["events"]
     assert len(reviews) == 1 and reviews[0]["action"] == "no_match"
 
@@ -374,7 +378,7 @@ def test_partial_page_needs_evidence_bound_human_acknowledgement(resource_factor
     assert resource.review(run, "acknowledge_page", evidence_reference=[
         {"page_number": 1, "region_reference": "invented"}]).status_code == 422
     acknowledgement = resource.review(run, "acknowledge_page", evidence_reference=[
-        {"page_number": 1, "region_reference": "line-1"}])
+        {"scope": "page", "page_number": 1, "source_sha256": resource.source["sha256"]}])
     assert acknowledgement.status_code == 201
     assert acknowledgement.json()["old_value"]["page_state"] == "partial"
     assert resource.review(run, "resolve").status_code == 201
@@ -392,7 +396,7 @@ def test_document_warnings_need_separate_named_evidence_bound_acknowledgement(re
     assert blocked.status_code == 409
     assert blocked.json()["error"] == "document_warnings_require_explicit_acknowledgement"
     acknowledgement = resource.review(run, "acknowledge_document", evidence_reference=[
-        {"page_number": 1, "region_reference": "header"}])
+        {"scope": "document", "source_document_id": resource.source["id"], "run_id": run["id"], "source_sha256": resource.source["sha256"]}])
     assert acknowledgement.status_code == 201
     assert resource.review(run, "resolve").status_code == 201
     assert resource.result(run)["extraction"]["warnings"] == payload["warnings"]

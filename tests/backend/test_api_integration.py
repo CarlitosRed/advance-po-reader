@@ -135,6 +135,14 @@ def review(client, run, *, action, row=None, candidate=None, field=None, value=N
     })
 
 
+def confirm_fixture_count(client, source, run):
+    # Independent expectation for the generated public fixture, not JSON row length.
+    return accepted(client.post(f"/runs/{run['id']}/page-counts", json={
+        "page_number": 1, "source_sha256": source["sha256"], "product_count": 2,
+        "source_discrepancy": False, "reviewer": "Synthetic integration reviewer",
+        "reason": "Counted the two printed products in the generated fixture"}))
+
+
 def test_pdf_image_upload_retry_conflict_and_tenant_scoped_keys(api_client):
     client = api_client
     tenant_a, vendor_a, _ = scope(client, "upload-A")
@@ -173,7 +181,7 @@ def test_run_retry_reprocess_retains_attempts_results_and_previous_review(api_cl
     assert result(client, first)["attempts"] == []
     assert create_run(client, source, key=run_key, provider="openai", fixture=None).status_code == 409
     first = process(client, first)
-    assert first["state"] == "completed" and first["review_state"] == "not_started"
+    assert first["state"] == "partial" and first["review_state"] == "not_started"
     initial = deepcopy(result(client, first))
     assert len(initial["attempts"]) == 1
     # A repeated process request is a replay of the terminal result, not a second attempt.
@@ -184,7 +192,7 @@ def test_run_retry_reprocess_retains_attempts_results_and_previous_review(api_cl
     second = accepted(create_run(client, source))
     assert second["id"] != first["id"]
     second = process(client, second)
-    assert second["state"] == "completed"
+    assert second["state"] == "partial"
     assert result(client, first) == initial
     assert result(client, second)["extraction"] == initial["extraction"]
     history = accepted(client.get(f"/documents/{source['id']}/runs"))
@@ -218,10 +226,11 @@ def test_review_requires_every_line_in_set_approval_and_keeps_observations_immut
     for item in candidate_rows:
         product = next(row for row in original["extraction"]["rows"] if row["row_id"] == item["row_id"])
         accepted(review(client, run, action="approve", row=product, candidate=item["candidates"][0]["candidate_id"]))
+    confirm_fixture_count(client, source, run)
     accepted(review(client, run, action="resolve"))
     assert accepted(client.get(f"/runs/{run['id']}"))["review_state"] == "resolved"
     events = accepted(client.get(f"/runs/{run['id']}/reviews"))["events"]
-    assert len(events) == 4
+    assert len(events) == 5
     assert all(event["reviewer"] and event["reason"] and event["created_at"] for event in events)
     assert result(client, run)["extraction"] == original["extraction"]
     tenant_b, vendor_b, _ = scope(client, "review-B")
@@ -272,10 +281,11 @@ def test_explicit_exclusion_and_sequential_corrections_are_append_only(api_clien
         if row["row_kind"] == "product":
             assert review(client, run, action="no_match", row=row).status_code == 422
             accepted(review(client, run, action="not_a_product", row=row))
+    confirm_fixture_count(client, source, run)
     accepted(review(client, run, action="resolve"))
     assert result(client, run) == original
     events = accepted(client.get(f"/runs/{run['id']}/reviews"))["events"]
-    assert len(events) == 5
+    assert len(events) == 6
     assert sum(event["action"] == "correct" for event in events) == 2
     assert review(client, run, action="correct", row=original["extraction"]["rows"][0], field="quantity", value="4").status_code == 409
 
@@ -355,14 +365,14 @@ def test_authorized_openai_workflow_with_mocked_response_and_shared_human_summar
         readiness=accepted(client.get(path+"/readiness"))
         assert readiness["can_process"] is True and readiness["attempt_count"]==0
         completed=process(client,run)
-        assert completed["state"]=="completed" and completed["review_state"]=="not_started"
+        assert completed["state"]=="partial" and completed["review_state"]=="not_started"
         value=result(client,run)
         assert value["extraction"]==payload and len(value["attempts"])==1
         assert value["attempts"][0]["request_id"]=="req_offline_demo"
         summary=accepted(client.get(path+"/summary"))
         assert summary["approved_products"]==[] and len(summary["pending_row_ids"])==2
         assert not accepted(client.get(path+"/readiness"))["can_process"]
-        assert process(client,run)["state"]=="completed" and len(calls)==1
+        assert process(client,run)["state"]=="partial" and len(calls)==1
 
 
 def test_continuation_fixture_one_logical_product_blank_quantity_details_and_unknown_blocker(api_client):

@@ -169,6 +169,9 @@ def test_correction_is_raw_string_and_invalidates_prior_decision(web_client):
     resolve={"action":"resolve","reviewer":"Fictional QA","reason":"All synthetic rows reviewed"}
     assert web_client.post(url,json=resolve).status_code==409
     assert web_client.post(url,json=event(rows[0],"approve",selected_candidate_id=products[0]["candidate_id"])).status_code==201
+    assert web_client.post("/runs/"+run["id"]+"/page-counts",json={
+        "page_number":1,"source_sha256":source["sha256"],"product_count":2,"source_discrepancy":False,
+        "reviewer":"Fictional QA","reason":"Counted two products in the generated source"}).status_code==201
     assert web_client.post(url,json=resolve).status_code==201
     summary=web_client.get("/runs/"+run["id"]+"/summary").json()
     assert summary["review_state"]=="resolved" and summary["can_finish_review"] is False
