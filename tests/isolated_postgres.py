@@ -73,3 +73,29 @@ def owned_database(admin_url, name=None):
                 connection.execute(text(f'DROP DATABASE "{name}"'))
     finally:
         admin.dispose()
+
+
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+_TEST_DATABASE_NAME = re.compile(r"gate_a_test_backend_[a-z0-9_]+")
+
+
+def require_test_database_url(value, *, names=None):
+    """Return a parsed, safe test-database URL or raise ValueError (fail closed).
+
+    Pure URL parsing; nothing connects. Any query string is rejected because
+    SQLAlchemy/libpq let it override the host, database, service or options.
+    """
+    try:
+        url = make_url(value)
+    except Exception as error:
+        raise ValueError("test database URL cannot be parsed") from error
+    database = url.database or ""
+    if url.drivername != "postgresql+psycopg":
+        raise ValueError("test database URL must use the postgresql+psycopg driver")
+    if url.host not in _LOOPBACK:
+        raise ValueError("test database URL must name a loopback host")
+    if url.query:
+        raise ValueError("test database URL must not carry query overrides")
+    if not _TEST_DATABASE_NAME.fullmatch(database) or (names is not None and database not in names):
+        raise ValueError("test database URL must name an isolated gate_a_test_backend_ database")
+    return url

@@ -30,6 +30,7 @@ from backend.config import Settings
 from backend.models import ProcessingRun, ProviderAttempt, SourceDocument
 from backend.providers import OpenAIProvider
 from backend.synthetic import fixture_payload, generate_fixture
+from tests.isolated_postgres import require_test_database_url
 
 ROOT = Path(__file__).resolve().parents[2]
 TOKEN = "test-token-long-enough"
@@ -41,10 +42,10 @@ def api_engine():
     value = os.environ.get("PO_BACKEND_API_TEST_DATABASE_URL")
     if not value:
         pytest.skip("isolated PostgreSQL API database is not configured")
-    url = make_url(value)
-    if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
-        pytest.fail("API tests require a loopback isolated test database with no query overrides")
+    try:
+        url = require_test_database_url(value)
+    except ValueError as error:
+        pytest.fail(f"API tests require a loopback isolated test database with no query overrides: {error}")
     engine = create_engine(url, connect_args={"connect_timeout": 3})
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:
