@@ -1,6 +1,6 @@
 # Product line assessment and JSON workflow
 
-> **Historical assessment:** This document describes the earlier local native-PDF and self-hosted prototype against a private sample corpus. It is retained as evidence and design history. Read [PROJECT_GOAL.md](../../PROJECT_GOAL.md) for current scope. Historic CLI behavior and measurements do not describe the planned API, shared ProductDocument contract, or phone-first UI.
+> **Historical assessment:** This document describes the earlier local native-PDF and self-hosted prototype against a private sample corpus. It is retained as evidence and design history. Read [PROJECT_GOAL.md](../../PROJECT_GOAL.md) for current scope. Historic CLI behavior and measurements do not describe the FastAPI backend, shared ProductDocument contract or web UI, which have since been implemented in `backend/` and `web/local-reader/` (see PROJECT_GOAL.md Current scope).
 
 User clarified the eventual goal after initial setup: upload a customer purchase order PDF and obtain an importable JSON file listing the Werner products requested. Subsequent instructions deferred the accepted JSON format and authorized a provisional catalog containing only products in these PDFs. The current logic extracts fields and rows, retrieves product evidence and stages reviewed choices; no UI is included. See `logic-architecture.md` for current implementation. Do not call the internal evidence/review JSON importable.
 
