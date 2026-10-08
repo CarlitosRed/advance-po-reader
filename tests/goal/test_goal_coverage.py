@@ -199,6 +199,43 @@ def test_goal_8_continuation_and_document_details_do_not_inflate_provider_count(
     assert len(value.rows) > 2 and check["provider_product_count"] == 2
 
 
+@pytest.mark.parametrize("schema_version", ["1.1", "1.2"])
+@pytest.mark.parametrize("reverse_evidence", [False, True])
+def test_goal_8_spanning_product_counts_once_on_first_source_page(desk, schema_version, reverse_evidence):
+    from tests.goal.test_goal_grounding import from_bytes, pdf_pages
+
+    products = rows()[:1]
+    raw = payload(deepcopy(products))
+    page = deepcopy(raw["pages"][0])
+    page["page_number"] = 2
+    raw["pages"].append(page)
+    row = raw["rows"][0]
+    # Multiple regions/pages are evidence for one row, not additional products.
+    row["evidence"].extend([{"page_number": 2, "region_reference": row["row_id"]}] * 2)
+    if reverse_evidence:
+        row["evidence"].reverse()
+    raw["schema_version"] = schema_version
+    if schema_version == "1.2":
+        row.update(row_role="product_item", item_group_id=row["row_id"])
+    text = "GOAL-001 Synthetic cobalt ladder"
+    result = from_bytes(desk, products, pdf_pages([text, "Continuation of the same product"]), raw)
+    suggestions = ok(desk.client.get(f"/runs/{result.run['id']}/suggestions"))["suggestions"]
+    result.suggestions = suggestions
+    approve(desk, result, products)
+    first = ok(count(desk, result, 1))
+    second = ok(count(desk, result, 0, page=2))
+    assert first["new_value"]["provider_product_count"] == 1
+    assert second["new_value"]["provider_product_count"] == 0
+    assert first["new_value"]["status"] == second["new_value"]["status"] == "matched"
+    value = summary(desk, result)
+    assert [check["provider_product_count"] for check in value["page_coverage"]] == [1, 0]
+    assert [check["status"] for check in value["page_coverage"]] == ["matched", "matched"]
+    assert value["blockers"] == [] and value["can_finish_review"]
+    assert len(value["approved_products"]) == 1
+    assert finish(desk, result).status_code == 201
+    assert summary(desk, result)["review_state"] == "resolved"
+
+
 def test_goal_10_generated_openapi_snapshot_matches_application():
     settings = Settings(_env_file=None, openai_api_key=None, live_processing_enabled=False)
     app = create_app(settings)

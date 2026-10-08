@@ -8,9 +8,10 @@ COUNT_METHOD = "reviewer_source_product_count_v1"
 def page_coverage(payload, events, source):
     checks = []
     for number in range(1, source.page_count + 1):
-        # Count original product items, never exclusions or continuation/detail rows.
+        # Count each original product item on its first source page only.
+        # Continuation/detail rows and additional evidence do not add products.
         extracted = sum(effective_row_role(row, payload.schema_version) == "product_item"
-                        and any(ref.page_number == number for ref in row.evidence)
+                        and min(ref.page_number for ref in row.evidence) == number
                         for row in payload.rows)
         history = [event for event in events if event["action"] == COUNT_ACTION
                    and event["new_value"]["source_sha256"] == source.sha256

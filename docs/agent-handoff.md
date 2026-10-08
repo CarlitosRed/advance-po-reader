@@ -323,3 +323,34 @@ The current plan, class/claim/state ledgers and local scorecard distinguish that
 limitation. Full evidence and checkpoint: external audit
 `project-notes/audits/codex-v11-safety-net-2026-10-08.md`. Independent review and
 Carlos's exact-head Tier 3 approval remain required. No PR approval or merge.
+
+## PR #20 P2 corrections — Codex · integration, October 8, 2026
+
+Addressed only P2-1 and P2-2 from Claudio's review of
+`eaa442e5b7aa96deac05d3513922041bcbe07c37`. Empty and detail-only orders retain
+`unresolved_rows_remain` in both modes, even after a matching independent zero
+count. This supersedes the historical PR #9 note above allowing zero-product
+documents to Finish; the current claim ledger and inherited goal test are corrected.
+Each product row contributes once to coverage, on its earliest evidence page,
+regardless of evidence array order or repeated references. No other policy changed.
+
+Class sweep across `backend/`: only `review_run` sets review state to resolved;
+it and `reviewed_summary` share `resolution_blockers`. Count-event responses,
+summary coverage, enabled processing-state synchronization and resolve share
+`page_coverage`. Evaluation counts use row-ID sets; source grounding inspects
+evidence without counting products. No additional instance of either defect found.
+
+Before production edits, the zero-order unit cases gave **4 failed / 4 passed**
+(ON fails, OFF passes); the zero-order and spanning-row HTTP regressions gave
+**5 failed**. On the fixes the targeted slice gave **13 passed**. Full offline
+backend+goal, including current browser checks: **554 passed, 2 expected OFF
+xfails, 0 skipped, 0 failures/errors**, 165.03s. Both schemas, empty/detail-only
+orders, reversed/repeated spanning evidence, count responses, summary and actual
+Finish are covered. JUnit evidence is in ignored `tmp/p2-*-results.xml` and
+`tmp/p2-red-unit.xml`, `tmp/p2-red-routes.xml`, `tmp/p2-green.xml`.
+
+PR #27 was still OPEN at the publication precheck. Carlos requires its merge
+before re-merging `origin/claude/landing-prep`; that dependency remains pending.
+P3 findings and deferred UI/batch evidence remain outside this correction.
+Cost $0; no paid calls, dotenv opens, private data, existing-service changes,
+approval or PR merge. Only disposable test-owned PostgreSQL clusters were used.

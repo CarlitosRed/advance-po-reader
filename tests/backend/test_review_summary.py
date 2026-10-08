@@ -36,6 +36,20 @@ def decisions(payload):
         for row in payload.rows]
 
 
+@pytest.mark.parametrize("safety_net_finish_blocking", [False, True])
+@pytest.mark.parametrize("schema_version", ["1.1", "1.2"])
+@pytest.mark.parametrize("details_only", [False, True])
+def test_zero_product_order_keeps_finish_blocker(safety_net_finish_blocking, schema_version, details_only):
+    raw = fixture_payload("continuation" if schema_version == "1.2" else "purchase_order").model_dump(mode="json")
+    raw["rows"] = [row for row in raw["rows"] if row["row_kind"] in {"charge", "total", "note"}] if details_only else []
+    payload = type(fixture_payload()).model_validate(raw)
+    assert resolution_blockers(payload, [], safety_net_finish_blocking=safety_net_finish_blocking) == ["unresolved_rows_remain"]
+    summary = reviewed_summary(run(payload), [], safety_net_finish_blocking=safety_net_finish_blocking)
+    assert summary["blockers"] == ["unresolved_rows_remain"]
+    assert not summary["can_finish_review"]
+    assert summary["pending_row_ids"] == summary["approved_products"] == []
+
+
 def test_raw_strings_remain_distinct_from_corrected_approved_quantity():
     payload = fixture_payload()
     events = decisions(payload)

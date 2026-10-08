@@ -57,9 +57,10 @@ comment supplies the immutable final head. Exceptions are deliberate mode bounda
 | Safety Net defaults OFF | Settings created without explicit override | Environment may explicitly enable it; dotenv is not needed | `backend/config.py:27` | S1 |
 | Default demo Finish remains available after decisions | OFF, all original v1 blockers cleared | Partial pages/warnings still need the original region acknowledgments | `backend/service.py:235`, `backend/review_summary.py:18` | S1 |
 | Counts and grounding block Finish | ON, missing/mismatched independent counts or missing source confirmation | OFF retains original gaps | `backend/review_summary.py:18` | S2 |
+| Each product contributes to one page count | Schema 1.1/1.2 product row, attributed to its earliest source evidence page | Continuation/detail rows and repeated evidence add no products | `backend/coverage.py:8` | S2, S5 |
 | Confirmation never approves a product | Source/page/count event only | A separate explicit product decision may already exist | `backend/review_summary.py:80` excludes source confirmation from latest decision | S2 |
 | Typed acknowledgment is bound to source and run | ON page/document acknowledgment | OFF accepts the original region evidence; ON ignores that legacy history | `backend/service.py:459`, `backend/review_summary.py:55` | S3, S4 |
-| Whole-document zero count can Finish | ON, independently confirmed zero, no other blockers | OFF retains the old zero-product unresolved-row policy | `backend/review_summary.py:18` | S5 |
+| A zero-product document remains blocked | Either mode, no product/unknown rows; matching zero counts do not clear `unresolved_rows_remain` | Detail rows do not satisfy the product-review requirement | `backend/review_summary.py:27` | S1, S2 |
 | Changed stored bytes prevent enabled Finish | ON resolve, exact stored hash checked | Summary is a projection, not a fresh file-integrity check | `backend/service.py:235` resolve branch | S5 |
 | Labeled hints use bounded exact SKU lookup | ON only | OFF uses the unchanged existing retrieval route; no tier policy changed | `backend/catalog.py:244` | S1, S2 |
 | Resolved review remains immutable | Any mode, resolved review | Existing idempotent replay rule is retained | `backend/service.py:235`, `backend/service.py:479` | S6 |

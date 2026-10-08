@@ -26,7 +26,7 @@ def resolution_blockers(payload, events, tiers=None, coverage=None, grounding=No
     blockers = []
     required = [row for row in payload.rows if effective_row_role(row, payload.schema_version)
                 in {"product_item", "unknown"}]
-    if (not required and not safety_net_finish_blocking) or any(row.row_id not in decided for row in required):
+    if not required or any(row.row_id not in decided for row in required):
         blockers.append("unresolved_rows_remain")
     if any(page.state == "failed" for page in payload.pages):
         blockers.append("failed_pages_require_new_processing_run")

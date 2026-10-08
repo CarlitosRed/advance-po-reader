@@ -214,13 +214,20 @@ def test_goal_7_mixed_unsupported_and_unavailable_needs_both_reviews(desk):
     assert "independent_page_product_counts_required" in summary(desk, result)["blockers"]
 
 
-def test_goal_8_zero_product_whole_document_can_finish_after_zero_count(desk):
-    result = process(desk, [])
+def test_goal_8_zero_product_whole_document_stays_blocked_after_zero_count(desk):
+    result = process(desk, rows(), observed=[])
     assert not summary(desk, result)["can_finish_review"]
     ok(count(desk, result, 0))
-    assert summary(desk, result)["can_finish_review"]
-    assert summary(desk, result)["approved_products"] == []
-    assert finish(desk, result).status_code == 201
+    value = summary(desk, result)
+    assert value["page_coverage"][0]["status"] == "matched"
+    assert value["blockers"] == ["unresolved_rows_remain"]
+    assert not value["can_finish_review"]
+    assert value["approved_products"] == []
+    response = finish(desk, result)
+    assert response.status_code == 409
+    assert response.json()["error"] == "unresolved_rows_remain"
+    assert summary(desk, result)["review_state"] != "resolved"
+
 
 
 def test_goal_7_unreadable_product_text_is_not_an_unavailable_text_page(desk):
