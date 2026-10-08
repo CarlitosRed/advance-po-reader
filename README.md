@@ -58,7 +58,7 @@ Read [PROJECT_GOAL.md](PROJECT_GOAL.md), [local logic rules](docs/local-logic-ru
 
 The original Gate A foundation in gate_a/ established health/configuration, local PostgreSQL/Alembic and the ProductDocument v1 envelope. Its [guide](docs/gate-a.md) records that checkpoint. Backend preparation in backend/ implemented validated uploads, immutable source/run/provider history, bounded candidates and review/audit; [its runbook](docs/local-backend.md) and [historical verification](docs/backend-verification.md) describe the earlier branch. The retained legacy reader is the native-text CLI (`reader.py`); the self-hosted model reader was removed, and its reports are archived under `docs/archive/`. Those measurements do not evaluate the OpenAI provider.
 
-The earlier prototype's local-model implementation and training-data tooling have been removed. The retained CLI extraction path uses the native PDF text engine; it is a prototype and is not the new FastAPI/ProductDocument v1 workflow. Historical measurements and operating guides are in [docs/archive](docs/archive/README.md). Original research sources remain in `docs/research/` as evidence and do not authorize provider transfers, API spending, training, or deployment.
+The earlier prototype's local-model implementation and training-data tooling have been removed. The retained CLI extraction path uses the native PDF text engine; it is a prototype, separate from the FastAPI/ProductDocument workflow in `backend/`, and makes no provider call. Historical measurements and operating guides are in [docs/archive](docs/archive/README.md). Original research sources remain in `docs/research/` as evidence and do not authorize provider transfers, API spending, training, or deployment.
 
 ## Run local Gate A
 

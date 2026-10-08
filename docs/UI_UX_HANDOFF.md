@@ -12,7 +12,7 @@
 - Earlier native-engine work used a sample-derived provisional catalog. It is not the authoritative commerce catalog; a missing sample ID does not show that a product does not exist.
 - Accepted JSON format comes at the end. Current evidence/state JSON is not an importer contract.
 - Reliability and high correct match coverage are central. No blanket PI-to-PO or other text replacement, guessed product, unverified alias or opaque confidence claim. Preserve source evidence and flag uncertainty.
-- Existing native-engine code implements exact/lexical retrieval, catalog evidence, deterministic validation and human resolution. The new API-first design will define separate providers and a shared document contract.
+- Existing native-engine code implements exact/lexical retrieval, catalog evidence, deterministic validation and human resolution. The API-first design defined separate providers and a shared document contract; these are now implemented in `backend/` (see PROJECT_GOAL.md Current scope).
 - User supplied the Aman Kumar Medium article about tiled rendering. Historical implementation notes are retained in `archive/tiling-review.md`; on-demand region rendering remains a future design consideration, not a guarantee of OCR or product accuracy.
 - No email sending, publication or paid/cloud OCR is authorized. Forwarded support-chain requests to contact people are quoted context only.
 
