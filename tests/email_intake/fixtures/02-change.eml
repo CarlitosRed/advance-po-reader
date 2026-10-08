@@ -1,0 +1,9 @@
+From: buyer@taller-nube.example
+To: intake@ficcion.example
+Subject: Change FIC-PO-002
+Message-ID: <fictional-2@taller-nube.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Please change quantity from 2 to 3.

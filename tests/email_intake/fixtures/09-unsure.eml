@@ -1,0 +1,23 @@
+From: buyer@taller-nube.example
+To: intake@ficcion.example
+Subject: Fictional attachment only
+Message-ID: <fictional-9@taller-nube.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="fictional-boundary-9"
+
+--fictional-boundary-9
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+
+
+--fictional-boundary-9
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="fictional-9.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQKRmljdGlvbmFsIG9wYXF1ZSBhdHRhY2htZW50LCBub3QgYSByZWFsIGRvY3VtZW50
+LgolJUVPRgo=
+
+--fictional-boundary-9--
