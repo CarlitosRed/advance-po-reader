@@ -1,5 +1,7 @@
 # Local website and real catalogs
 
+> **Superseded checkpoint (banner added 2026-10-08).** This guide describes the website checkpoint before API activation (real extraction deferred, no live call authorized). Later records show the server key configured and one authorized PDF processed once; accuracy is unmeasured. Current scope and the Implemented versus Intended list are in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and [AGENTS.md](../AGENTS.md); later evidence is in [api-activation-verification.md](api-activation-verification.md) and [live-demo-continuation.md](live-demo-continuation.md). The text below is kept unchanged as historical evidence.
+
 For the October 5 T-017 **free synthetic POC**, use
 [poc-demo-runbook.md](poc-demo-runbook.md) and `scripts/start-poc-demo.ps1`.
 That kit owns a fresh database, bypasses dotenv and injects fixed fictional

@@ -1,5 +1,7 @@
 # Project handoff — October 2, 2026
 
+> **Superseded checkpoint (banner added 2026-10-08).** This handoff describes the October 2 workspace-organization task, the source and backup checkpoints of that day, and a Gate A-only boundary. Since then the upload, extraction, catalog, review and web workflow were built on this branch, a server key was configured and one human-authorized PDF was processed once with OpenAI; entries added by later tasks follow below. Current scope and the Implemented versus Intended list are in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and [AGENTS.md](../AGENTS.md); later evidence is in [api-activation-verification.md](api-activation-verification.md) and [live-demo-continuation.md](live-demo-continuation.md). The text below is kept unchanged as historical evidence.
+
 This document is the sanitized project handoff. The latest user request for this chat is workspace organization: map the workstations, assign ownership only where verified, improve the operating standard, and verify source/runtime backup coverage. Do not continue extraction debugging during this task.
 
 ## Current source checkpoints

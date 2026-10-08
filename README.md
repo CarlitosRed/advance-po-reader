@@ -44,18 +44,19 @@ Local agent integration is implemented: 11 scoped STDIO MCP tools connect to
 the website, with human source authorization and product approval in the UI.
 The website follows agent-started runs and shares the saved review summary.
 Read [the agent/demo activation guide](docs/local-agent-demo.md). The backend
-API key is still deferred; no live OpenAI request or customer-file transfer has
-been made. Actual STDIO and fictional/mocked workflows are verified.
+API key was deferred at that checkpoint. Later records ([API activation](docs/api-activation-verification.md),
+[live demo](docs/live-demo-continuation.md)) show the server key configured, native `po_reader` calls working,
+and one human-authorized PDF processed once with OpenAI; extraction accuracy is not measured.
 
-The active local website is implemented in `web/local-reader/`, served by the FastAPI backend. It connects the three supplied catalog namespaces, private original PDF library, saved uploads/runs, source previews, and evidence-preserving review/audit. Read [the website runbook](docs/local-website.md) and [verification record](docs/website-verification.md). It runs locally without an API key; real extraction is deferred until the server key, current model verification and source-specific customer authorization are supplied.
+The active local website is implemented in `web/local-reader/`, served by the FastAPI backend. It connects the three supplied catalog namespaces, private original PDF library, saved uploads/runs, source previews, and evidence-preserving review/audit. Read [the website runbook](docs/local-website.md) and [verification record](docs/website-verification.md). It runs locally without an API key. Live extraction runs only when the server key is set and `live_processing_enabled` is on (`backend/config.py:26`), for a source a person has authorized.
 
 The user selected one local test workspace with three manually selected catalogs (WernerCo, United Kingdom, Australia), and the original 33-PDF email archive. Product IDs remain separate across catalogs. No country is inferred for WernerCo. This worktree owns port 8014, database gate_a_backend_website, and its private data/output directories. Source changes are on codex/local-website-catalogs. Gate A on 8010 and backend preparation on 8012 remain preserved checkpoints.
 
-Read [PROJECT_GOAL.md](PROJECT_GOAL.md), [local logic rules](docs/local-logic-rules-2026-10-02.md), and [agent handoff](docs/agent-handoff.md) before continuing. The extraction payload is version 1.1; source observations, parses, catalog suggestions and human decisions remain separate. Every product approval is explicit. The reviewed-product summary has no cart/order writes. There is no live provider request, training or deployment in this phase.
+Read [PROJECT_GOAL.md](PROJECT_GOAL.md), [local logic rules](docs/local-logic-rules-2026-10-02.md), and [agent handoff](docs/agent-handoff.md) before continuing. The extraction payload is version 1.2 (`backend/contracts.py:20`; legacy 1.1 is still accepted, `backend/contracts.py:21`; the OpenAI adapter emits 1.2, `backend/providers.py:187`); source observations, parses, catalog suggestions and human decisions remain separate. Every product approval is explicit. The reviewed-product summary has no cart/order writes. Training, deployment, Apple, AWS and cart or order writes are not part of this phase.
 
 ## Preserved foundations and comparison components
 
-The original Gate A foundation in gate_a/ established health/configuration, local PostgreSQL/Alembic and the ProductDocument v1 envelope. Its [guide](docs/gate-a.md) records that checkpoint. Backend preparation in backend/ implemented validated uploads, immutable source/run/provider history, bounded candidates and review/audit; [its runbook](docs/local-backend.md) and [historical verification](docs/backend-verification.md) describe the earlier branch. The existing self-hosted reader and all research remain preserved under their existing paths. Their measurements do not evaluate the new OpenAI provider.
+The original Gate A foundation in gate_a/ established health/configuration, local PostgreSQL/Alembic and the ProductDocument v1 envelope. Its [guide](docs/gate-a.md) records that checkpoint. Backend preparation in backend/ implemented validated uploads, immutable source/run/provider history, bounded candidates and review/audit; [its runbook](docs/local-backend.md) and [historical verification](docs/backend-verification.md) describe the earlier branch. The retained legacy reader is the native-text CLI (`reader.py`); the self-hosted model reader was removed, and its reports are archived under `docs/archive/`. Those measurements do not evaluate the OpenAI provider.
 
 The earlier prototype's local-model implementation and training-data tooling have been removed. The retained CLI extraction path uses the native PDF text engine; it is a prototype and is not the new FastAPI/ProductDocument v1 workflow. Historical measurements and operating guides are in [docs/archive](docs/archive/README.md). Original research sources remain in `docs/research/` as evidence and do not authorize provider transfers, API spending, training, or deployment.
 
@@ -76,9 +77,9 @@ Run synthetic checks in a second terminal:
 
 The API defaults to `127.0.0.1:8000`. PostgreSQL is optional for startup/liveness and required for readiness. Apply migrations explicitly with `python -m alembic upgrade head` in the Gate A environment. See [Gate A setup and verification](docs/gate-a.md) for configuration, health routes, isolated database tests, and verification limits.
 
-Gate A stops at this foundation. Later gates cover uploads, extraction, catalog matching, and human review. Gate A makes no provider request and implements no cart action.
+Gate A stops at this foundation. Uploads, extraction, catalog matching and human review were built after Gate A in `backend/`. Gate A itself makes no provider request and implements no cart action.
 
-Local Gate A has been implemented and verified within its bounded scope. Later shared-payload, catalog, extraction, review and evaluation gates remain governed by `PROJECT_GOAL.md`. Production use still depends on an authorized authoritative catalog, a defined cart/import contract, independently reviewed evaluation data, and privacy approval for any external processing. The later phone-first product includes a web workflow; the retained CLI is a native-text prototype.
+Local Gate A has been implemented and verified within its bounded scope. Implemented since: shared payload, catalog, upload, OpenAI extraction adapter (off unless enabled), review and audit, the web workflow and the free demo. Intended, not built or not verified: accuracy on real documents, an independent evaluation set, automatic acceptance, Apple, AWS and cart writes (see Current scope in `PROJECT_GOAL.md`). Production use still depends on an authorized authoritative catalog, a defined cart/import contract, independently reviewed evaluation data, and privacy approval for any external processing. The later phone-first product includes a web workflow; the retained CLI is a native-text prototype.
 
 ## Saved context and agent work
 
