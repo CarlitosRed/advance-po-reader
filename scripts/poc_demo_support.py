@@ -60,6 +60,25 @@ def offline_boundary(block_providers=True):
     httpx.HTTPTransport.handle_request = httpx.AsyncHTTPTransport.handle_async_request = forbidden
 
 
+def install_free_runs_only(app):
+    """Free demo only: refuse any new run that is not synthetic, and answer a malformed body with a sanitized 422."""
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
+
+    @app.middleware('http')
+    async def free_runs_only(request: Request, call_next):
+        if request.method == 'POST' and request.url.path.startswith('/documents/') and request.url.path.endswith('/runs'):
+            try:
+                body = await request.json()
+            except ValueError:
+                return JSONResponse({'error': 'invalid_request'}, status_code=422)
+            if not isinstance(body, dict):  # valid JSON that is not an object ([], null, 'x', 1, true)
+                return JSONResponse({'error': 'invalid_request'}, status_code=422)
+            if body.get('provider') != 'synthetic':
+                return JSONResponse({'error': 'poc_offline_only_use_demo_entry'}, status_code=409)
+        return await call_next(request)
+
+
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")

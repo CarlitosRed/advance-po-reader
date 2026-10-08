@@ -40,9 +40,10 @@ def create_server(client=None):
         return await safe(bridge.request("GET", "/website/workspaces"))
 
     @server.tool(annotations=read)
-    async def reader_list_test_documents() -> dict[str, Any]:
-        """List preserved original email PDFs. No PDF contents or extraction are returned."""
-        return await safe(bridge.request("GET", "/website/corpus"))
+    async def reader_list_test_documents(tenant_id: UUID) -> dict[str, Any]:
+        """List preserved original email PDFs for one explicitly chosen workspace. No PDF contents or extraction are returned."""
+        await safe(bridge.catalogs(tenant_id))
+        return await safe(bridge.request("GET", "/website/corpus", tenant_id))
 
     @server.tool(annotations=read)
     async def reader_search_catalog(tenant_id: UUID,

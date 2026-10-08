@@ -101,7 +101,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-local-we
 ```
 
 `-LiveDemo` checks for a nonblank server key and sets the live switch only for
-that launch. Startup sends no document. Reload `http://127.0.0.1:8014/` after
+that launch. Startup sends no document. `-LiveDemo` now starts the server through `scripts/serve_backend.py`: with live on it refuses the shared default API token and applies the POC spend cap (5 live runs unless `PO_POC_MAX_LIVE_RUNS` is set, plus a dollar cap when `PO_POC_INPUT_USD_PER_MTOK`/`PO_POC_OUTPUT_USD_PER_MTOK` are set; details in [poc-demo-runbook.md](poc-demo-runbook.md) step 5). It also refuses non-OpenAI runs while live is on. Starting `python -m backend` by hand with live enabled has NO cap and NO token check: do not. For the guided demo with a visible counter use `start-poc-demo.ps1 -Live`. Reload `http://127.0.0.1:8014/` after
 the restart so its in-memory browser session is refreshed. Check readiness:
 
 ```powershell
