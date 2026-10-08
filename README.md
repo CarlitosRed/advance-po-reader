@@ -35,9 +35,10 @@ Wait for **Free POC ready**, open [http://127.0.0.1:8020/poc-demo](http://127.0.
 No `data\` folder is needed beforehand: private runtime files are created locally.
 Files under `data\`, including the old CLI's `catalog-seed.json`, are private and
 are never in Git; the demo uses the fictional files under `fixtures/poc-demo/`.
-The separate live OpenAI mode on Carlos's machine needs Carlos's private key and
-authorization. Never request or share keys in chat or files, and never copy his
-credentials to a teammate's machine. See the [demo runbook](docs/poc-demo-runbook.md)
+The separate live OpenAI mode needs your own OpenAI key
+(see [Run the live demo with your own OpenAI key](#run-the-live-demo-with-your-own-openai-key)).
+Never request or share keys in chat or files, and never copy anyone's
+credentials to another machine. See the [demo runbook](docs/poc-demo-runbook.md)
 for the free workflow and its limits.
 
 Local agent integration is implemented: 11 scoped STDIO MCP tools connect to
@@ -53,6 +54,98 @@ The active local website is implemented in `web/local-reader/`, served by the Fa
 The user selected one local test workspace with three manually selected catalogs (WernerCo, United Kingdom, Australia), and the original 33-PDF email archive. Product IDs remain separate across catalogs. No country is inferred for WernerCo. This worktree owns port 8014, database gate_a_backend_website, and its private data/output directories. Source changes are on codex/local-website-catalogs. Gate A on 8010 and backend preparation on 8012 remain preserved checkpoints.
 
 Read [PROJECT_GOAL.md](PROJECT_GOAL.md), [local logic rules](docs/local-logic-rules-2026-10-02.md), and [agent handoff](docs/agent-handoff.md) before continuing. The extraction payload is version 1.2 (`backend/contracts.py:20`; legacy 1.1 is still accepted, `backend/contracts.py:21`; the OpenAI adapter emits 1.2, `backend/providers.py:187`); source observations, parses, catalog suggestions and human decisions remain separate. Every product approval is explicit. The reviewed-product summary has no cart/order writes. Training, deployment, Apple, AWS and cart or order writes are not part of this phase.
+
+## Run the live demo with your own OpenAI key
+
+Live mode reads a real order with an OpenAI model and costs real money (a few
+cents per document). Free mode above stays the default. Work through these steps
+in order from the repo root, in a normal (not administrator) PowerShell. The key
+is only ever typed into one ignored file on your own PC.
+
+**1. Create the key file.** The file is `.env.backend` in the repo root (next to
+`README.md`). Git ignores it (`.gitignore` line 9, `.env.*`); check with
+`git check-ignore -v .env.backend`. It holds two lines:
+
+```text
+OPENAI_API_KEY=PASTE_YOUR_KEY_HERE
+PO_BACKEND_LOCAL_API_TOKEN=PASTE_A_PRIVATE_TOKEN_OF_16_OR_MORE_CHARACTERS
+```
+
+The token is a private password you invent for the local server. It must be at
+least 16 characters and must not be the shared default. Create the file without
+the key showing in shell history or on screen: run `notepad .env.backend`, answer
+Yes to create the file, paste the two lines, replace the placeholders, save, and
+close. Check in Explorer that the name is exactly `.env.backend` and not
+`.env.backend.txt`. Never use `echo`, `Set-Content` or any command that contains
+the key.
+
+**2. Protect the key.** Never share it in chat, email, Git or screenshots, and do
+not copy someone else's key. Create a separate OpenAI project key with a monthly
+budget limit on that project, and revoke the key when you are done.
+
+**3. Rehearse for free.** This shows the live screens against a fake OpenAI. It
+needs no key and makes no network calls:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1 -LiveRehearsal -Port 8021
+```
+
+Wait for `Live rehearsal (fake transport, no key, no network) ready`, then open
+`http://127.0.0.1:8021/poc-demo`. Stop with Ctrl+C.
+
+**4. Probe once (a few cents, needs the key).** This sends one fictional one-page
+PDF, never a real order:
+
+```powershell
+.\.venv-backend\Scripts\python.exe scripts\poc-probe-live.py --confirm
+```
+
+Without `--confirm` it refuses and sends nothing. The output lists the model,
+`result` (`succeeded` or a failure), latency, tokens, estimated cost and
+`model_accepted_this_input`: `yes` means the model took the PDF; `probably_no`
+means it rejected the PDF, so rerun with `--images` and, if that works, set
+`$env:PO_POC_PDF_AS_IMAGES = '1'` before step 5 (one-page PDFs only);
+`unknown` means the failure was something else, so check the key and budget.
+Cost shows only after you set `PO_POC_INPUT_USD_PER_MTOK` and
+`PO_POC_OUTPUT_USD_PER_MTOK` to your current prices.
+
+**5. Go live.**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1 -Live -Port 8021
+```
+
+Add `-CatalogFile C:\private\catalog.json -FreshDatabase` to use your own catalog
+(keep it outside the repo). Live processing is switched on for that process only.
+Upload a PDF or photo: the page asks whether to send this document to OpenAI and
+shows the cost; only **Send** submits it, and the same file is never sent twice.
+The page shows a running count. By default the spend cap counts runs:
+`PO_POC_MAX_LIVE_RUNS` (default 5). To cap by estimated dollars set
+`PO_POC_INPUT_USD_PER_MTOK`, `PO_POC_OUTPUT_USD_PER_MTOK` and
+`PO_POC_SPEND_CAP_USD` (default 3) in PowerShell before starting, for example
+`$env:PO_POC_MAX_LIVE_RUNS = '3'`. At the cap, new uploads are refused with a
+plain message; raise the limit and restart. `-FreshDatabase` resets the count.
+
+**6. Stop.** Press Ctrl+C in the terminal. Live data stays in the ignored `data/`
+folder.
+
+**Windows details.** If `python` is not on PATH, add `-Python 'C:\path\to\python.exe'`
+(`py -3.12 -c "import sys;print(sys.executable)"` prints it). If PostgreSQL is not
+on PATH, add `-PostgresBin 'C:\path\to\postgres\bin'`. Use port 8020, or
+`-Port 8021` if 8020 is taken. Choose `-Live` or `-LiveRehearsal`, not both.
+
+**If it refuses** (nothing is started and nothing is sent):
+
+| Message starts with | What to do |
+| --- | --- |
+| `Live mode needs a private local API token` | Add `PO_BACKEND_LOCAL_API_TOKEN` (16 or more characters, your own) to `.env.backend`. |
+| `Live mode needs your OpenAI key` | Add `OPENAI_API_KEY` to `.env.backend` yourself. |
+| `The server settings could not be loaded` | Look for a typo in `.env.backend`; values are never printed. |
+| `Refused: this sends one small fictional page` | Rerun the probe with `--confirm`. |
+| `The limit for this demo is reached` / `poc_spend_cap_reached` | Raise `PO_POC_MAX_LIVE_RUNS` or `PO_POC_SPEND_CAP_USD`, then restart. |
+| `POC stopped with an error` | Printed after any refusal above; read the line before it. |
+
+Details and limits: [demo runbook](docs/poc-demo-runbook.md), "Live mode (T-019)".
 
 ## Preserved foundations and comparison components
 
