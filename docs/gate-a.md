@@ -1,5 +1,7 @@
 # Local Gate A foundation
 
+> **Superseded checkpoint (banner added 2026-10-08).** This guide records the Gate A checkpoint, whose boundary excluded upload, extraction, matching, review and any provider request. Those were built afterwards; Gate A itself still makes no provider request. Current scope and the Implemented versus Intended list are in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and [AGENTS.md](../AGENTS.md); later evidence is in [api-activation-verification.md](api-activation-verification.md) and [live-demo-continuation.md](live-demo-continuation.md). The text below is kept unchanged as historical evidence.
+
 Implemented October 2, 2026 on `codex/local-gate-a`, starting from published commit `a41bf23c23bce63d38db8d04ccef1fb1137c279d`. The `gate_a` package is independent of the legacy `po_reader` package. It has no provider configuration, requires no API key, and starts with PostgreSQL stopped. Readiness stays unavailable until the local database is reachable and explicitly migrated.
 
 Gate A implements health/configuration, a PostgreSQL tenant foundation, Alembic migrations, and an initial `ProductDocument v1` envelope with reusable observation/state validation. It does not implement document ingestion or extraction. The full extraction payload and any mapping from `PAGE_EXTRACTION_SCHEMA` remain to be specified at their later gate. The [project goal](../PROJECT_GOAL.md) and [local logic rules](local-logic-rules-2026-10-02.md) continue to govern scope.

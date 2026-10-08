@@ -49,7 +49,7 @@ fs.mkdirSync(output, {recursive: true});
   // Upload from the file input starts reading at once (no submit button); the first visit asks for a name.
   const openCase = async (id, ext = "pdf") => {
     await page.goto(base + "/poc-demo");
-    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 4);
+    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 5);
     assert.equal(await page.locator("#poc-submit").count(), 0, "the entry page has no submit button");
     await page.setInputFiles("#poc-file", path.join(process.cwd(), "data", "poc-demo", "generated", id + "." + ext));
     await page.waitForSelector("#reviewer, #tab-panel", {timeout: 60000});
@@ -110,7 +110,7 @@ fs.mkdirSync(output, {recursive: true});
 
   try {
     await page.goto(base + "/poc-demo");
-    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 4);
+    await page.waitForFunction(() => document.querySelectorAll("#poc-cases a").length === 5);
     await noOverflow("entry");
     await screenshot("phone-entry.png");
 
@@ -239,7 +239,56 @@ fs.mkdirSync(output, {recursive: true});
     assert.equal(await approvedCount(), 2);
     await finish(2);
 
-    // ---- 5. The same order as PNG and JPG opens on the same tabs and approves nothing.
+    // ---- 5. Plain reasons: every Check card says why, the Sure card says what it matched, and the whole review
+    // (including Finish) is done without ever opening Ignored lines or clicking Agree.
+    await openCase("demo-reasons");
+    assert.deepEqual(await tiers(), ["uncertain", "probable", "uncertain", "uncertain", "uncertain", "uncertain", "probable", "probable", "certain"]);
+    assert.equal(await selectedTab(), "sure");
+    assert.match(await tab("not").innerText(), /optional/);
+    assert.match(await page.locator("#tab-panel .tab-intro").innerText(), /check mark/);
+    const sureCard = await card(8);
+    assert.match(await sureCard.innerText(), /Looks like/);
+    assert.match(await sureCard.locator('[data-act="confirm"]').innerText(), /This is the product/);
+    await screenshot("phone-sure-check-mark.png");
+    await sureCard.locator('[data-act="confirm"]').click();
+    await saved("approve", 1);
+    await openTab("check");
+    const reasons = await page.locator("#tab-cards .reason").allInnerTexts();
+    assert.equal(reasons.length, 8, "every Check card gives a reason");
+    assert.match(reasons[0], /^\d+ catalog products could match this line; pick the right one\.$/);
+    assert.equal(reasons[2], "This line was not searched in the catalog: it is not clear what kind of line it is.");
+    assert.equal(reasons[3], "The app found conflicting readings on this line; please check it.");
+    assert.equal(reasons[4], "The app was unsure how to read this line's quantity.");
+    assert.match(reasons[5], /^The catalog has both '.+' and '.+'\.$/);
+    assert.equal(reasons[6], "Matched after ignoring spaces, punctuation and capital letters in a printed code; please check it.");
+    assert.equal(reasons[7], "The match comes from a code in the description; please check it.");
+    assert.equal(reasons[1], "Matched by an approximate search on the description; please check it.");
+    assert.doesNotMatch(reasons.join(" "), /tier|trigram|canonical|evidence/i);
+    assert.equal(await page.locator("#tab-cards .could-label").first().innerText(), "Could also be:");
+    assert.ok(await page.locator("#tab-cards .could-row").count() >= 2);
+    await noOverflow("Check reasons");
+    await screenshot("phone-check-reasons.png");
+    await page.setViewportSize({width: 1280, height: 900});
+    await screenshot("desktop-check-reasons.png");
+    await page.setViewportSize({width: 390, height: 844});
+    // Answer all eight Check lines with clicks on the Check tab only.
+    let approvals = 1;
+    for (const index of [0, 5, 6, 7]) {
+      await (await card(index)).locator('[data-act="confirm"]').first().click();
+      approvals++;
+      await saved("approve", approvals);
+    }
+    await chooseByCode(1, "POC-0101", 3);
+    await notAProduct(2, 1);
+    await notAProduct(3, 2);
+    await notAProduct(4, 3);
+    assert.equal(await selectedTab(), "check");
+    assert.match(await tab("not").innerText(), /optional/, "Ignored lines never ask for work");
+    const marks = await page.evaluate(() => JSON.parse(localStorage.getItem("advance-po-reader.marks." + state.run.id) || "{}"));
+    assert.deepEqual(marks.agreed || [], [], "no Agree click");
+    await finish(await approvedCount());
+
+    // ---- 6. The same order as PNG and JPG opens on the same tabs and approves nothing.
     for (const ext of ["png", "jpg"]) {
       await openCase("demo-three-tiers", ext);
       assert.equal(await page.evaluate(() => state.run.provider), "synthetic");
@@ -252,7 +301,8 @@ fs.mkdirSync(output, {recursive: true});
       filtered_bulk_confirm_only_visible: true, move_to_check: true, explicit_check_decisions: true,
       change_product_search_choose_confirm: true, new_product_then_confirm: true, not_a_product: true,
       device_local_agree_and_flag_write_no_event: true, enlarge: true, no_horizontal_overflow: true,
-      finish_and_resolved_reload: true, uploads: ["PDF", "PNG", "JPG"],
+      finish_and_resolved_reload: true, plain_reason_on_every_check_card: true, sure_check_mark_button: true,
+      review_finished_without_opening_ignored_lines_or_agree: true, uploads: ["PDF", "PNG", "JPG"],
       external_browser_requests: external.length, page_errors: errors.length, attribution: REVIEWER};
     fs.writeFileSync(path.join(output, "browser-qa.json"), JSON.stringify(result, null, 2));
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");

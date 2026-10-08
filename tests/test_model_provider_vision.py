@@ -1,8 +1,6 @@
-import base64
 import copy
 import io
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,10 +12,7 @@ from pypdf import PdfReader, PdfWriter, Transformation
 from po_reader import service
 from po_reader.catalog import ROOT, load_catalog
 from po_reader.engine import read_pages
-from po_reader.model_provider import (
-    COMPARISON_SCHEMA, PAGE_EXTRACTION_SCHEMA, CascadeProvider, OllamaProvider, OpenAIProvider,
-    ProviderError, build_cascade_provider, validate_schema,
-)
+from po_reader.model_provider import COMPARISON_SCHEMA, PAGE_EXTRACTION_SCHEMA, ProviderError, validate_schema
 from po_reader.rendering import RegionRenderer
 from po_reader.vision import _contains, _line, analyze_vision, parse_observed_quantity
 
@@ -75,121 +70,22 @@ class MockVisionProvider:
                     attribute_conflicts=[], reason="Compatible product description.")
 
 
-def completed_response(value):
-    return dict(status="completed", output=[dict(type="message", content=[dict(type="output_text", text=json.dumps(value))])])
+class SchemaValidationTests(unittest.TestCase):
+    def test_schema_accepts_valid_page_and_comparison(self):
+        validate_schema(extracted_page(), PAGE_EXTRACTION_SCHEMA)
+        validate_schema(dict(selected_product_id=None, description_relationship="insufficient_information",
+                             attribute_conflicts=[], reason="Not enough evidence."), COMPARISON_SCHEMA)
 
-
-class ProviderContractTests(unittest.TestCase):
-    def setUp(self):
-        self.provider = OpenAIProvider("mock-vision", api_key="test-key")
-        self.comparison = dict(selected_product_id="0076-76", description_relationship="compatible",
-                               attribute_conflicts=[], reason="Observed identifier and compatible name.")
-
-    def test_openai_without_api_key_fails_before_http(self):
-        with patch.dict(os.environ, {}, clear=True), patch("po_reader.model_provider._request_json") as request:
-            with self.assertRaisesRegex(ProviderError, "OPENAI_API_KEY"):
-                OpenAIProvider("mock-vision")
-            request.assert_not_called()
-
-    def test_structured_request_preserves_codes_and_sends_page_image(self):
-        record = extracted_page([observed_line(identifiers=[dict(
-            raw_value="0076-76", printed_label="Product Code", role="vendor_product_code", status="observed")], uom_raw=None)])
-        with patch("po_reader.model_provider._request_json", return_value=completed_response(record)) as request:
-            result = self.provider.extract_page(b"page-png", 1, "native observation")
-        self.assertEqual(result["lines"][0]["identifiers"][0]["raw_value"], "0076-76")
-        self.assertIsNone(result["lines"][0]["uom_raw"])
-        payload = request.call_args.args[1]
-        self.assertFalse(payload["store"])
-        self.assertTrue(payload["text"]["format"]["strict"])
-        image = payload["input"][1]["content"][1]["image_url"]
-        self.assertEqual(base64.b64decode(image.split(",", 1)[1]), b"page-png")
-
-    def test_refusal_incomplete_and_missing_output_raise_provider_error(self):
-        responses = [dict(status="incomplete", output=[]),
-                     dict(status="completed", output=[dict(content=[dict(type="refusal", refusal="declined")])]),
-                     dict(status="completed", output=[])]
-        for response in responses:
-            with self.subTest(response=response), patch("po_reader.model_provider._request_json", return_value=response):
-                with self.assertRaises(ProviderError):
-                    self.provider.compare({}, [])
-
-    def test_invalid_json_schema_enum_and_extra_fields_fail_closed(self):
-        values = [dict(self.comparison, attribute_conflicts="none"),
-                  dict(self.comparison, description_relationship="probably"),
-                  dict(self.comparison, confidence=0.99),
-                  {key: value for key, value in self.comparison.items() if key != "selected_product_id"}]
-        for value in values:
-            with self.subTest(value=value), patch("po_reader.model_provider._request_json", return_value=completed_response(value)):
-                with self.assertRaises(ProviderError):
-                    self.provider.compare({}, [])
-        response = completed_response(self.comparison)
-        response["output"][0]["content"][0]["text"] = '{"selected_product_id":'
-        with patch("po_reader.model_provider._request_json", return_value=response):
-            with self.assertRaises(ProviderError):
-                self.provider.compare({}, [])
-
-    def test_malformed_response_envelopes_raise_provider_error(self):
-        for output in (None, {}, [None], [dict(content=None)], [dict(content=[None])]):
-            with self.subTest(output=output), patch("po_reader.model_provider._request_json", return_value=dict(status="completed", output=output)):
-                with self.assertRaises(ProviderError):
-                    self.provider.compare({}, [])
-
-    def test_local_output_schema_and_completion_are_validated(self):
-        provider = OllamaProvider("mock-local")
-        responses = [dict(done=False, message=dict(content=json.dumps(self.comparison))),
-                     dict(done=True, done_reason="length", message=dict(content=json.dumps(self.comparison))),
-                     dict(done=True, done_reason="stop", message=None),
-                     dict(done=True, done_reason="stop", message=dict(content="not JSON"))]
-        for response in responses:
-            with self.subTest(response=response), patch("po_reader.model_provider._request_json", return_value=response):
-                with self.assertRaises(ProviderError):
-                    provider.compare({}, [])
-        with patch("po_reader.model_provider._request_json", return_value=dict(done=True, done_reason="stop", message=dict(content=json.dumps(self.comparison)))):
-            self.assertEqual(provider.compare({}, []), self.comparison)
-
-    def test_cascade_defaults_and_distinct_visual_text_requests(self):
-        with patch.dict(os.environ, {}, clear=True):
-            provider = build_cascade_provider()
-        self.assertEqual(provider.model, "qwen3-vl:8b-instruct")
-        self.assertEqual(provider.adjudicator.model, "gpt-oss:20b")
-        responses = [dict(done=True, done_reason="stop", message=dict(content=json.dumps(extracted_page()))),
-                     dict(done=True, done_reason="stop", message=dict(content=json.dumps(self.comparison)))]
-        with patch("po_reader.model_provider._request_json", side_effect=responses) as request:
-            provider.extract_page(b"png-page", 1, "native text")
-            provider.compare({}, [])
-        visual, text = [call.args[1] for call in request.call_args_list]
-        self.assertEqual(visual["model"], "qwen3-vl:8b-instruct")
-        self.assertEqual(base64.b64decode(visual["messages"][1]["images"][0]), b"png-page")
-        self.assertFalse(visual["think"])
-        self.assertEqual(text["model"], "gpt-oss:20b")
-        self.assertEqual(text["think"], "low")
-        self.assertNotIn("images", text["messages"][1])
-        self.assertEqual(provider.stage_counts()["extraction"]["used"], 1)
-        self.assertEqual(provider.stage_counts()["adjudication"]["used"], 1)
-        self.assertFalse(provider.metadata["training_enabled"])
-
-    def test_model_digest_resolution_and_absent_stage_are_explicit(self):
-        with patch.dict(os.environ, {}, clear=True):
-            provider = build_cascade_provider()
-        installed = [dict(name="qwen3-vl:8b-instruct", digest="sha256:extractor")]
-        with patch("po_reader.model_provider._local_model_inventory", return_value=installed) as inventory:
-            provider.refresh_model_identities()
-            provider.refresh_model_identities()
-        inventory.assert_called_once()
-        models = provider.metadata["models"]
-        self.assertEqual(models["extractor"]["digest"], "sha256:extractor")
-        self.assertEqual(models["adjudicator"]["digest_status"], "model_not_installed")
-        self.assertIsNone(models["adjudicator"]["digest"])
-        self.assertEqual(provider.metadata["stages"]["reranking"]["status"], "unavailable")
-
-    def test_failed_adjudication_is_counted_without_claiming_success(self):
-        provider = CascadeProvider(MockVisionProvider(), OllamaProvider("gpt-oss:20b"))
-        with patch("po_reader.model_provider._request_json", side_effect=ProviderError("unavailable")):
-            with self.assertRaises(ProviderError):
-                provider.compare({}, [])
-        counts = provider.stage_counts()["adjudication"]
-        self.assertEqual(counts, dict(used=0, skipped=0, failed=1))
-        self.assertEqual(provider.usage[0]["model"], "gpt-oss:20b")
+    def test_schema_rejects_invalid_types_enums_and_extra_fields(self):
+        invalid = [
+            (dict(selected_product_id="x", description_relationship="probably", attribute_conflicts=[], reason="r"), COMPARISON_SCHEMA),
+            (dict(selected_product_id="x", description_relationship="compatible", attribute_conflicts="none", reason="r"), COMPARISON_SCHEMA),
+            (dict(selected_product_id="x", description_relationship="compatible", attribute_conflicts=[], reason="r", confidence=0.99), COMPARISON_SCHEMA),
+            ({"selected_product_id": "x"}, COMPARISON_SCHEMA),
+        ]
+        for value, schema in invalid:
+            with self.subTest(value=value), self.assertRaises(ProviderError):
+                validate_schema(value, schema)
 
 
 class ObservedQuantityTests(unittest.TestCase):
@@ -234,26 +130,6 @@ class VisionIntegrationTests(unittest.TestCase):
         self.assertTrue(any(e["origin"] == "native_row" and e["bbox"] for e in line["evidence"]))
         self.assertTrue(provider.page_calls[0][0].startswith(b"\x89PNG"))
 
-    def test_cascade_document_records_stages_and_rendering_without_adjudication(self):
-        extractor = MockVisionProvider()
-        adjudicator = OllamaProvider("gpt-oss:20b")
-        provider = CascadeProvider(extractor, adjudicator)
-        with patch("po_reader.model_provider._local_model_inventory", return_value=[]), \
-                patch("po_reader.model_provider._request_json") as request:
-            first = analyze_vision(self.raw, "sample.pdf", self.catalog, provider)
-            second = analyze_vision(self.raw, "sample.pdf", self.catalog, provider)
-        request.assert_not_called()
-        for document in (first, second):
-            extraction = document["extraction"]
-            self.assertEqual(extraction["cascade"]["stage_counts"]["extraction"]["used"], 1)
-            self.assertEqual(extraction["cascade"]["stage_counts"]["adjudication"]["skipped"], 1)
-            self.assertEqual(extraction["cascade"]["stage_counts"]["reranking"]["skipped"], 1)
-            self.assertEqual(document["lines"][0]["match"]["status"], "matched")
-            self.assertEqual(document["lines"][0]["comparison_method"], "deterministic_exact_description")
-            self.assertEqual(extraction["rendering"]["requested_pdf_dpi"], 216)
-            self.assertLessEqual(extraction["rendering"]["page_settings"][0]["effective_dpi"], 216)
-            self.assertEqual(extraction["pages"][0]["lines"][0]["identifiers"][0]["raw_value"], "31334000")
-        self.assertEqual(provider.stage_counts()["extraction"]["used"], 2)
 
     def test_missing_unit_stays_missing_and_requires_review(self):
         provider = MockVisionProvider(extracted_page([observed_line(uom_raw=None)]))

@@ -1,0 +1,28 @@
+name: Gate audit
+# Detective control. After every push to main, check that each new commit carries a Gate-Record line
+# (written only by `tools/gate/po_gate.py merge`). If one does not, open an issue so Carlos sees it.
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  issues: write
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Audit the new commits
+        id: audit
+        shell: bash
+        run: python tools/gate/po_gate.py audit --range "${{ github.event.before }}..${{ github.sha }}" 2>&1 | tee audit.txt
+      - name: Open an issue when the gate was bypassed
+        if: failure() && steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue create --repo "${{ github.repository }}" --title "Gate bypassed on main (${GITHUB_SHA::8})" --body-file audit.txt

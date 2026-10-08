@@ -161,20 +161,23 @@ def local_database(postgres_bin=None, fresh=False):
 
 
 FICTIONAL_NAMESPACE = "poc-demo-fictional-v1"
+# 150 invented products plus three for the reasons sample: a vendor-prefixed twin pair (POC-3101, FICT POC-3101)
+# and one product with a one-of-a-kind name (POC-3201).
+CATALOG_SIZE = 153
 EXTERNAL_LIMIT_BYTES = 5 * 1024 * 1024
 
 
 def load_catalog(catalog_file=None):
-    """Return the catalog to seed: the bundled 150 invented products, or one explicit private file.
+    """Return the catalog to seed: the bundled invented products, or one explicit private file.
 
     The private file must live outside this repository so it can never be committed. Only the
-    explicit external mode relaxes the "exactly 150" rule; the namespace stays synthetic.
+    explicit external mode relaxes the fixed-size rule; the namespace stays synthetic.
     """
     if catalog_file is None:
         catalog = json.loads((FIXTURES / "catalog.json").read_text(encoding="utf-8"))
         products = catalog["products"]
-        if len(products) != 150 or len({item["sku"] for item in products}) != 150:
-            raise RuntimeError("Expected exactly 150 unique fictional catalog products")
+        if len(products) != CATALOG_SIZE or len({item["sku"] for item in products}) != CATALOG_SIZE:
+            raise RuntimeError(f"Expected exactly {CATALOG_SIZE} unique fictional catalog products")
         return {"products": products, "namespace": FICTIONAL_NAMESPACE, "filename": "Invented POC fixtures",
                 "adapter": "poc-demo.v1", "external": False}
     path = Path(catalog_file).expanduser().resolve()
@@ -234,7 +237,7 @@ def seed_catalog(engine, catalog_file=None):
             session.add(tenant)
             session.flush()
             vendor = Vendor(tenant_id=tenant.id, name=(f"POC private catalog ({len(products)} products)"
-                            if catalog["external"] else "POC fictional catalog (150 products)"))
+                            if catalog["external"] else f"POC fictional catalog ({len(products)} products)"))
             session.add(vendor)
             session.flush()
             namespace = CatalogNamespace(tenant_id=tenant.id, vendor_id=vendor.id,
@@ -267,6 +270,8 @@ def payload_for(case, page_rows=None, catalog=None):
             item = catalog[descriptor.get("product", 0) % len(catalog)]
             mode = descriptor.get("mode", "certain")
             code = item["sku"] if mode == "certain" else item["sku"].replace("-", "") if mode == "probable" else None
+            if "code" in descriptor:       # a literal printed code, for the reasons sample
+                code = descriptor["code"]
             description = descriptor.get("description", item["description"])
             if mode == "embedded":
                 description += " code " + item["sku"]
@@ -280,6 +285,8 @@ def payload_for(case, page_rows=None, catalog=None):
                    "unit": field("EA" if quantity else None, page_number, region, "Unit"),
                    "unit_price": field(None, page_number, region), "line_total": field(None, page_number, region),
                    "uncertainty": "Fictional ambiguous row: choose one of the three answers" if kind == "unknown" else None}
+            if descriptor.get("unclear_quantity") and quantity:
+                row["quantity"].update(state="uncertain", alternative_readings=["200"])
             rows.append(row)
             y = .17 + index * spacing
             regions.append({"region_reference": region, "bbox": {"x0": .04, "y0": y, "x1": .96, "y1": y + spacing * .85}})

@@ -1,5 +1,7 @@
 # Local agent connection and API activation
 
+> **Superseded checkpoint (banner added 2026-10-08).** This guide describes the state before API activation: live provider and credential work deferred, native invocation from a refreshed Codex chat unverified, real OpenAI extraction unverified. Later records show the server key configured, native `po_reader` calls working, and one authorized PDF processed once; extraction accuracy is still unmeasured. Current scope and the Implemented versus Intended list are in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and [AGENTS.md](../AGENTS.md); later evidence is in [api-activation-verification.md](api-activation-verification.md) and [live-demo-continuation.md](live-demo-continuation.md). The text below is kept unchanged as historical evidence.
+
 Implemented October 2, 2026 in `codex/local-website-catalogs`, after website
 checkpoint `d01b2ca`. The user chose both the document workflow and scoped Codex
 tools. Work continues in the same chat and isolated worktree. Live provider

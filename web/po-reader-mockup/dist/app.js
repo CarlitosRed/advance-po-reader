@@ -1,123 +1,379 @@
-'use strict';
-const icons = {
-  'shopping-cart':'<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l3 14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-1.6L23 6H6"/>',
-  'upload-cloud':'<path d="M12 16V7m-4 4 4-4 4 4"/><path d="M20.9 16.6A5 5 0 0 0 18 7h-1.3a8 8 0 1 0-14 7.6"/><path d="M8 20h8"/>',
-  'folder-open':'<path d="m6 14 1.5-4h14l-3 10H3L1 4h6l2 3h11v3"/>',
-  'file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8m-8 4h6"/>',
-  'shield-check':'<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11z"/><path d="m9 12 2 2 4-4"/>',
-  'scan-line':'<path d="M4 7V4h3m10 0h3v3M4 17v3h3m10 0h3v-3M7 12h10"/>',
-  'user-check':'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
-  'info':'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/>',
-  'x':'<path d="m18 6-12 12M6 6l12 12"/>',
-  'check':'<path d="m20 6-11 11-5-5"/>',
-  'circle-check':'<circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6"/>',
-  'triangle-alert':'<path d="m10.3 3.9-8.4 14.5A2 2 0 0 0 3.6 21h16.8a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/>',
-  'circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3m.1 4h.01"/>',
-  'search':'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
-  'maximize':'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
-  'rotate-ccw':'<path d="M3 2v6h6"/><path d="M3 8a9 9 0 1 1-1 8"/>',
-  'package':'<path d="m12 3 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5m-9 5v8M7.5 5.5l9 5"/>',
-  'trash':'<path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/>',
-  'minus':'<path d="M5 12h14"/>',
-  'plus':'<path d="M12 5v14M5 12h14"/>'
-};
-function icon(name, cls=''){return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||icons['file-text']}</svg>`;}
-function paintIcons(root=document){root.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));}
-paintIcons();
+/* Static sample workflow. No transport, persistence, or agent approval hooks. */
+(() => {
+  'use strict';
+  const view = document.getElementById('view');
+  const catalog = window.SAMPLE_CATALOG.map(product => ({...product}));
+  const state = {stage:'upload', rows:[], drafts:{}, file:null, fileUrl:null, accepted:false, readingToken:0};
+  const units = ['EA','PK','BOX'];
+  const paths = {
+    check:'<path d="m5 12 4 4L19 6"/>',
+    arrow:'<path d="M5 12h14m-6-6 6 6-6 6"/>',
+    upload:'<path d="M12 17V4m-5 5 5-5 5 5M5 16v4h14v-4"/>',
+    file:'<path d="M14 3H5v18h14V8zM14 3v5h5M8 12h8m-8 4h6"/>',
+    scan:'<path d="M4 8V4h4m8 0h4v4M4 16v4h4m8 0h4v-4M7 12h10"/>',
+    shield:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 11l3 3 5-5"/>',
+    search:'<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    minus:'<circle cx="12" cy="12" r="9"/><path d="M7 12h10"/>',
+    eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    package:'<path d="m12 3 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5m-9 5v8M7.5 5.5l9 5"/>'
+  };
+  const icon = name => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.file}</svg>`;
+  const safe = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const quantityValid = value => /^\d+(?:\.\d{1,3})?$/.test(value) && Number(value) > 0 && Number(value) <= 99999;
+  const rowById = id => state.rows.find(row => row.id === id);
+  const reviewed = () => state.rows.filter(row => row.decision !== null).length;
+  const allReviewed = () => state.rows.length === 7 && reviewed() === state.rows.length;
+  const productRows = () => state.rows.filter(row => row.decision && row.decision.kind !== 'ignored');
+  let toastTimer;
 
-const view = document.getElementById('view');
-const uploadMarkup = view.innerHTML;
-const state = {stage:'upload', rows:[], catalog:[], file:null, fileUrl:null, selected:'line-4', filter:'review', drafts:{}, audit:[], loadingToken:0};
-const ready = row => ['matched','confirmed'].includes(row.status);
-const unresolved = row => ['review','unmatched'].includes(row.status);
-const safe = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const safeQuantity = value => typeof value==='string' && /^\d+(?:\.\d{1,3})?$/.test(value) && Number(value)>0 && Number(value)<=99999;
-const validUnits = ['EA','PK','BOX'];
-const catalogPromise = fetch('assets/catalog.json').then(r=>{if(!r.ok)throw new Error('Catalog unavailable');return r.json();}).then(data=>{state.catalog=data;return data;});
-catalogPromise.catch(()=>{});
-let toastTimer;
-function announce(message){clearTimeout(toastTimer);const toast=document.getElementById('status-message');toast.textContent=message;toast.classList.add('visible');toastTimer=setTimeout(()=>toast.classList.remove('visible'),4200);}
-function getRow(id){const row=state.rows.find(r=>r.id===id);if(!row)throw new Error('Unknown source line');return row;}
-function sampleRows(){return [
-  {id:'line-1',sku:'7140618',name:'Werner MasterTrade 6 Tread Stepladder',quantity:'2',unit:'EA',status:'matched',kind:'matched',source:{sku:'7140618',description:'Werner MasterTrade 6 tread stepladder',quantity:'2',unit:'EA'}},
-  {id:'line-2',sku:'7140818',name:'Werner MasterTrade 8 Tread Stepladder',quantity:'1',unit:'EA',status:'matched',kind:'matched',source:{sku:'7140818',description:'Werner MasterTrade 8 tread stepladder',quantity:'1',unit:'EA'}},
-  {id:'line-3',sku:'7160618',name:'Werner Fibreglass 6 Tread Stepladder',quantity:'3',unit:'EA',status:'matched',kind:'matched',source:{sku:'7160618',description:'Werner fibreglass 6 tread stepladder',quantity:'3',unit:'EA'}},
-  {id:'line-4',sku:null,name:'7 tread workstation stepladder',quantity:null,unit:null,status:'review',kind:'conflict',reason:'Two different product numbers appear on this line.',source:{sku:'7050718L',description:'Werner 7 tread workstation - 7050718',quantity:'2',unit:'EA'}},
-  {id:'line-5',sku:null,name:'Roof rack clamps',quantity:null,unit:null,status:'review',kind:'pack',reason:'The quantity is one pack. Confirm the ordering unit before adding it.',source:{sku:'79009',description:'Werner roof rack clamps',quantity:'1',unit:'PK'}},
-  {id:'line-6',sku:null,name:'Delivery note',quantity:null,unit:null,status:'unmatched',kind:'nonproduct',reason:'This looks like a delivery instruction. Is it actually a product?',source:{sku:null,description:'DELIVERY NOTE: call before arrival',quantity:null,unit:null}},
-  {id:'line-7',sku:null,name:'Carriage / shipping charge',quantity:null,unit:null,status:'charge',kind:'charge',source:{sku:null,description:'Carriage / shipping charge',quantity:'1',unit:null}}
-];}
-function syncHeader(){const count=state.rows.filter(ready).length;document.getElementById('cart-count').textContent=count;document.getElementById('header-cart').disabled=!state.rows.length||state.stage==='loading';['upload','review','cart'].forEach((step,index)=>{const el=document.getElementById('step-'+step);el.classList.toggle('active',state.stage===step);el.classList.toggle('complete',state.rows.length>0&&index<['upload','review','cart'].indexOf(state.stage));if(state.stage===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current');el.disabled=state.stage==='loading'||(index>0&&!state.rows.length);});}
-function navigate(stage,{focus=true,history=true}={}){if(!['upload','review','cart'].includes(stage))throw new Error('Unknown step');if(stage!=='upload'&&!state.rows.length)stage='upload';state.stage=stage;if(history&&location.hash!=='#'+stage)window.history.pushState(null,'','#'+stage);render();if(focus){window.scrollTo({top:0,behavior:'instant'});view.querySelector('h1')?.focus({preventScroll:true});}}
-function render(){syncHeader();if(state.stage==='upload'){view.innerHTML=uploadMarkup;wireUpload();}else if(state.stage==='review')renderReview();else if(state.stage==='cart')renderCart();paintIcons(view);}
-function wireUpload(){document.getElementById('browse-file').onclick=()=>document.getElementById('file-input').click();document.getElementById('file-input').onchange=event=>{if(event.target.files.length)handleFile(event.target.files[0]);};document.getElementById('sample-order').onclick=()=>beginDocument(null);const zone=document.getElementById('dropzone');zone.ondragover=event=>{event.preventDefault();zone.classList.add('dragging');};zone.ondragleave=()=>zone.classList.remove('dragging');zone.ondrop=event=>{event.preventDefault();zone.classList.remove('dragging');if(event.dataTransfer.files.length!==1){showUploadError('Choose one document at a time.');return;}handleFile(event.dataTransfer.files[0]);};}
-function showUploadError(message){const error=document.getElementById('upload-error');if(error){error.textContent=message;error.hidden=false;}}
-async function handleFile(file){if(!file||file.size===0){showUploadError('This file is empty. Choose another document.');return;}if(file.size>25*1024*1024){showUploadError('This file is larger than 25 MB. Choose a smaller PDF or photo.');return;}const ext=file.name.split('.').pop().toLowerCase();if(!['pdf','jpg','jpeg','png','webp'].includes(ext)){showUploadError('Choose a PDF, JPG, PNG, or WebP file.');return;}try{const bytes=new Uint8Array(await file.slice(0,16).arrayBuffer());const text=String.fromCharCode(...bytes);const valid=ext==='pdf'?text.startsWith('%PDF-'):ext==='png'?bytes[0]===137&&bytes[1]===80&&bytes[2]===78&&bytes[3]===71:['jpg','jpeg'].includes(ext)?bytes[0]===255&&bytes[1]===216:text.startsWith('RIFF')&&text.slice(8,12)==='WEBP';if(!valid){showUploadError('The file does not look like a valid '+ext.toUpperCase()+'. Choose another file.');return;}await beginDocument(file);}catch{showUploadError('We could not open that file. Choose another PDF or photo.');}}
-async function beginDocument(file){try{await catalogPromise;}catch{showUploadError('The sample catalog did not load. Refresh the page and try again.');return;}if(state.fileUrl)URL.revokeObjectURL(state.fileUrl);state.file=file;state.fileUrl=file?URL.createObjectURL(file):null;state.rows=[];state.drafts={};state.audit=[];state.selected='line-4';state.filter='review';state.stage='loading';syncHeader();const token=++state.loadingToken;view.innerHTML=`<section class="loading-panel panel" aria-labelledby="loading-title"><div class="loader-brands"><img class="loader-sc" src="assets/smartercommerce.png" alt="SmarterCommerce" width="291" height="60"><div class="logo-connection" aria-hidden="true"><span></span><span></span><span></span></div><div class="werner-logo loading-werner"><img src="assets/werner.jpg" alt="Werner" width="250" height="250"></div></div><p class="eyebrow">${file?'DOCUMENT PREVIEW':'SAMPLE PURCHASE ORDER'}</p><h1 id="loading-title" tabindex="-1">${file?'Preparing your preview.':'Reading your purchase order.'}</h1><p class="loading-filename">${safe(file?.name||'sample-purchase-order.pdf')}</p><div class="loading-track" role="progressbar" aria-label="Sample workflow progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="15"><span style="transform:scaleX(.15)"></span></div><p id="loading-message" class="loading-message" role="status">${file?'Opening your document':'Opening the sample document'}</p><p class="loading-disclosure">${file?'This prototype shows sample review results. Your file stays on your device.':'Demonstration of the document-reading flow.'}</p><button class="button text-button" id="cancel-reading">Cancel</button></section>`;document.getElementById('cancel-reading').onclick=()=>{state.loadingToken++;state.rows=[];navigate('upload');announce('Preview cancelled.');};const phases=[[600,40,file?'Preparing your document preview':'Reading the sample product lines'],[900,78,'Checking the sample catalog'],[700,100,'Getting your review ready']];for(const [delay,value,message]of phases){await new Promise(resolve=>setTimeout(resolve,delay));if(state.loadingToken!==token)return;const track=view.querySelector('.loading-track');track.setAttribute('aria-valuenow',value);track.firstElementChild.style.transform=`scaleX(${value/100})`;document.getElementById('loading-message').textContent=message;}if(state.loadingToken!==token)return;state.rows=sampleRows();navigate('review');announce('Sample review ready. Three lines need your attention.');}
-function badge(row){const badges={matched:['circle-check','Matched','green'],confirmed:['user-check','Confirmed by you','blue'],review:['triangle-alert','Needs review','amber'],unmatched:['circle-help','Not matched','red'],dismissed:['x','Not a product','neutral'],removed:['minus','Removed from cart','neutral'],charge:['info','Shipping charge','neutral']};const [glyph,label,color]=badges[row.status];return `<span class="status-badge ${color}">${icon(glyph)}${label}</span>`;}
-function demoNote(){return `<div class="demo-banner">${icon('info')}<p>${state.file?`<strong>Sample results.</strong> ${safe(state.file.name)} is loaded for preview only. It has not been analyzed.`:'<strong>Sample order.</strong> These products and review cases demonstrate the workflow.'}</p>${state.file?'<button class="text-link" data-preview="upload">Preview your file</button>':''}</div>`;}
-function draftFor(row){if(!state.drafts[row.id])state.drafts[row.id]={sku:row.sku||(row.kind==='pack'?'79009':''),quantity:row.quantity||row.source.quantity||'',unit:row.unit||(row.kind==='conflict'?row.source.unit:'')};return state.drafts[row.id];}
-function reviewQueue(){return state.rows.filter(row=>row.status!=='charge').filter(row=>state.filter==='all'||state.filter==='ready'&&ready(row)||state.filter==='review'&&unresolved(row));}
-function renderReview(){const need=state.rows.filter(unresolved);let queue=reviewQueue();if(!queue.some(row=>row.id===state.selected))state.selected=queue[0]?.id||null;const row=state.rows.find(row=>row.id===state.selected);view.innerHTML=`<section class="page-intro intro-with-action"><div><p class="eyebrow">REVIEW YOUR ORDER</p><h1 tabindex="-1">${need.length?`${need.length} ${need.length===1?'item needs':'items need'} a quick check.`:'Everything is accounted for.'}</h1><p>${need.length?'Check the source snippet and tell us what belongs in your cart.':'Your matched and confirmed products are ready for the cart.'}</p></div><button class="button" data-action="cart">View cart · ${state.rows.filter(ready).length}</button></section>${demoNote()}<div class="review-layout"><aside class="panel document-panel"><div class="document-heading"><div><h2>Source document</h2><p>Sample purchase order · page 1 of 1</p></div><button class="icon-button" data-preview="sample" aria-label="Expand sample document">${icon('maximize')}</button></div><button class="document-paper" data-preview="sample" aria-label="Open full sample purchase order"><img src="assets/sample-page.png" alt="Sample purchase order DEMO-1042. Selected line is shown in the review panel." width="1191" height="1684">${row?`<span class="document-highlight" style="top:${(310+(Number(row.id.split('-')[1])-1)*58)/841.89*100}%;height:${58/841.89*100}%" aria-hidden="true"></span>`:''}</button><div class="document-bottom"><span>${icon('file-text')} DEMO-1042</span><a href="assets/sample-purchase-order.pdf" target="_blank" rel="noopener">Open PDF</a></div></aside><section class="review-workspace"><div class="filter-tabs" role="group" aria-label="Filter source lines"><button data-filter="review" aria-pressed="${state.filter==='review'}" class="${state.filter==='review'?'selected':''}">Needs review <span>${need.length}</span></button><button data-filter="ready" aria-pressed="${state.filter==='ready'}" class="${state.filter==='ready'?'selected':''}">Ready <span>${state.rows.filter(ready).length}</span></button><button data-filter="all" aria-pressed="${state.filter==='all'}" class="${state.filter==='all'?'selected':''}">All lines <span>6</span></button></div><div class="queue">${queue.map(item=>`<button class="queue-item ${item.id===state.selected?'selected':''}" data-select="${item.id}" aria-pressed="${item.id===state.selected}"><span class="queue-icon ${unresolved(item)?'amber':'blue'}">${icon(item.status==='unmatched'?'circle-help':unresolved(item)?'triangle-alert':'circle-check')}</span><span><strong>${safe(item.name)}</strong><small>${item.status==='unmatched'?'No catalog match':item.kind==='conflict'&&unresolved(item)?'Product numbers disagree':item.kind==='pack'&&unresolved(item)?'Confirm pack and quantity':safe(item.sku||'Dismissed line')}</small></span><span class="queue-state">${item.status==='confirmed'?'Confirmed':item.status==='matched'?'Matched':item.status==='dismissed'?'Dismissed':item.status==='removed'?'Removed':'Review'}</span></button>`).join('')}</div>${row?renderReviewCard(row):`<div class="panel review-complete"><div class="completion-icon">${icon('circle-check')}</div><h2>${need.length?'No items in this view.':'Your review is complete.'}</h2><p>${need.length?'Choose another filter to see the remaining source lines.':'Confirmed products are ready. Dismissed lines stay out of your cart.'}</p><button class="button primary" data-action="cart">Review your cart</button></div>`}<div class="excluded-note">${icon('info')}<span>1 shipping-charge line excluded from products.</span></div></section></div><div class="bottom-action"><button class="button" data-action="upload">Choose another document</button><button class="button primary" data-action="cart">${need.length?'Continue with ready products':'Continue to your cart'} · ${state.rows.filter(ready).length}</button></div>`;wireCommon();view.querySelectorAll('[data-filter]').forEach(button=>button.onclick=()=>{state.filter=button.dataset.filter;render();});view.querySelectorAll('[data-select]').forEach(button=>button.onclick=()=>{state.selected=button.dataset.select;render();});const form=document.getElementById('resolve-product');if(form)wireResolution(form,row);}
-function renderReviewCard(row){const source=`<div class="source-snapshot"><div class="snapshot-caption"><span>${icon('scan-line')} FROM THE SAMPLE PDF</span><button class="text-link" data-preview="sample">View page 1</button></div><img src="assets/${row.id}.png" alt="Original sample line: ${safe(row.source.sku||'no product number')}, ${safe(row.source.description)}, quantity ${safe(row.source.quantity||'missing')}, unit ${safe(row.source.unit||'missing')}" width="1031" height="116"></div>`;if(!unresolved(row))return `<article class="panel decision-card">${badge(row)}<h2>${safe(row.name)}</h2>${source}<div class="resolved-detail"><span>${row.sku?'Product number <strong>'+safe(row.sku)+'</strong>':'Dismissed from products'}</span><span>${row.quantity?'Quantity <strong>'+safe(row.quantity)+' '+safe(row.unit)+'</strong>':''}</span></div><p class="resolution-note">${row.status==='confirmed'?'You confirmed this product, quantity, and unit.':row.status==='matched'?'The sample product number and description match.':row.status==='removed'?'This product was removed from the cart.':'You marked this line as not a product.'}</p>${['dismissed','removed'].includes(row.status)?`<button class="button" data-restore="${row.id}">${icon('rotate-ccw')}Restore line</button>`:row.status==='confirmed'?`<button class="button" data-reopen="${row.id}">Edit your confirmation</button>`:''}</article>`;const draft=draftFor(row);return `<article class="panel decision-card" aria-labelledby="review-item-title"><div class="decision-topline">${badge(row)}<span class="small-tag">LINE ${row.id.split('-')[1]} · PAGE 1</span></div><h2 id="review-item-title">${safe(row.name)}</h2><p class="review-reason">${safe(row.reason)}</p>${source}${row.kind==='conflict'?'<div class="conflict-pair"><div><span>Printed product number</span><strong>7050718L</strong></div><div><span>Number in description</span><strong>7050718</strong></div></div>':''}<div class="product-question"><h3>Is this a product?</h3><div class="choice-buttons"><button class="button ${row.kind!=='nonproduct'||draft.isProduct?'chosen':''}" id="yes-product" aria-pressed="${row.kind!=='nonproduct'||!!draft.isProduct}">${icon('check')}Yes, choose a product</button><button class="button" data-dismiss="${row.id}">${icon('x')}No, not a product</button></div></div><form id="resolve-product" novalidate ${row.kind==='nonproduct'&&!draft.isProduct?'hidden':''}><div class="field"><label for="product-search">Search by product name or SKU</label><div class="search-field">${icon('search')}<input id="product-search" type="search" placeholder="e.g. 7050718L or workstation" autocomplete="off"></div></div><div class="field"><label for="product-choice">Correct product / SKU</label><select id="product-choice" required aria-describedby="catalog-hint"><option value="">Select a product</option>${productOptions(state.catalog,draft.sku)}</select><p class="field-hint" id="catalog-hint">18 products in the provisional sample catalog.</p></div><div class="quantity-fields"><div class="field"><label for="product-quantity">Quantity</label><input id="product-quantity" type="text" inputmode="decimal" value="${safe(draft.quantity)}" placeholder="Enter quantity" required aria-describedby="source-quantity"></div><div class="field"><label for="product-unit">Ordering unit</label><select id="product-unit" required><option value="">Choose unit</option>${validUnits.map(unit=>`<option value="${unit}" ${draft.unit===unit?'selected':''}>${unit==='EA'?'EA · each':unit==='PK'?'PK · pack':'BOX · box'}</option>`).join('')}</select></div></div><p class="source-quantity" id="source-quantity">From the sample PDF: ${safe(row.source.quantity||'no quantity')} ${safe(row.source.unit||'· unit missing')}. No pack conversion is applied.</p><p class="inline-error" id="resolution-error" role="alert" hidden></p><div class="confirm-row"><p>Confirming adds your selected product and quantity to the cart.</p><button class="button primary" type="submit">${icon('check')}Confirm product</button></div></form></article>`;}
-function productOptions(products,selected){return products.map(product=>`<option value="${safe(product.id)}" ${product.id===selected?'selected':''}>${safe(product.id)} · ${safe(product.name)}</option>`).join('');}
-function wireResolution(form,row){const draft=draftFor(row);const choice=document.getElementById('product-choice');const quantity=document.getElementById('product-quantity');const unit=document.getElementById('product-unit');document.getElementById('yes-product').onclick=()=>{draft.isProduct=true;form.hidden=false;document.getElementById('yes-product').classList.add('chosen');document.getElementById('yes-product').setAttribute('aria-pressed','true');document.getElementById('product-search').focus();};document.getElementById('product-search').oninput=event=>{const query=event.target.value.trim().toLowerCase();const products=state.catalog.filter(product=>(product.id+' '+product.name).toLowerCase().includes(query));const selected=draft.sku;choice.innerHTML='<option value="">'+(products.length?'Select a product':'No sample catalog match')+'</option>'+productOptions(products,selected);};choice.onchange=()=>draft.sku=choice.value;quantity.oninput=()=>draft.quantity=quantity.value;unit.onchange=()=>draft.unit=unit.value;form.onsubmit=event=>{event.preventDefault();const error=document.getElementById('resolution-error');try{resolveProduct(row.id,choice.value,quantity.value.trim(),unit.value);state.filter='review';state.selected=state.rows.find(unresolved)?.id||null;render();announce('Product confirmed and added to your cart.');const next=view.querySelector('#review-item-title')||view.querySelector('.review-complete h2');next?.setAttribute('tabindex','-1');next?.focus({preventScroll:true});}catch(err){error.hidden=false;error.textContent=err.message;const target=!state.catalog.some(product=>product.id===choice.value)?choice:!safeQuantity(quantity.value.trim())?quantity:unit;target.setAttribute('aria-invalid','true');target.focus();}};}
-function resolveProduct(id,sku,quantity,unit){const row=getRow(id);if(!unresolved(row))throw new Error('This line has already been resolved.');const product=state.catalog.find(item=>item.id===sku);if(!product)throw new Error('Choose a product from the sample catalog.');if(!safeQuantity(quantity))throw new Error('Enter a positive quantity, up to 99,999, with no more than 3 decimal places.');if(!validUnits.includes(unit))throw new Error('Choose an ordering unit.');row.sku=product.id;row.name=product.name;row.quantity=quantity;row.unit=unit;row.status='confirmed';state.audit.push({action:'confirm',lineId:id,sku,quantity,unit,at:new Date().toISOString()});}
-function dismissLine(id){const row=getRow(id);if(!unresolved(row))throw new Error('Only an unresolved line can be dismissed.');row.status='dismissed';state.audit.push({action:'not_product',lineId:id,at:new Date().toISOString()});state.selected=state.rows.find(unresolved)?.id||null;render();announce('Line dismissed as not a product. You can restore it under All lines.');}
-function restoreLine(id){const row=getRow(id);if(!['dismissed','removed'].includes(row.status))throw new Error('This line is not dismissed or removed.');row.status=row.status==='removed'?row.previousStatus:(row.kind==='nonproduct'?'unmatched':'review');state.audit.push({action:'restore',lineId:id,at:new Date().toISOString()});state.filter='all';state.selected=id;render();announce('Line restored.');}
-function renderCart(){const products=state.rows.filter(ready),need=state.rows.filter(unresolved),dismissed=state.rows.filter(row=>row.status==='dismissed'),removed=state.rows.filter(row=>row.status==='removed');const grouped=products.reduce((all,row)=>{all[row.unit]=(all[row.unit]||0)+Number(row.quantity);return all;},{});view.innerHTML=`<section class="page-intro intro-with-action"><div><p class="eyebrow">YOUR PURCHASE ORDER CART</p><h1 tabindex="-1">${products.length?'Your order, brought together.':'Your cart is empty.'}</h1><p>${products.length?'Check your products and quantities before the next step.':'Return to review to confirm a product.'}</p></div><button class="button" data-action="review">Back to review</button></section>${demoNote()}<div class="cart-layout"><section><div class="panel cart-panel"><div class="panel-heading"><h2>Products in your cart <span class="heading-count">${products.length}</span></h2><span class="small-tag">SAMPLE PO · DEMO-1042</span></div><div class="cart-column-labels"><span>Product</span><span>Quantity</span><span></span></div>${products.length?products.map(row=>`<article class="cart-product" data-line="${row.id}"><div class="cart-product-main"><span class="product-symbol">${icon('package')}</span><div>${badge(row)}<h3>${safe(row.name)}</h3><p>SKU <strong>${safe(row.sku)}</strong><span>Sample PDF · line ${row.id.split('-')[1]}</span></p><button class="text-link" data-preview="sample">View source</button></div></div><div class="cart-quantity"><label class="sr-only" for="qty-${row.id}">Quantity for ${safe(row.name)}</label><input id="qty-${row.id}" value="${safe(row.quantity)}" type="text" inputmode="decimal" data-cart-quantity="${row.id}" aria-describedby="error-${row.id}"><span>${safe(row.unit)}</span><p id="error-${row.id}" class="inline-error" hidden></p></div><button class="icon-button remove-product" data-remove="${row.id}" aria-label="Remove ${safe(row.name)} from cart">${icon('trash')}</button></article>`).join(''):'<div class="empty-cart">'+icon('shopping-cart')+'<p>No ready products yet.</p><button class="button" data-action="review">Review products</button></div>'}</div>${need.length?`<section class="unresolved-panel" aria-labelledby="unresolved-title"><div class="unresolved-heading"><span>${icon('triangle-alert')}</span><div><h2 id="unresolved-title">${need.length} ${need.length===1?'line still needs':'lines still need'} your review</h2><p>These lines are flagged here and have not been added to the cart.</p></div></div>${need.map(row=>`<div class="unresolved-row"><div><strong>${safe(row.name)}</strong>${badge(row)}</div><button class="button" data-review-line="${row.id}">Review item</button></div>`).join('')}</section>`:''}${dismissed.length||removed.length?`<details class="omitted-lines"><summary>${dismissed.length+removed.length} ${dismissed.length+removed.length===1?'line':'lines'} dismissed or removed</summary>${[...dismissed,...removed].map(row=>`<div><span>${safe(row.name)} · ${row.status==='dismissed'?'not a product':'removed from cart'}</span><button class="text-link" data-restore="${row.id}">Restore</button></div>`).join('')}</details>`:''}<p class="cart-excluded-note">${icon('info')}Shipping-charge lines are not product items.</p></section><aside class="panel order-summary"><div class="summary-title">${icon('shopping-cart')}<h2>Order summary</h2></div><div class="summary-stat"><span>Ready product lines</span><strong>${products.length}</strong></div><div class="summary-stat"><span>Matched from sample</span><strong>${products.filter(row=>row.status==='matched').length}</strong></div><div class="summary-stat"><span>Confirmed by you</span><strong>${products.filter(row=>row.status==='confirmed').length}</strong></div><div class="summary-stat ${need.length?'attention':''}"><span>Still need review</span><strong>${need.length}</strong></div><div class="unit-summary"><span>Quantity by ordering unit</span>${Object.entries(grouped).map(([unit,quantity])=>`<strong>${Number(quantity.toFixed(3))} ${safe(unit)}</strong>`).join('')||'<strong>—</strong>'}</div><div class="cart-summary-note">${icon(need.length?'triangle-alert':'circle-check')}<p>${need.length?'Resolve or dismiss the remaining lines to complete this order.':'Every candidate line has been matched, confirmed, or dismissed.'}</p></div><button class="button primary summary-button" id="finish-cart" ${!products.length||need.length?'disabled':''}>Confirm sample cart</button><p class="sample-checkout-note">Prototype only. No order will be placed.</p></aside></div><div id="cart-success" class="cart-success" hidden>${icon('circle-check')}<div><h2>Your sample cart is confirmed.</h2><p>Ready for the future store-cart connection. No order has been sent.</p></div></div>`;wireCommon();view.querySelectorAll('[data-cart-quantity]').forEach(wireCartQuantity);view.querySelectorAll('[data-remove]').forEach(button=>button.onclick=()=>{const row=getRow(button.dataset.remove);row.previousStatus=row.status;row.status='removed';state.audit.push({action:'remove',lineId:row.id,at:new Date().toISOString()});render();announce('Product removed. Restore it from dismissed or removed lines.');});document.getElementById('finish-cart').onclick=()=>{if(!state.rows.some(ready)||state.rows.some(unresolved)||[...view.querySelectorAll('[data-cart-quantity]')].some(input=>!safeQuantity(input.value.trim())))return;document.getElementById('cart-success').hidden=false;document.getElementById('finish-cart').textContent='Sample cart confirmed';document.getElementById('finish-cart').disabled=true;announce('Sample cart confirmed. No order has been placed.');document.getElementById('cart-success').scrollIntoView({behavior:'instant',block:'nearest'});};}
-function wireCartQuantity(input) {
-  input.oninput = () => {
-    const row = getRow(input.dataset.cartQuantity);
-    const value = input.value.trim();
-    const error = document.getElementById('error-' + row.id);
-    const invalid = !safeQuantity(value);
-    error.hidden = !invalid;
-    if (invalid) {
-      error.textContent = 'Enter a positive quantity, up to 99,999.';
-      input.setAttribute('aria-invalid', 'true');
+  function announce(message) {
+    clearTimeout(toastTimer);
+    const toast = document.getElementById('status-message');
+    toast.textContent = message;
+    toast.classList.add('visible');
+    toastTimer = setTimeout(() => toast.classList.remove('visible'), 2300);
+  }
+
+  // These seven literal observations are the existing synthetic sample PO.
+  // Selection and customer decisions never change its source evidence.
+  function sampleRows() {
+    return [
+      ['7140618','Werner MasterTrade 6 tread stepladder','2','EA','certain','7140618'],
+      ['7140818','Werner MasterTrade 8 tread stepladder','1','EA','certain','7140818'],
+      ['7160618','Werner fibreglass 6 tread stepladder','3','EA','certain','7160618'],
+      ['7050718L','Werner 7 tread workstation - 7050718','2','EA','uncertain',null],
+      ['79009','Werner roof rack clamps','1','PK','probable','79009'],
+      ['','DELIVERY NOTE: call before arrival','','','uncertain',null],
+      ['','Carriage / shipping charge','1','','uncertain',null]
+    ].map(([sku,description,quantity,unit,tier,suggestion], index) => ({
+      id:`line-${index+1}`, number:index+1, tier, suggestion, decision:null,
+      source:Object.freeze({sku,description,quantity,unit})
+    }));
+  }
+
+  function setStage(stage) {
+    if (stage === 'approve' && !allReviewed()) return;
+    state.stage = stage;
+    render();
+    window.scrollTo(0,0);
+    view.querySelector('h1')?.focus({preventScroll:true});
+  }
+
+  function render() {
+    const step = state.stage === 'reading' ? 'upload' : state.stage;
+    const order = ['upload','review','approve'];
+    order.forEach((name,index) => {
+      const el = document.getElementById(`step-${name}`);
+      el.classList.toggle('complete', index < order.indexOf(step));
+      if (step === name) el.setAttribute('aria-current','step');
+      else el.removeAttribute('aria-current');
+    });
+    if (state.stage === 'upload') renderUpload();
+    if (state.stage === 'reading') renderReading();
+    if (state.stage === 'review') renderReview();
+    if (state.stage === 'approve') renderFinal();
+  }
+
+  function renderUpload() {
+    view.innerHTML = `<section class="intro"><p class="eyebrow">PURCHASE ORDER IMPORT</p><h1 tabindex="-1">Your order.<br>A little less typing.</h1><p>Add a purchase order, check each line, and approve the products you want.</p></section>
+      <div class="upload-layout"><section class="panel upload-panel" aria-labelledby="upload-title"><h2 id="upload-title">Start with a PDF or photo</h2>
+      <div id="dropzone" class="dropzone"><div class="upload-symbol">${icon('upload')}</div><h3>Add your purchase order</h3><p>A scan, a PDF, or a clear phone photo.</p><button id="browse-file" class="button primary">${icon('plus')}Choose a file</button><p>PDF, JPG, PNG or WebP · up to 25 MB</p><input id="file-input" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden></div>
+      <p id="upload-error" class="inline-error" role="alert"></p><div class="privacy-note">${icon('shield')}<p>Your file stays in this browser. This demo shows sample results.</p></div>
+      <div class="or-divider">Or see how it works</div><button id="sample-order" class="sample-order">${icon('file')}<span><strong>Try the sample purchase order</strong><small>7 sample lines · includes unclear and non-product lines</small></span>${icon('arrow')}</button></section>
+      <aside class="panel flow-panel"><h2>Good matches. A human final say.</h2>${[
+        ['We read the document','The demo walks through reading, with the existing sample purchase order.'],
+        ['You review every line','Clear matches start selected. Unclear lines keep their original image.'],
+        ['You approve the full review','Products stay pending until you tap the final approval.']
+      ].map(([title,text],i) => `<div class="flow-item"><span class="flow-number">0${i+1}</span><div><strong>${title}</strong><p>${text}</p></div></div>`).join('')}<p class="field-hint">Synthetic sample data · no sign-in required.</p></aside></div>`;
+    document.getElementById('browse-file').onclick = () => document.getElementById('file-input').click();
+    document.getElementById('file-input').onchange = event => {
+      if (event.target.files.length) handleFile(event.target.files[0]);
+    };
+    document.getElementById('sample-order').onclick = () => beginReading(null);
+    const zone = document.getElementById('dropzone');
+    zone.ondragover = event => {event.preventDefault(); zone.classList.add('dragging');};
+    zone.ondragleave = () => zone.classList.remove('dragging');
+    zone.ondrop = event => {
+      event.preventDefault(); zone.classList.remove('dragging');
+      if (event.dataTransfer.files.length !== 1) showUploadError('Choose one PDF or photo at a time.');
+      else handleFile(event.dataTransfer.files[0]);
+    };
+  }
+
+  function showUploadError(message) {
+    const el = document.getElementById('upload-error');
+    if (el) el.textContent = message;
+  }
+
+  async function handleFile(file) {
+    if (!file.size) return showUploadError('This file is empty. Choose another document.');
+    if (file.size > 25*1024*1024) return showUploadError('Choose a file smaller than 25 MB.');
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf','jpg','jpeg','png','webp'].includes(ext)) return showUploadError('Choose a PDF, JPG, PNG or WebP file.');
+    const token = ++state.readingToken;
+    try {
+      const bytes = new Uint8Array(await file.slice(0,16).arrayBuffer());
+      const text = String.fromCharCode(...bytes);
+      const valid = ext === 'pdf' ? text.startsWith('%PDF-') : ext === 'png' ? [137,80,78,71,13,10,26,10].every((b,i) => bytes[i] === b) : ['jpg','jpeg'].includes(ext) ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 : text.startsWith('RIFF') && text.slice(8,12) === 'WEBP';
+      if (token !== state.readingToken || state.stage !== 'upload') return;
+      if (!valid) return showUploadError('The file content does not match its file type. Choose another document.');
+      beginReading(file);
+    } catch {showUploadError('We could not open this file. Choose another PDF or photo.');}
+  }
+
+  function clearFile() {
+    if (state.fileUrl) URL.revokeObjectURL(state.fileUrl);
+    state.fileUrl = null; state.file = null;
+  }
+
+  function beginReading(file) {
+    clearFile();
+    state.file = file; state.fileUrl = file ? URL.createObjectURL(file) : null;
+    state.rows = []; state.drafts = {}; state.accepted = false;
+    catalog.splice(0,catalog.length,...window.SAMPLE_CATALOG.map(product => ({...product})));
+    const token = ++state.readingToken;
+    setStage('reading');
+    setTimeout(() => {
+      if (token !== state.readingToken || state.stage !== 'reading') return;
+      state.rows = sampleRows();
+      setStage('review');
+      announce('Sample ready. All seven lines need your review.');
+    },1800);
+  }
+
+  function renderReading() {
+    view.innerHTML = `<section class="panel loading-panel"><div class="reading-symbol">${icon('scan')}</div><p class="eyebrow">SAMPLE WALKTHROUGH</p><h1 tabindex="-1">Reading your<br>purchase order.</h1><p>${safe(state.file?.name || 'sample-purchase-order.pdf')}</p><div class="loading-track" aria-hidden="true"><div class="loading-fill"></div></div><p role="status">Finding lines and preparing suggestions…</p><p class="field-hint">Simulated reading. The next screen uses the existing synthetic sample, even when you choose your own file.</p><button id="cancel-reading" class="button secondary">Cancel</button></section>`;
+    document.getElementById('cancel-reading').onclick = () => {++state.readingToken; clearFile(); setStage('upload'); announce('Reading cancelled.');};
+  }
+
+  function demoNote() {
+    return `<div class="notice"><p><strong>Sample PO · DEMO-1042.</strong> All suggestions and source snippets below come from the synthetic sample.</p>${state.file ? `<p>Your selected file, <strong>${safe(state.file.name)}</strong>, is for local preview only.</p><button class="button text" data-action="preview-file">${icon('eye')}Preview selected file</button>` : ''}</div>`;
+  }
+
+  function sourceSnippet(row) {
+    return `<div class="source-snippet"><div class="snippet-heading"><span>ORIGINAL SAMPLE · PAGE 1 · LINE ${row.number}</span><button class="button text" data-action="preview-line" data-id="${row.id}" aria-label="Enlarge source for line ${row.number}">Enlarge ${icon('eye')}</button></div><button class="snippet-image" data-action="preview-line" data-id="${row.id}" aria-label="Open source image for line ${row.number}"><img src="assets/${row.id}.png" alt="Original synthetic purchase order line ${row.number}: ${safe(row.source.description)}" width="1030" height="116"></button><div class="raw-observation">${row.source.sku ? `Printed code: <strong>${safe(row.source.sku)}</strong><br>` : ''}Printed text: <strong>${safe(row.source.description)}</strong><br>Printed quantity: <strong>${safe(row.source.quantity || 'Not present')}</strong> · Unit: <strong>${safe(row.source.unit || 'Not present')}</strong></div></div>`;
+  }
+
+  function sourceDetails(row) {
+    return `<details class="source-details"><summary>Compare with the original line</summary>${sourceSnippet(row)}</details>`;
+  }
+
+  function card(row) {
+    const product = catalog.find(p => p.id === (row.decision?.productId || row.suggestion));
+    const decision = row.decision;
+    const draft = state.drafts[row.id];
+    const tone = decision ? 'certain' : row.tier;
+    const status = decision ? 'Reviewed' : {certain:'Pre-selected · pending',probable:'Confirm the suggestion',uncertain:'Your answer needed'}[row.tier];
+    let content;
+    if (decision) {
+      content = `<h3>${safe(decision.name)}</h3><div class="product-meta"><span>Code <code>${safe(decision.productId)}</code></span><span>${safe(decision.quantity)} ${safe(decision.unit)}</span>${decision.kind === 'new' ? '<span>Added to sample catalog</span>' : ''}</div><p class="reviewed-note">${state.accepted ? 'Approved by you with the full review.' : 'Reviewed by you · final approval still required.'}</p><div class="line-actions"><button class="button text" data-action="edit" data-id="${row.id}">Edit decision</button></div>${sourceDetails(row)}`;
+    } else if (row.tier === 'certain') {
+      content = `<h3>${safe(product.name)}</h3><div class="product-meta"><span>Code <code>${safe(product.id)}</code></span><span>${safe(row.source.quantity)} ${safe(row.source.unit)}</span></div><p class="line-reason">Exact code match. Selected for you to check.</p>${draft ? '<p class="field-hint">Choose and approve your revised product in the form below.</p>' : `<div class="line-actions"><button class="button primary" data-action="approve" data-id="${row.id}">${icon('check')}Approve line</button><button class="button text" data-action="choose-existing" data-id="${row.id}">Change</button></div>`}${sourceDetails(row)}`;
+    } else if (row.tier === 'probable') {
+      content = `<h3>${safe(product.name)}</h3><div class="product-meta"><span>Suggested code <code>${safe(product.id)}</code></span><span>Printed: ${safe(row.source.quantity)} ${safe(row.source.unit)}</span></div><p class="line-reason">The product looks right. Check that “1 PK” means one pack before confirming.</p>${sourceSnippet(row)}${draft ? '<p class="field-hint">Choose and approve your revised product in the form below.</p>' : `<div class="line-actions"><button class="button primary" data-action="approve" data-id="${row.id}">${icon('check')}Confirm product &amp; unit</button><button class="button text" data-action="choose-existing" data-id="${row.id}">Pick another</button></div>`}`;
     } else {
-      input.removeAttribute('aria-invalid');
-      if (row.quantity !== value) {
-        row.quantity = value;
-        row.status = 'confirmed';
-        input.dataset.edited = 'true';
-        state.audit.push({ action: 'edit_quantity', lineId: row.id, quantity: value, unit: row.unit, at: new Date().toISOString() });
-        input.closest('.cart-product').querySelector('.status-badge').outerHTML = badge(row);
-      }
-      const products = state.rows.filter(ready);
-      const stats = view.querySelectorAll('.summary-stat strong');
-      [products.length, products.filter(item => item.status === 'matched').length, products.filter(item => item.status === 'confirmed').length, state.rows.filter(unresolved).length].forEach((count, index) => stats[index].textContent = count);
-      const grouped = products.reduce((all, item) => { all[item.unit] = (all[item.unit] || 0) + Number(item.quantity); return all; }, {});
-      view.querySelector('.unit-summary').innerHTML = '<span>Quantity by ordering unit</span>' + Object.entries(grouped).map(([unit, quantity]) => `<strong>${Number(quantity.toFixed(3))} ${safe(unit)}</strong>`).join('');
+      const reason = row.id === 'line-4' ? 'The code column says 7050718L, but the description says 7050718. Which product is intended?' : row.id === 'line-6' ? 'This looks like a delivery instruction. You decide whether it is a product.' : 'This looks like a shipping charge. Confirm how this line should be treated.';
+      content = `<h3>${safe(row.source.description)}</h3><p class="line-reason">${reason}</p>${sourceSnippet(row)}<p class="question">What is this line?</p><div class="answer-choices" role="group" aria-label="Answers for line ${row.number}"><button class="button secondary ${draft?.mode === 'existing' ? 'chosen' : ''}" data-action="choose-existing" data-id="${row.id}">${icon('search')}<span>This is product X</span>${icon('arrow')}</button><button class="button secondary ${draft?.mode === 'new' ? 'chosen' : ''}" data-action="create-new" data-id="${row.id}">${icon('plus')}<span>New product</span>${icon('arrow')}</button><button class="button secondary" data-action="ignore" data-id="${row.id}">${icon('minus')}<span>Not a product</span>${icon('arrow')}</button></div>`;
     }
-    const finish = document.getElementById('finish-cart');
-    finish.textContent = 'Confirm sample cart';
-    finish.disabled = !state.rows.some(ready) || state.rows.some(unresolved) || [...view.querySelectorAll('[data-cart-quantity]')].some(field => !safeQuantity(field.value.trim()));
-    document.getElementById('cart-success').hidden = true;
-  };
-  input.onblur = () => {
-    if (input.dataset.edited === 'true' && safeQuantity(input.value.trim())) {
-      announce('Quantity updated and confirmed by you.');
-      input.dataset.edited = 'false';
-    }
-  };
-}
-function wireCommon(){view.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>navigate(button.dataset.action));view.querySelectorAll('[data-preview]').forEach(button=>button.onclick=()=>showDocument(button.dataset.preview));view.querySelectorAll('[data-dismiss]').forEach(button=>button.onclick=()=>dismissLine(button.dataset.dismiss));view.querySelectorAll('[data-restore]').forEach(button=>button.onclick=()=>restoreLine(button.dataset.restore));view.querySelectorAll('[data-reopen]').forEach(button=>button.onclick=()=>{const row=getRow(button.dataset.reopen);row.status=row.kind==='nonproduct'?'unmatched':'review';state.filter='review';state.selected=row.id;render();});view.querySelectorAll('[data-review-line]').forEach(button=>button.onclick=()=>{state.selected=button.dataset.reviewLine;state.filter='review';navigate('review');});}
-function showDocument(kind){const dialog=document.getElementById('document-dialog');const content=document.getElementById('document-preview');content.replaceChildren();document.getElementById('document-dialog-title').textContent=kind==='upload'?'Your uploaded document':'Sample purchase order · DEMO-1042';if(kind==='upload'&&state.file){const isPdf=state.file.name.toLowerCase().endsWith('.pdf');const element=document.createElement(isPdf?'iframe':'img');element.src=state.fileUrl;if(isPdf)element.title='Uploaded PDF preview';else element.alt='Your uploaded image';content.appendChild(element);}else{const image=document.createElement('img');image.src='assets/sample-page.png';image.alt='Full sample purchase order DEMO-1042, with six candidate lines and one shipping charge.';content.appendChild(image);}dialog.showModal();}
-document.getElementById('close-document').onclick=()=>document.getElementById('document-dialog').close();
-document.getElementById('document-dialog').addEventListener('click',event=>{if(event.target===event.currentTarget){const bounds=event.currentTarget.getBoundingClientRect();if(event.clientX<bounds.left||event.clientX>bounds.right||event.clientY<bounds.top||event.clientY>bounds.bottom)event.currentTarget.close();}});
-document.getElementById('header-cart').onclick=()=>navigate('cart');
-['upload','review','cart'].forEach(step=>document.getElementById('step-'+step).onclick=()=>navigate(step));
-window.addEventListener('popstate',()=>{if(state.stage==='loading')state.loadingToken++;const stage=location.hash.slice(1);navigate(['upload','review','cart'].includes(stage)?stage:'upload',{history:false});});
-wireUpload();
-window.history.replaceState(null, '', '#upload');
+    return `<article class="line-card ${row.tier}" data-row="${row.id}" data-reviewed="${Boolean(decision)}"><div class="card-top"><span class="line-label">LINE ${row.number}</span><span class="status-badge ${tone}-tone">${decision ? icon('check') : ''}${status}</span></div>${content}${!decision && draft ? resolutionForm(row,draft) : ''}</article>`;
+  }
 
-// Optional browser tools use the same validation and actions as the visible UI.
-if(document.modelContext?.registerTool){const lifecycle=new AbortController();const register=tool=>{try{Promise.resolve(document.modelContext.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
-  register({name:'read_order_review',description:'Read the current sample review and cart. This prototype has no live extraction or external cart writes.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,untrustedContentHint:true},execute:()=>({mode:'sample_prototype',stage:state.stage,lines:state.rows.map(({id,status,sku,quantity,unit})=>({id,status,sku,quantity,unit})),unresolved:state.rows.filter(unresolved).length})});
-  register({name:'start_sample_order_review',description:'Run the sample-document loading flow and open its review. Replaces the current in-memory sample session.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false},execute:async()=>{await beginDocument(null);return {stage:state.stage,unresolved:state.rows.filter(unresolved).length};}});
-  register({name:'confirm_sample_product',description:'Confirm an unresolved sample line using a valid provisional-catalog SKU, positive quantity, and explicit ordering unit. Adds the line to the in-memory prototype cart.',inputSchema:{type:'object',properties:{lineId:{type:'string'},sku:{type:'string'},quantity:{type:'string'},unit:{type:'string',enum:validUnits}},required:['lineId','sku','quantity','unit'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>{if(!input||typeof input!=='object')throw new Error('Product confirmation is required.');resolveProduct(input.lineId,input.sku,input.quantity,input.unit);render();return {lineId:input.lineId,status:'confirmed',cartLines:state.rows.filter(ready).length};}});
-  register({name:'dismiss_sample_nonproduct_line',description:'Mark an unresolved sample line as not a product. Keeps the line available for restoration and out of the cart.',inputSchema:{type:'object',properties:{lineId:{type:'string'}},required:['lineId'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>{dismissLine(input.lineId);return {lineId:input.lineId,status:'dismissed'};}});
-  window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});
-}
+  function quantityFields(row,draft) {
+    return `<div class="quantity-fields"><div class="field"><label for="quantity-${row.id}">Quantity</label><input id="quantity-${row.id}" name="quantity" type="text" inputmode="decimal" value="${safe(draft.quantity)}" maxlength="12" aria-describedby="form-error-${row.id}"></div><div class="field"><label for="unit-${row.id}">Ordering unit</label><select id="unit-${row.id}" name="unit" aria-describedby="form-error-${row.id}"><option value="">Choose unit</option>${units.map(unit => `<option ${draft.unit === unit ? 'selected' : ''} value="${unit}">${unit === 'EA' ? 'EA · each' : unit === 'PK' ? 'PK · pack' : 'BOX · box'}</option>`).join('')}</select></div></div><p class="field-hint">Printed quantity stays ${safe(row.source.quantity || 'not present')}; printed unit stays ${safe(row.source.unit || 'not present')}. Packs are never converted to each.</p>`;
+  }
+
+  function resultButtons(row,draft) {
+    const query = draft.query.toLowerCase().trim();
+    const products = catalog.filter(p => !query || `${p.id} ${p.name}`.toLowerCase().includes(query));
+    return products.length ? products.map(product => `<button type="button" class="search-result ${draft.productId === product.id ? 'selected' : ''}" data-product="${safe(product.id)}" data-id="${row.id}" aria-pressed="${draft.productId === product.id}">${icon(draft.productId === product.id ? 'check' : 'package')}<span><strong>${safe(product.name)}</strong><small>Code ${safe(product.id)}</small></span></button>`).join('') : '<p class="field-hint">No sample products found. Try another code or name.</p>';
+  }
+
+  function resolutionForm(row,draft) {
+    const existing = draft.mode === 'existing';
+    const selected = catalog.find(p => p.id === draft.productId);
+    return `<form class="resolution-form" data-form="${draft.mode}" data-row="${row.id}" novalidate>${existing ? `<div class="field"><label for="search-${row.id}">Search the sample catalog</label><input id="search-${row.id}" name="query" type="search" value="${safe(draft.query)}" placeholder="Product code or name" maxlength="120" autocomplete="off"></div><div class="search-results">${resultButtons(row,draft)}</div><div class="selected-product">${selected ? `Selected: <strong>${safe(selected.name)}</strong> · ${safe(selected.id)}` : 'Choose a product above. Selection is still pending.'}</div>` : `<p class="answer-subtitle">Add a product to this demo’s sample catalog. It lasts only for this review.</p><div class="field"><label for="productId-${row.id}">New product code</label><input id="productId-${row.id}" name="productId" value="${safe(draft.productId)}" maxlength="60" autocomplete="off"></div><div class="field"><label for="productName-${row.id}">Product name</label><input id="productName-${row.id}" name="productName" value="${safe(draft.productName)}" maxlength="160"></div>`}${quantityFields(row,draft)}<p id="form-error-${row.id}" class="inline-error" role="alert"></p><button type="submit" class="button primary wide">${icon('check')}${existing ? 'Approve line' : 'Add sample product & review line'}</button><p class="field-hint">This tap reviews the line. Final approval comes after every line is reviewed.</p></form>`;
+  }
+
+  function ignoredSection(canEdit = true) {
+    const rows = state.rows.filter(row => row.decision?.kind === 'ignored');
+    return `<details id="ignored-lines" class="ignored-section"><summary>Ignored · ${rows.length} ${rows.length === 1 ? 'line' : 'lines'}</summary>${rows.length ? rows.map(row => `<article class="ignored-item" data-row="${row.id}"><h3>Line ${row.number} · ${safe(row.source.description)}</h3><p>You chose “Not a product”. This source line is preserved.</p>${sourceSnippet(row)}${canEdit ? `<div class="line-actions"><button class="button text" data-action="edit" data-id="${row.id}">Review this line again</button></div>` : ''}</article>`).join('') : '<p>Lines you mark “Not a product” will stay here with their original snippets.</p>'}</details>`;
+  }
+
+  function renderReview() {
+    const count = reviewed();
+    const tiers = [
+      ['certain','Certain','Exact code matches. Pre-selected, waiting for your tap.'],
+      ['probable','Probable','Check the suggestion, or choose a different product.'],
+      ['uncertain','Uncertain','Keep the source in view. Choose one of three answers.']
+    ];
+    view.innerHTML = `<section class="intro"><p class="eyebrow">REVIEW YOUR PURCHASE ORDER</p><div class="intro-row"><h1 tabindex="-1">A match is a suggestion.<br>You decide.</h1></div><p>Check each line against the source. Nothing is accepted until you approve the full review.</p></section>${demoNote()}
+      <div class="tier-guide" aria-label="Three review tiers"><div class="certain-tone"><strong>Certain</strong><small>Pre-selected.<br>Tap to approve.</small></div><div class="probable-tone"><strong>Probable</strong><small>Confirm it.<br>Or pick another.</small></div><div class="uncertain-tone"><strong>Uncertain</strong><small>See the source.<br>Give your answer.</small></div></div>
+      <div class="review-progress"><div class="progress-label"><strong id="review-progress">${count} of 7 lines reviewed</strong><span>${state.accepted ? productRows().length : 0} accepted</span></div><div class="progress-track"><progress value="${count}" max="7" aria-label="Reviewed lines"></progress></div><p class="progress-note">Review every line, including anything that isn’t a product.</p></div>
+      <div class="review-layout"><div class="review-workspace">${tiers.map(([tier,title,description]) => {const rows = state.rows.filter(row => row.tier === tier && row.decision?.kind !== 'ignored'); return `<section class="tier-section ${tier}" aria-labelledby="tier-${tier}"><div class="tier-heading"><h2 id="tier-${tier}" class="tier-name"><span class="tier-dot"></span>${title}</h2><span class="tier-count">${rows.length} ${rows.length === 1 ? 'line' : 'lines'}</span></div><p class="tier-description">${description}</p>${rows.length ? rows.map(card).join('') : '<p class="field-hint">All lines in this tier were reviewed as non-products. See Ignored below.</p>'}</section>`;}).join('')}${ignoredSection()}<div class="review-footer"><div><p>${allReviewed() ? 'Every line has your decision. One final check.' : 'Your decisions stay pending until the final approval.'}</p><p class="remaining">${allReviewed() ? `${productRows().length} product lines · ${7-productRows().length} ignored` : `${7-count} ${7-count === 1 ? 'line needs' : 'lines need'} your review`}</p></div><button id="review-final" class="button primary" ${allReviewed() ? '' : 'disabled'}>Review final summary ${icon('arrow')}</button></div><div class="restart-row"><button class="button text" data-action="restart">Start a new sample review</button></div></div>
+      <aside class="panel source-panel"><h2>Original sample purchase order</h2><p>DEMO-1042 · page 1 of 1<br>Compare any line with the full page.</p><button class="source-page" data-action="preview-document" aria-label="Enlarge original sample purchase order"><img src="assets/sample-page.png" alt="Synthetic sample purchase order DEMO-1042, all seven source lines" width="1191" height="1684"></button><button class="button secondary" data-action="preview-document">${icon('eye')}Open full page</button></aside></div><button id="document-preview" class="button text" data-action="preview-document">${icon('eye')}View original sample document</button>`;
+    document.getElementById('review-final').onclick = () => setStage('approve');
+  }
+
+  function renderFinal() {
+    const products = productRows();
+    const totals = products.reduce((acc,row) => {const d=row.decision;acc[d.unit]=(acc[d.unit] || 0)+Math.round(Number(d.quantity)*1000);return acc;},{});
+    view.innerHTML = `${state.accepted ? `<section class="panel success-panel"><div class="success-symbol">${icon('check')}</div><p class="eyebrow">SAMPLE REVIEW COMPLETE</p><h1 tabindex="-1">Approved by you.</h1><p>${products.length} product lines approved. The original evidence and ${7-products.length} ignored lines are still available below.</p><p>Demo complete. No order has been placed.</p></section>` : `<section class="intro"><p class="eyebrow">ONE LAST CHECK</p><h1 tabindex="-1">Your review.<br>Ready for your approval.</h1><p>Every line has a decision. Check the products and quantities, then approve all reviewed lines.</p></section>`}${demoNote()}
+      <div class="final-layout"><section class="panel"><h2>Reviewed products · ${products.length}</h2><p class="field-hint">${state.accepted ? 'Approved with your final tap.' : 'Pending your final approval.'}</p><div class="final-list">${products.length ? products.map(row => {const d=row.decision;return `<article class="final-item" data-final-row="${row.id}">${icon('check')}<div><h3>${safe(d.name)}</h3><p>Code ${safe(d.productId)} · ${safe(d.quantity)} ${safe(d.unit)}<br>Sample PO · line ${row.number}${d.kind === 'new' ? ' · new sample product' : ''}</p><button class="button text" data-action="edit" data-id="${row.id}">Edit this line</button></div></article>`;}).join('') : '<p class="field-hint">All seven lines were reviewed as non-products. No products will be accepted.</p>'}</div>${ignoredSection()}</section>
+      <aside class="panel summary-panel"><h2>Review summary</h2><div class="summary-stat"><span>Lines reviewed by you</span><strong>7 / 7</strong></div><div class="summary-stat"><span>Product lines</span><strong>${products.length}</strong></div><div class="summary-stat"><span>Ignored as non-products</span><strong>${7-products.length}</strong></div><div class="summary-stat"><span>Accepted</span><strong id="accepted-count">${state.accepted ? products.length : 0}</strong></div><div class="unit-totals"><p>Quantity by ordering unit</p>${Object.entries(totals).map(([unit,amount]) => `<strong>${amount/1000} ${safe(unit)}</strong><br>`).join('') || '<strong>No product quantities</strong>'}</div><button id="approve-all" class="button primary wide" ${state.accepted || !allReviewed() ? 'disabled' : ''}>${icon('check')}${state.accepted ? 'All reviewed lines approved' : 'Approve all reviewed lines'}</button><p>${state.accepted ? 'Approval is saved for this sample session only.' : 'Your tap approves these product decisions and preserves the ignored lines.'}</p><p>Sample only · no order is sent.</p></aside></div><button id="back-review" class="button text">Back to review</button>`;
+    document.getElementById('back-review').onclick = () => setStage('review');
+    document.getElementById('approve-all').onclick = () => {
+      if (!allReviewed() || state.accepted) return;
+      state.accepted = true; renderFinal();
+      window.scrollTo(0,0); view.querySelector('h1')?.focus({preventScroll:true});
+      announce('All reviewed sample lines approved.');
+    };
+  }
+
+  function updateRow(row,message) {
+    state.accepted = false;
+    const y = window.scrollY;
+    if (state.stage !== 'review') setStage('review');
+    else renderReview();
+    window.scrollTo(0,y);
+    const reviewedControl = view.querySelector(`[data-row="${row.id}"] [data-action="edit"]`);
+    reviewedControl?.focus({preventScroll:true});
+    reviewedControl?.scrollIntoView({block:'nearest'});
+    announce(message);
+  }
+
+  function openDraft(row,mode) {
+    if (row.decision) return;
+    const old = state.drafts[row.id];
+    state.drafts[row.id] = {
+      mode, query:old?.mode === mode ? old.query : '',
+      productId:old?.mode === mode ? old.productId : '',
+      productName:old?.productName || row.source.description,
+      quantity:old?.quantity ?? row.source.quantity,
+      unit:old?.unit ?? row.source.unit
+    };
+    const y = window.scrollY;
+    renderReview(); window.scrollTo(0,y);
+    const input = document.getElementById(`${mode === 'existing' ? 'search' : 'productId'}-${row.id}`);
+    input?.focus({preventScroll:true});
+    input?.scrollIntoView({block:'center'});
+  }
+
+  function approveSuggestion(row) {
+    if (row.decision || state.drafts[row.id]) return;
+    const p = catalog.find(product => product.id === row.suggestion);
+    if (!p || !quantityValid(row.source.quantity) || !units.includes(row.source.unit)) return;
+    row.decision = {kind:'existing',productId:p.id,name:p.name,quantity:row.source.quantity,unit:row.source.unit};
+    updateRow(row,`Line ${row.number} reviewed. Final approval still required.`);
+  }
+
+  function showPreview(kind,row) {
+    const content = document.getElementById('preview-content');
+    const title = document.getElementById('preview-title');
+    if (kind === 'file' && state.file) {
+      title.textContent = 'Your selected file · local preview only';
+      const pdf = state.file.name.toLowerCase().endsWith('.pdf');
+      content.innerHTML = `<p class="preview-note">This selected file is never read by the demo. Review results use the original synthetic sample.</p>${pdf ? `<a class="preview-download" href="${safe(state.fileUrl)}" target="_blank" rel="noopener noreferrer">Open selected PDF in a local browser tab</a>` : `<img src="${safe(state.fileUrl)}" alt="Your selected photo, preview only">`}`;
+    } else {
+      title.textContent = row ? `Original sample · line ${row.number}` : 'Original sample purchase order';
+      content.innerHTML = `<p class="preview-note">Synthetic sample · DEMO-1042 · page 1. Source evidence stays unchanged.</p><img src="assets/${row ? row.id : 'sample-page'}.png" alt="${row ? `Original sample line ${row.number}: ${safe(row.source.description)}` : 'Full synthetic sample purchase order'}">${!row ? '<a class="preview-download" href="assets/sample-purchase-order.pdf" target="_blank" rel="noopener noreferrer">Open the sample PDF</a>' : ''}`;
+    }
+    document.getElementById('preview-dialog').showModal();
+  }
+
+  view.addEventListener('click',event => {
+    const productButton = event.target.closest('[data-product]');
+    if (productButton) {
+      const row = rowById(productButton.dataset.id);
+      const draft = state.drafts[row.id];
+      if (!draft || draft.mode !== 'existing' || row.decision) return;
+      draft.productId = productButton.dataset.product;
+      const form = productButton.closest('form');
+      form.querySelector('.search-results').innerHTML = resultButtons(row,draft);
+      const p = catalog.find(product => product.id === draft.productId);
+      form.querySelector('.selected-product').innerHTML = `Selected: <strong>${safe(p.name)}</strong> · ${safe(p.id)}`;
+      form.querySelector(`[data-product="${CSS.escape(p.id)}"]`)?.focus({preventScroll:true});
+      return;
+    }
+    const button = event.target.closest('[data-action]');
+    if (!button) return;
+    const row = rowById(button.dataset.id);
+    switch (button.dataset.action) {
+      case 'approve': approveSuggestion(row); break;
+      case 'choose-existing': openDraft(row,'existing'); break;
+      case 'create-new': openDraft(row,'new'); break;
+      case 'ignore':
+        if (!row.decision) {
+          row.decision={kind:'ignored'}; delete state.drafts[row.id];updateRow(row,`Line ${row.number} preserved in Ignored.`);
+          const summary = document.getElementById('ignored-lines').querySelector('summary');
+          summary.focus({preventScroll:true});summary.scrollIntoView({block:'nearest'});
+        }
+        break;
+      case 'edit': {
+        row.decision=null; delete state.drafts[row.id]; state.accepted=false; setStage('review');
+        const article=view.querySelector(`[data-row="${row.id}"]`);
+        article.scrollIntoView({block:'start'});article.querySelector('button')?.focus({preventScroll:true});announce(`Line ${row.number} is pending again.`);break;
+      }
+      case 'preview-line': showPreview('sample',row); break;
+      case 'preview-document': showPreview('sample'); break;
+      case 'preview-file': showPreview('file'); break;
+      case 'restart': ++state.readingToken; clearFile(); state.rows=[]; state.drafts={}; state.accepted=false; setStage('upload'); break;
+    }
+  });
+
+  view.addEventListener('input',event => {
+    const form = event.target.closest('form[data-row]');
+    if (!form) return;
+    const row = rowById(form.dataset.row);
+    const draft = state.drafts[row.id];
+    if (!draft || row.decision) return;
+    const input = event.target;
+    draft[input.name] = input.value;
+    if (input.name === 'query') form.querySelector('.search-results').innerHTML = resultButtons(row,draft);
+    if (input.name === 'quantity') {
+      input.setAttribute('aria-invalid',String(!quantityValid(input.value.trim())));
+      form.querySelector('.inline-error').textContent = quantityValid(input.value.trim()) ? '' : 'Enter a positive quantity up to 99,999, with at most 3 decimal places.';
+    }
+  });
+  view.addEventListener('change',event => {
+    const form = event.target.closest('form[data-row]');
+    if (form && event.target.name === 'unit') state.drafts[form.dataset.row].unit = event.target.value;
+  });
+
+  view.addEventListener('submit',event => {
+    const form = event.target.closest('form[data-row]');
+    if (!form) return;
+    event.preventDefault();
+    const row = rowById(form.dataset.row);
+    const draft = state.drafts[row.id];
+    if (!draft || row.decision) return;
+    const values = new FormData(form);
+    const quantity = String(values.get('quantity')).trim();
+    const unit = String(values.get('unit'));
+    let error = '';
+    const quantityInput = form.elements.quantity;
+    quantityInput.setAttribute('aria-invalid',String(!quantityValid(quantity)));
+    form.elements.unit.setAttribute('aria-invalid',String(!units.includes(unit)));
+    if (!quantityValid(quantity)) error = 'Enter a positive quantity up to 99,999, with at most 3 decimal places.';
+    else if (!units.includes(unit)) error = 'Choose the ordering unit printed on the line, or confirm it manually.';
+    let product;
+    if (draft.mode === 'existing') {
+      product = catalog.find(p => p.id === draft.productId);
+      if (!error && !product) error = 'Choose a product from the sample catalog first.';
+    } else {
+      const id = String(values.get('productId')).trim();
+      const name = String(values.get('productName')).trim();
+      if (!error && (!id || !name)) error = 'Enter a new product code and name.';
+      if (!error && catalog.some(p => p.id.toLowerCase() === id.toLowerCase())) error = 'This code is already in the sample catalog. Choose “This is product X” to find it.';
+      if (!error) product = {id,name};
+    }
+    if (error) {form.querySelector('.inline-error').textContent=error;return;}
+    if (draft.mode === 'new') catalog.push(product);
+    row.decision={kind:draft.mode,productId:product.id,name:product.name,quantity,unit};
+    delete state.drafts[row.id];
+    updateRow(row,`Line ${row.number} reviewed${draft.mode === 'new' ? '; product added to the sample catalog' : ''}.`);
+  });
+
+  document.getElementById('close-preview').onclick = () => document.getElementById('preview-dialog').close();
+  render();
+})();

@@ -1,5 +1,7 @@
 > The current website branch extends this backend on port 8014 and database gate_a_backend_website. Use [local-website.md](local-website.md) for current startup and real catalog/corpus integration. The backend-only checkpoint and commands below are preserved context; its original service on 8012 remains independent.
 
+> **Superseded checkpoint (banner added 2026-10-08).** This guide describes the backend-preparation checkpoint (website and OpenAI key "later"). The website, key configuration and a first live run have since happened. Current scope and the Implemented versus Intended list are in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and [AGENTS.md](../AGENTS.md); later evidence is in [api-activation-verification.md](api-activation-verification.md) and [live-demo-continuation.md](live-demo-continuation.md). The text below is kept unchanged as historical evidence.
+
 # Local backend preparation
 
 Updated October 2, 2026. The user's direct request expanded the completed Gate A into a local backend slice, with the website and OpenAI key later. This branch implements and tests that slice using fictional synthetic documents. No live provider call, credential creation/import, customer-file transfer, API spend, training, Apple/Qwen inference, AWS resource, website, cart or order action was performed.
