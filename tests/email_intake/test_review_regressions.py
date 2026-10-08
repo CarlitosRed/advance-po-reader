@@ -157,8 +157,10 @@ class ReviewRegressions(unittest.TestCase):
         ledger = self.ledger()
         with ledger.connect() as db:
             db.execute("INSERT INTO attempts(id,intake_id,charge,state) VALUES('prior','prior',?,'settled')", (CAP_NANO,))
-        relative = Path(os.path.relpath(ledger.path))
-        reopened = SpendLedger(relative, initialize=True)
+        # CI can keep its checkout and TEMP on different drives. Resolve the
+        # relative argument from the ledger's directory, independent of drive.
+        with patch("os.getcwd", return_value=str(self.base)):
+            reopened = SpendLedger(Path(ledger.path.name), initialize=True)
         self.assertEqual(reopened.path, ledger.path)
         with self.assertRaisesRegex(LedgerError, "CAP"):
             reopened.reserve("second")
