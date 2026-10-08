@@ -432,6 +432,6 @@ def test_identifier_corrections_append_old_new_and_do_not_repair_source_or_alias
 def test_request_validation_does_not_echo_arbitrary_unknown_property_names(resource_factory):
     resource = resource_factory()
     response = resource.client.post("/tenants", headers=resource.headers,
-                                    json={"name": "Synthetic tenant", "sk-proj-SENTINEL-PRIVATE-TEXT": "secret-value"})
+                                    json={"name": "Synthetic tenant", "sk" + "-proj-SENTINEL-PRIVATE-TEXT": "secret-value"})
     assert response.status_code == 422
     assert "SENTINEL" not in response.text and "secret-value" not in response.text

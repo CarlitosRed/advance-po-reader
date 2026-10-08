@@ -1,5 +1,7 @@
 # Project handoff — October 2, 2026
 
+> **Superseded checkpoint (banner added 2026-10-08).** This handoff describes the October 2 workspace-organization task, the source and backup checkpoints of that day, and a Gate A-only boundary. Since then the upload, extraction, catalog, review and web workflow were built on this branch, a server key was configured and one human-authorized PDF was processed once with OpenAI; entries added by later tasks follow below. Current scope and the Implemented versus Intended list are in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and [AGENTS.md](../AGENTS.md); later evidence is in [api-activation-verification.md](api-activation-verification.md) and [live-demo-continuation.md](live-demo-continuation.md). The text below is kept unchanged as historical evidence.
+
 This document is the sanitized project handoff. The latest user request for this chat is workspace organization: map the workstations, assign ownership only where verified, improve the operating standard, and verify source/runtime backup coverage. Do not continue extraction debugging during this task.
 
 ## Current source checkpoints
@@ -160,3 +162,35 @@ sessions before setup. Use normal PowerShell and the documented process-only
 execution-policy bypass; no Windows policy setting changed. Bypass setup/seed
 verification passed. A later full start safely refused already occupied port
 8020; the other running demo was left intact. Step 4 and merge remain gated.
+
+<!-- Entries below were merged from main (T-002, T-005, Gate A rebase, T-010). -->
+
+## T-002 model cleanup (October 3, 2026)
+
+Removed the local Ollama/Qwen/gpt-oss provider and cascade, local embedding/reranker services, model readiness and download scripts/config, VLM dataset builder/review workflow, and their dedicated tests. Removed local provider and reranker hooks from the shared provider/matching path. The CLI now uses native PDF text extraction only; its OpenAI transport was removed by the T-002 audit addendum.
+
+Moved historical model evaluation/infrastructure/dataset guides and the searchable extracted self-hosted framework note and manifest to `docs/archive/`. Kept the original self-hosted recommendation DOCX and other original user-supplied research sources under `docs/research/` as historical evidence, as required by the project instructions. The native PDF parser, source-faithful observations, schema and prompt constants, provisional catalog, and legacy review/cart CLI remain. No FastAPI Gate A behavior was added or claimed by this cleanup.
+
+
+### T-002 audit addendum (October 3, 2026)
+
+Removed `OpenAIProvider`, its HTTP transport, and `build_provider` from the legacy provider module while retaining the imported observation schemas, prompt constants, and schema validation. Removed `--provider`, `--model`, and `--timeout` from `reader.py analyze`; it now calls the native engine with no provider and states in help that vision analysis is unavailable. Updated the CLI example and removed API credentials/cost language from the legacy CLI documentation. `benchmark_vision.py` had already been removed in the model-cleanup commit. This closes the accidental paid-call path; separately gated backend work remains outside this branch.
+
+## T-005 static mockup v2 (October 3, 2026)
+
+`chat/mockup-v2` starts from `origin/main` at `4bf061b`. The explicitly requested static UI task is separate from Gate A. `web/po-reader-mockup/dist/` now shows phone-first Certain/Probable/Uncertain review, zero initial approvals, three source-bound uncertain answers, session-local sample product creation, retained ignored lines, and a final approval tap after every line is reviewed. Selection or typing never accepts a product; edits revoke earlier approval. The existing sample assets are unchanged.
+
+Run `node web/po-reader-mockup/tests/mockup-v2.cjs` for the browser checks. Before/after screenshots and verification limits are in `docs/mockup-v2/README.md` and `web/po-reader-mockup/QA.md`. This implements sample interface behavior only: no login, API calls, backend changes, live extraction, persistent catalog insertion, deployment, or order action. Review goes to Claudio; Carlos decides whether to merge.
+
+## Gate A rebase for Claudio review — October 3, 2026
+
+Current desk: `C:\Users\carlo\dev\advance-po-reader.worktrees\codex`, branch `codex/local-gate-a`. This supersedes the historical worktree paths above. Rebased onto main at `4bf061b06d12bb229a771705153a58f9b2d88a7b` after PR #3 merged. Resolved the README and research-note conflicts while preserving T-002's native-only CLI and removal of local models and the legacy OpenAI transport. Gate A service, migrations, tests, dependency lock, and CI workflow are unchanged from audited commit `d67616c2f5e4210b06391ee32537df290a6d89d7`.
+
+Recreated this desk's isolated Gate A environment with Python 3.12.14. Dependency installation and `pip check` passed. The post-rebase local suite passed 133 tests with 2 explicit PostgreSQL skips. Pytest required a fresh `--basetemp` under this desk's ignored `tmp/` because the shared Windows pytest temporary directory was inaccessible. No local PostgreSQL or Docker runtime was available in this desk; the PR's PostgreSQL 17 CI run supplies the separate live database verification. The PR check results and review handoff identify the final HEAD and its CI status; older remote-CI-unverified statements above describe the October 2 run.
+
+Only documentation conflict resolution and this handoff note changed during the continuation; no new Gate A behavior was implemented. Claudio must review the PR's exact HEAD before any merge. Stop after opening the PR and reporting its number and HEAD. Carlos retains the veto.
+OneDrive mockup reconciled, 21 files match main, OneDrive repo archived to `dev\_archive\`.
+
+## T-010 operating model and merge gate (October 4, 2026)
+
+Desk `advance-po-reader.worktrees\t-010`, branch `claude/t-010-operating-model`, PR #10 (Tier 3). Added `ROLES.md`, the gate tool in `tools/gate/` (standard library only), the `gate-tests` and `scan` CI jobs, the `Gate audit` workflow, a content-scan block in `.githooks/pre-push`, the pull request template, and one appended section in `AGENTS.md`. The `tests` job and every earlier hook line are unchanged. Labels `tier-1` to `tier-4` and `hold` were created on GitHub. No product code changed. Implemented: the files above. Only documented, not built: the attack-team pilot (T-011) and the parked ideas. The gate is a procedure with a record, not a lock: every chat posts as one GitHub account, so it cannot prove who wrote a comment and cannot stop a manual merge. PRs #7, #8 and #9 finish under the old rule 3. `check 7` output after merge: to be added.

@@ -4,7 +4,6 @@ import unittest
 from po_reader.catalog import load_catalog
 from po_reader.grounding import interpret_line
 from po_reader.model_matching import ModelMatcher
-from po_reader.model_provider import CascadeProvider
 from po_reader.retrieval import ProductRetriever
 
 
@@ -31,7 +30,7 @@ def visual_line(identifier="76-76", role="vendor_product_code", **changes):
 
 class Comparator:
     name = "mock-text"
-    model = "gpt-oss-test"
+    model = "openai-test"
     def __init__(self, selected="76-76", relationship="compatible", conflicts=None):
         self.result = dict(selected_product_id=selected, description_relationship=relationship,
                            attribute_conflicts=conflicts or [], reason="Comparison of product name and attributes.")
@@ -223,159 +222,14 @@ class ModelMatchingTests(unittest.TestCase):
         finally:
             retriever.close()
 
-    def test_selective_cascade_skips_identical_unambiguous_exact_case(self):
-        adjudicator = Comparator()
-        provider = CascadeProvider(Comparator(), adjudicator)
-        line = visual_line(description="  LATEX disposable gloves medium ",
-                           attributes=[dict(name="Material", value="LATEX")])
-        source = copy.deepcopy(line)
-        decision = self.match(line, provider)
-        self.assertEqual(decision["status"], "matched")
-        self.assertEqual(adjudicator.calls, [])
-        self.assertEqual(line["comparison_method"], "deterministic_exact_description")
-        self.assertEqual(line["identifiers"], source["identifiers"])
-        self.assertEqual(provider.stage_counts()["adjudication"], dict(used=0, skipped=1, failed=0))
-        self.assertEqual(provider.stage_counts()["reranking"]["skipped"], 1)
 
-    def test_description_paraphrases_variants_and_attributes_require_llm(self):
-        cases = [visual_line(),
-                 visual_line(description="Latex disposable gloves medium sterile"),
-                 visual_line(description=CATALOG["76-76"]["name"],
-                             attributes=[dict(name="material", value="nitrile")]),
-                 visual_line(description=CATALOG["76-76"]["name"],
-                             attributes=[dict(name="pack count", value="100")])]
-        for line in cases:
-            with self.subTest(line=line):
-                adjudicator = Comparator()
-                provider = CascadeProvider(Comparator(), adjudicator)
-                self.match(line, provider)
-                self.assertEqual(len(adjudicator.calls), 1)
-                self.assertEqual(provider.stage_counts()["adjudication"]["used"], 1)
 
-    def test_cascade_does_not_skip_source_disagreements_or_unknown_ids(self):
-        for line, expected in ((visual_line(description=CATALOG["76-76"]["name"],
-                                           source_validation=dict(status="disagreement")), "source_disagreement"),
-                               (visual_line("76-99", description=CATALOG["76-76"]["name"]),
-                                "observed_identifier_not_in_catalog"),
-                               (visual_line(role="unknown", description=CATALOG["76-76"]["name"]),
-                                "unknown_identifier_role")):
-            with self.subTest(expected=expected):
-                adjudicator = Comparator()
-                provider = CascadeProvider(Comparator(), adjudicator)
-                decision = self.match(line, provider)
-                self.assertEqual(len(adjudicator.calls), 1)
-                self.assertEqual(decision["status"], "review_needed")
-                self.assertIn(expected, decision["validation_errors"])
 
-    def test_cascade_conflicting_ids_and_invented_choice_remain_review(self):
-        adjudicator = Comparator("invented")
-        provider = CascadeProvider(Comparator(), adjudicator)
-        line = visual_line(description=CATALOG["76-76"]["name"])
-        line["identifiers"].append(dict(raw_value="76-77", role="manufacturer_part_number", status="observed"))
-        decision = self.match(line, provider)
-        self.assertEqual(len(adjudicator.calls), 1)
-        self.assertIsNone(decision["product_id"])
-        self.assertIn("model_selected_outside_candidates", decision["validation_errors"])
-        self.assertIn("conflicting_authoritative_identifiers", decision["validation_errors"])
 
-    def test_optional_reranker_preserves_candidates_and_records_real_usage(self):
-        class Ranker:
-            model = "mock-real-cross-encoder"
 
-            def rank(self, line, candidates):
-                return [dict(candidate, rank_score=float(index)) for index, candidate in enumerate(reversed(candidates))]
-        adjudicator = Comparator()
-        provider = CascadeProvider(Comparator(), adjudicator, candidate_ranker=Ranker())
-        line = visual_line()
-        self.match(line, provider)
-        ids = {candidate["product_id"] for candidate in adjudicator.calls[0][1]}
-        self.assertIn("76-76", ids)
-        self.assertEqual(ids, {hit["product_id"] for hit in line["retrieval"]["hits"]})
-        self.assertEqual(provider.stage_counts()["reranking"]["used"], 1)
-        self.assertEqual(provider.stage_counts()["adjudication"]["used"], 1)
 
-    def test_optional_candidate_services_cannot_change_bindings_or_drop_exact_hits(self):
-        class UnsafeRetriever:
-            def retrieve(self, line, catalog, retrieved):
-                retrieved["exact_product_ids"] = ["76-77"]
-                return retrieved
-        class UnsafeRanker:
-            def rank(self, line, candidates):
-                return [candidate for candidate in candidates if candidate["product_id"] != "76-76"]
-        provider = CascadeProvider(Comparator(), Comparator(), UnsafeRetriever(), UnsafeRanker())
-        line = visual_line()
-        decision = self.match(line, provider)
-        self.assertEqual(decision["status"], "matched")
-        self.assertEqual(line["retrieval"]["exact_product_ids"], ["76-76"])
-        self.assertIn("76-76", {item["product_id"] for item in line["retrieval"]["hits"]})
-        self.assertEqual(provider.stage_counts()["semantic_retrieval"]["failed"], 1)
-        self.assertEqual(provider.stage_counts()["reranking"]["failed"], 1)
 
-    def test_reranker_scores_revision_and_catalog_facts_are_saved(self):
-        class Ranker:
-            model = "Qwen/Qwen3-Reranker-test"
 
-            def __init__(self):
-                self.usage = []
-
-            def rank(self, line, candidates):
-                ranked = [dict(candidate, rank_score=-(index + .25)) for index, candidate in enumerate(candidates)]
-                self.usage.append(dict(revision="test-revision-abc", score_type="cross_encoder_logit_difference"))
-                return list(reversed(ranked))
-        ranker = Ranker()
-        provider = CascadeProvider(Comparator(), Comparator(), candidate_ranker=ranker)
-        line = visual_line()
-        self.match(line, provider)
-        saved = line["retrieval"]
-        self.assertEqual(saved["reranking"]["status"], "completed")
-        self.assertEqual(saved["reranking"]["model"], ranker.model)
-        self.assertEqual(saved["reranking"]["model_revision"], "test-revision-abc")
-        self.assertEqual(saved["reranking"]["score_type"], "cross_encoder_logit_difference")
-        for hit in saved["hits"]:
-            self.assertIsInstance(hit["rank_score"], float)
-            self.assertEqual(hit["name"], CATALOG[hit["product_id"]]["name"])
-            self.assertEqual(hit["variants"], CATALOG[hit["product_id"]]["variants"])
-        self.assertEqual(provider.metadata["stages"]["reranking"]["status"], "completed")
-        self.assertEqual(provider.metadata["stages"]["reranking"]["last_execution"]["model_revision"], "test-revision-abc")
-
-    def test_invalid_reranker_scores_and_catalog_mutations_fail_closed(self):
-        class Ranker:
-            def __init__(self, score=None, mutate=False):
-                self.score, self.mutate = score, mutate
-
-            def rank(self, line, candidates):
-                for candidate in candidates:
-                    candidate["rank_score"] = self.score
-                    if self.mutate:
-                        candidate["name"] = "Changed catalog name"
-                return candidates
-        for score, mutate in ((float("nan"), False), (float("inf"), False),
-                              (True, False), ("0.1", False), (.1, True)):
-            with self.subTest(score=score, mutate=mutate):
-                provider = CascadeProvider(Comparator(), Comparator(), candidate_ranker=Ranker(score, mutate))
-                line = visual_line()
-                self.match(line, provider)
-                self.assertEqual(provider.stage_counts()["reranking"]["failed"], 1)
-                self.assertEqual(line["retrieval"]["reranking"]["status"], "failed")
-                self.assertTrue(all("rank_score" not in hit for hit in line["retrieval"]["hits"]))
-                self.assertTrue(all(hit["name"] == CATALOG[hit["product_id"]]["name"] for hit in line["retrieval"]["hits"]))
-
-    def test_semantic_service_statuses_reflect_actual_availability(self):
-        class Retriever:
-            def __init__(self, status):
-                self.status = status
-
-            def retrieve(self, line, catalog, retrieved):
-                retrieved["semantic_retrieval"] = dict(status=self.status)
-                return retrieved
-        for reported, expected in (("completed", "used"), ("unavailable", "failed"),
-                                   ("skipped_empty_query_or_catalog", "skipped")):
-            with self.subTest(reported=reported):
-                provider = CascadeProvider(Comparator(), Comparator(), candidate_retriever=Retriever(reported))
-                line = visual_line()
-                self.match(line, provider)
-                self.assertEqual(provider.stage_counts()["semantic_retrieval"][expected], 1)
-                self.assertEqual(line["retrieval"]["semantic_retrieval"]["status"], reported)
 
 
 if __name__ == "__main__":

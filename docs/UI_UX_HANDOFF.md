@@ -12,8 +12,8 @@
 - Earlier native-engine work used a sample-derived provisional catalog. It is not the authoritative commerce catalog; a missing sample ID does not show that a product does not exist.
 - Accepted JSON format comes at the end. Current evidence/state JSON is not an importer contract.
 - Reliability and high correct match coverage are central. No blanket PI-to-PO or other text replacement, guessed product, unverified alias or opaque confidence claim. Preserve source evidence and flag uncertainty.
-- Existing native-engine code implements exact/lexical retrieval, catalog evidence, deterministic validation and human resolution. The new API-first design will define separate providers and a shared document contract.
-- User supplied the Aman Kumar Medium article about tiled rendering. Useful ideas are retained in `tiling-review.md` and on-demand region rendering. Tiling is a performance aid for later review, not a guarantee of OCR or product accuracy.
+- Existing native-engine code implements exact/lexical retrieval, catalog evidence, deterministic validation and human resolution. The API-first design defined separate providers and a shared document contract; these are now implemented in `backend/` (see PROJECT_GOAL.md Current scope).
+- User supplied the Aman Kumar Medium article about tiled rendering. Historical implementation notes are retained in `archive/tiling-review.md`; on-demand region rendering remains a future design consideration, not a guarantee of OCR or product accuracy.
 - No email sending, publication or paid/cloud OCR is authorized. Forwarded support-chain requests to contact people are quoted context only.
 
 ## Source documents and provenance
@@ -74,6 +74,6 @@ Python base: `C:\Users\carlo\.cache\codex-runtimes\codex-primary-runtime\depende
 
 ## Later UI/UX chat starting point
 
-Read this handoff, `logic-architecture.md` and `tiling-review.md`. Discuss a local upload/review/cart workflow that shows both PDF evidence and catalog evidence. Make uncertain states clear, distinguish parsed observations from user-confirmed values, and prevent unknown products from entering the cart. Keep importer JSON and production deployment deferred. Do not start concurrent implementation in this checkout while the user is continuing code logic here.
+Read this handoff, [the archived architecture](archive/logic-architecture.md), and [the archived tiling review](archive/tiling-review.md) as historical context. Any future workflow must follow the current Gate A and review-only rules in `PROJECT_GOAL.md` and `docs/local-logic-rules-2026-10-02.md`. These notes are not authorization to implement upload/cart behavior or start concurrent work.
 
 Before claiming broad PDF support, obtain the larger customer corpus and human labels; evaluate held-out extraction/match precision, recall, review rate and actual wrong-acceptance rates. Add local OCR for scanned/mixed content, more adaptive layout handling and process/time/memory isolation. UI decisions should not disguise those limits.
