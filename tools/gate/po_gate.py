@@ -23,6 +23,7 @@ import re
 import shlex
 import subprocess
 import sys
+import unicodedata
 
 TIER_LABELS = {"tier-1": 1, "tier-2": 2, "tier-3": 3, "tier-4": 4}
 TRAILER = re.compile(r"^Gate-Record: pass tier=([123]) head=([0-9a-f]{40})\b(.*)$", re.M)
@@ -51,8 +52,18 @@ SECRETS = [
     (re.compile(r"AKIA[0-9A-Z]{16}"), "AWS access key"),
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}"), "GitHub token"),
 ]
+# "files" is not asked here: `gh pr view --json files` stops at 100 entries. fetch_pr reads the full list instead.
 VIEW_FIELDS = ("number,title,state,isDraft,baseRefName,headRefName,headRefOid,author,labels,"
-               "body,files,statusCheckRollup,comments,reviews")
+               "body,baseRefOid,changedFiles,statusCheckRollup,comments,reviews")
+# Everything that defines WHICH diff the file list belongs to. Read before and after the list; any difference stops the gate.
+SNAPSHOT_FIELDS = ("number", "baseRefName", "baseRefOid", "headRefName", "headRefOid", "changedFiles")
+SHA = re.compile(r"[0-9a-f]{40}")                       # used with fullmatch: a trailing newline must not pass
+# (branch names are checked by bad_branch; paths by bad_path)
+# The statuses GitHub gives a changed file. A rename or copy must name the file it came from.
+FILE_STATUSES = ("added", "removed", "modified", "renamed", "copied", "changed", "unchanged")
+NEEDS_OLD_NAME = ("renamed", "copied")
+# GitHub lists at most 3000 files of a pull request; at that count the list may be cut off.
+MAX_FILES = 3000
 
 DEFAULTS = {
     "repo": "",                       # empty = detect with `gh repo view` from the current folder
@@ -103,11 +114,89 @@ def load_config(path):
     return cfg
 
 
-def match_any(path, globs):
-    """A glob with no slash also matches the file's own name in any folder."""
+def match_any(path, globs, fold=False):
+    """A glob with no slash also matches the file's own name in any folder. fold=True ignores upper/lower case:
+    used for rules that DENY or raise a tier, because Windows and macOS treat `Reader.py` and `reader.py` as one file."""
+    if fold:
+        path, globs = path.lower(), [g.lower() for g in globs]
     name = path.rsplit("/", 1)[-1]
     return any(fnmatch.fnmatchcase(path, g) or ("/" not in g and fnmatch.fnmatchcase(name, g))
                for g in globs)
+
+
+def is_int(value):
+    """A real integer: not a bool, not a float that happens to equal one."""
+    return type(value) is int
+
+
+DRIVE = re.compile(r"[A-Za-z]:")
+
+
+def odd_character(ch, allow_space):
+    """A character that must not appear in a name from GitHub: any Unicode control, format, surrogate, private-use
+    or unassigned character (categories C*), and any separator (Z*) except, where allowed, the plain ASCII space."""
+    cat = unicodedata.category(ch)
+    return cat.startswith("C") or (cat.startswith("Z") and not (allow_space and ch == " "))
+
+
+def bad_path(path):
+    """Why a repository path from GitHub cannot be trusted, or None. A path is plain text: no Unicode control,
+    format, surrogate, private-use or unassigned character; no space-like character except the ordinary space
+    inside a name (never at either end); no backslash; not rooted ('/', '//', a drive such as 'C:' or a
+    UNC name); and no empty, '.' or '..' folder part."""
+    if not isinstance(path, str) or not path:
+        return "is not text"
+    if any(odd_character(c, allow_space=True) for c in path) or chr(92) in path or path != path.strip(" "):
+        return "has a control, hidden or unusual space character, or a backslash, or a space at an end"
+    if path.startswith("/") or DRIVE.match(path) or any(part in ("", ".", "..") for part in path.split("/")):
+        return "is not a plain repository path (rooted, drive-lettered, or with an empty, '.' or '..' part)"
+    return None
+
+
+REF_FORBIDDEN = set("~^:?*[" + chr(92))   # plus space, DEL and every control character (caught by odd_character)
+
+
+def bad_branch(name):
+    """Why a branch name from GitHub cannot be trusted, or None. Exact, non-normalizing form of Git's own rules
+    (git check-ref-format): no space or Unicode control/hidden character, none of ~ ^ : ? * [ or a backslash, no
+    '..' or '@{', no leading '-', no empty component ('//', leading or trailing '/'), no component starting with
+    '.' or ending in '.lock', no trailing '.'. Nothing is repaired."""
+    if not isinstance(name, str) or not name:
+        return "is not text"
+    if any(odd_character(c, allow_space=False) for c in name):
+        return "has a space, control or hidden character"
+    if any(c in REF_FORBIDDEN for c in name):
+        return "has a character Git does not allow in a branch name (~ ^ : ? * [ or a backslash)"
+    if name.startswith("-") or name.endswith(".") or ".." in name or "@{" in name:
+        return "is not a valid Git branch name"
+    for part in name.split("/"):
+        if not part or part.startswith(".") or part.endswith(".lock"):
+            return "is not a valid Git branch name (empty part, or a part starting with '.' or ending in '.lock')"
+    return None
+
+
+REPO_NAME = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+def check_identity(got, number, where):
+    """Validate, strictly and before any comparison, the fields that say which diff a pull request is."""
+    if not isinstance(got, dict):
+        raise GateError(f"GitHub's {where} answer about the pull request is not an object; cannot verify the files")
+    for field in SNAPSHOT_FIELDS:
+        if field not in got:
+            raise GateError(f"GitHub's {where} answer leaves out {field}; cannot tell which diff the file list belongs to")
+    if not is_int(got["number"]) or got["number"] != number:
+        raise GateError(f"GitHub's {where} answer is for pull request {got['number']!r}, not {number}")
+    for field in ("headRefOid", "baseRefOid"):
+        if not isinstance(got[field], str) or not SHA.fullmatch(got[field]):
+            raise GateError(f"GitHub's {where} {field} is not a 40-character lowercase commit id; "
+                            "cannot tell which diff the file list belongs to")
+    for field in ("headRefName", "baseRefName"):
+        if bad_branch(got[field]):
+            raise GateError(f"GitHub's {where} {field} is not a clean branch name; "
+                            "cannot tell which diff the file list belongs to")
+    if not is_int(got["changedFiles"]) or got["changedFiles"] < 0:
+        raise GateError(f"GitHub's {where} changedFiles is not a whole number; cannot verify the files")
 
 
 # ---------------------------------------------------------------- runners
@@ -196,18 +285,97 @@ def read_signals(pr, cfg):
 # ---------------------------------------------------------------- check
 
 def repo_of(gh, cfg):
-    if cfg.get("repo"):
-        return cfg["repo"]
-    repo = gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).strip()
+    repo = cfg.get("repo") or gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]).strip()
     if not repo:
         raise GateError("could not detect the repository; run inside the repo folder or set 'repo' in gate.json")
+    if not isinstance(repo, str) or not REPO_NAME.fullmatch(repo) or repo.startswith("-") \
+            or any(part in (".", "..") for part in repo.split("/")):
+        raise GateError(f"the repository name {repo!r} is not a plain owner/name; refusing to continue")
     cfg["repo"] = repo
     return repo
 
 
+def parse_json_pages(raw):
+    """Read the output of `gh api --paginate`: one JSON array per page, written one after another
+    ('[...][...]'), a single array, or an array of arrays (`--slurp`). Returns one flat list of entries.
+    Anything else (empty output, an error object, a scalar, a page that mixes shapes, trailing text)
+    is refused: the gate must never read 'nothing useful' as 'no files'."""
+    raw = raw or ""
+    if not raw.strip():
+        raise GateError("the changed-file list came back empty; cannot verify the files")
+    dec, pos, items = json.JSONDecoder(), 0, []
+    while True:
+        while pos < len(raw) and raw[pos].isspace():
+            pos += 1
+        if pos >= len(raw):
+            return items
+        try:
+            page, pos = dec.raw_decode(raw, pos)
+        except ValueError as exc:
+            raise GateError(f"the changed-file list is not valid JSON ({exc}); cannot verify the files")
+        if not isinstance(page, list):
+            raise GateError("the changed-file list is not a JSON array (got an error or another object); "
+                            "cannot verify the files")
+        if page and all(isinstance(e, list) for e in page):
+            page = [entry for sub in page for entry in sub]
+        for entry in page:
+            if not isinstance(entry, dict):
+                raise GateError("the changed-file list has an entry that is not an object; cannot verify the files")
+            items.append(entry)
+
+
+def fetch_files(gh, repo, number):
+    """The changed-file list as [{"path", "status", "previous_path" (the old name, when there is one)}], read page
+    by page (100 per page). Every entry needs a non-empty text `filename` and a known `status`; a renamed or
+    copied file must name its old file; a path may appear only once."""
+    raw = gh(["api", f"repos/{repo}/pulls/{number}/files?per_page=100", "--paginate"])
+    files, seen = [], set()
+    for entry in parse_json_pages(raw):
+        name = entry.get("filename")
+        if bad_path(name):
+            raise GateError(f"the changed-file list has a file name that {bad_path(name)}: {name!r}; cannot verify the files")
+        if name in seen:
+            raise GateError(f"the changed-file list names '{name}' twice; cannot verify the files")
+        seen.add(name)
+        status = entry.get("status")
+        if not isinstance(status, str) or status not in FILE_STATUSES:
+            raise GateError(f"the changed-file list gives no usable status for '{name}'; cannot verify the files")
+        rec = {"path": name, "status": status}
+        prev = entry.get("previous_filename")
+        if prev is not None:
+            if bad_path(prev):
+                raise GateError(f"the changed-file list has an old name for '{name}' that {bad_path(prev)}; "
+                                "cannot verify the files")
+            rec["previous_path"] = prev
+        elif status in NEEDS_OLD_NAME:
+            raise GateError(f"'{name}' is {status} but the list gives no old name; cannot verify the files")
+        files.append(rec)
+    return files
+
+
+def snapshot(gh, repo, number, fields):
+    """The fields that say which diff this is, as GitHub reports them right now."""
+    got = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", ",".join(fields)]))
+    if not isinstance(got, dict):
+        raise GateError("GitHub's answer about the pull request is not an object; cannot verify the files")
+    return got
+
+
 def fetch_pr(gh, cfg, number):
-    raw = gh(["pr", "view", str(number), "--repo", repo_of(gh, cfg), "--json", VIEW_FIELDS])
-    return json.loads(raw)
+    """The pull request as `gh pr view` reports it, plus the complete file list. `changedFiles` is GitHub's own
+    count; `evaluate` compares it with the list, so a list that came back short or empty cannot pass. Which diff
+    the list belongs to is pinned: number, base branch, base commit, head branch, head commit and count are read
+    before and after the list, and any difference (or any of them being unreadable) refuses the read."""
+    repo = repo_of(gh, cfg)
+    pr = json.loads(gh(["pr", "view", str(number), "--repo", repo, "--json", VIEW_FIELDS]))
+    check_identity(pr, number, "first")
+    pr["files"] = fetch_files(gh, repo, number)
+    after = snapshot(gh, repo, number, SNAPSHOT_FIELDS)
+    check_identity(after, number, "second")
+    if any(type(after[k]) is not type(pr[k]) or after[k] != pr[k] for k in SNAPSHOT_FIELDS):
+        raise GateError("the pull request changed while its file list was being read (its base, head or file count "
+                        "moved); run the check again")
+    return pr
 
 
 def evaluate(pr, cfg):
@@ -218,7 +386,29 @@ def evaluate(pr, cfg):
 
     head = pr.get("headRefOid") or ""
     branch = pr.get("headRefName") or ""
-    files = [f.get("path", "") for f in (pr.get("files") or [])]
+    records = pr.get("files") or []
+    files, problems = [], []   # files: every name seen, the new name and, for a rename, the old one
+    new_names = []
+    for rec in records:
+        path = rec.get("path") if isinstance(rec, dict) else None
+        prev = rec.get("previous_path") if isinstance(rec, dict) else None
+        status = rec.get("status") if isinstance(rec, dict) else None
+        if bad_path(path):
+            problems.append(f"a file name {bad_path(path)}: {path!r}")
+        elif prev is not None and bad_path(prev):
+            problems.append(f"'{path}' has an old name that {bad_path(prev)}")
+        elif isinstance(rec, dict) and "status" in rec and status not in FILE_STATUSES:
+            problems.append(f"'{path}' has an unknown status")
+        elif status in NEEDS_OLD_NAME and not prev:
+            problems.append(f"'{path}' is {status} but has no old name")
+        else:
+            new_names.append(path)
+            files.extend([path] + ([prev] if prev else []))
+    files = list(dict.fromkeys(files))
+    if len(set(new_names)) != len(new_names):
+        problems.append("a path is listed twice")
+    expected = pr.get("changedFiles")
+    count_ok = is_int(expected) and expected >= 0
     labels = [lb.get("name") for lb in (pr.get("labels") or [])]
     sig = read_signals(pr, cfg)
     a_vendor = author_vendor_of(cfg, branch)
@@ -242,7 +432,7 @@ def evaluate(pr, cfg):
         add("tier", False, f"needs exactly one tier label (tier-1..tier-4), found {tier_labels or 'none'}")
     else:
         tier = TIER_LABELS[tier_labels[0]]
-        protected = [f for f in files if match_any(f, cfg["protected_paths"])]
+        protected = [f for f in files if match_any(f, cfg["protected_paths"], fold=True)]
         if tier == 4:
             add("tier", False, "tier-4 is human only: agents and this gate never merge it")
         elif protected and tier < 3:
@@ -256,10 +446,17 @@ def evaluate(pr, cfg):
             add("tier", True, tier_labels[0])
 
     # files
-    if len(files) >= 100:
-        add("files", False, "100 or more changed files: the file list cannot be fully verified; split the change")
+    if max(len(records), expected if count_ok else 0) >= MAX_FILES:
+        add("files", False, f"{MAX_FILES} or more changed files: the file list cannot be fully verified; split the change")
+    elif not count_ok:
+        add("files", False, "GitHub's changed-file count is missing, so the file list cannot be verified as complete")
+    elif problems:
+        add("files", False, f"the file list is malformed ({problems[0]}); it cannot be verified")
+    elif len(new_names) != expected:
+        add("files", False, f"the file list has {len(new_names)} files but GitHub counts {expected}; "
+            "it may be incomplete, so it cannot be verified")
     else:
-        bad = [f for f in files if match_any(f, cfg["forbidden_globs"]) and not match_any(f, cfg["scan_allow"])]
+        bad = [f for f in files if match_any(f, cfg["forbidden_globs"], fold=True) and not match_any(f, cfg["scan_allow"])]
         add("files", not bad, "no forbidden files" if not bad else f"forbidden files changed: {', '.join(bad[:5])}")
 
     # conversation size
