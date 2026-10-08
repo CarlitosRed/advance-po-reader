@@ -1,5 +1,45 @@
 # Advance PO Reader
 
+## Run the free demo on Windows
+
+Use **`integration/ui-and-matching` until v1 lands on `main`**. This demo runs
+the local review screens with fictional orders, a bundled fictional catalog,
+and fixed extraction answers. It does not read new orders with AI or need an
+API key. The launcher creates its own local database and temporary local token.
+
+| Prerequisite | How to get it |
+| --- | --- |
+| Git | Install [Git for Windows](https://git-scm.com/downloads/win) to clone or change branches. |
+| Python 3.12, 64-bit | Get the [Python 3.12 Windows installer](https://www.python.org/downloads/release/python-31210/); enable **Add python.exe to PATH**. Check `python --version` reports `3.12.x`. |
+| PostgreSQL 17 binaries | Get the Windows installer or binary ZIP from [PostgreSQL's Windows downloads](https://www.postgresql.org/download/windows/). Find the `bin` folder containing `initdb.exe` and `pg_ctl.exe`; add it to PATH or pass `-PostgresBin 'YOUR_POSTGRES_BIN_FOLDER'` to the launcher. An existing database service is not needed. |
+| Browser | Open the page in [Microsoft Edge](https://www.microsoft.com/edge) or another browser. |
+| PowerShell and ports | Open Windows PowerShell normally, **not as administrator**. Keep local port `8020` free; use `-Port 8021` if it is occupied. The demo selects a separate free local PostgreSQL port. |
+| Node.js | Not required to start or use this demo. The optional browser verification script uses [Node.js](https://nodejs.org/en/download) and Playwright. |
+
+From a fresh clone:
+
+```powershell
+git clone --branch integration/ui-and-matching --single-branch https://github.com/CarlitosRed/advance-po-reader.git
+Set-Location -LiteralPath .\advance-po-reader
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1
+```
+
+For an existing clone, run `git fetch origin`, `git switch integration/ui-and-matching`,
+and `git pull --ff-only origin integration/ui-and-matching` before the same start command.
+If Python is not found, add `-Python 'YOUR_PYTHON_3_12_EXE'`; if PostgreSQL is not
+found, add `-PostgresBin 'YOUR_POSTGRES_BIN_FOLDER'`. The first start installs the
+pinned Python dependencies and needs access to the package index.
+
+Wait for **Free POC ready**, open [http://127.0.0.1:8020/poc-demo](http://127.0.0.1:8020/poc-demo)
+(use your chosen port), and choose **Try a sample order**. Stop with **Ctrl+C**.
+No `data\` folder is needed beforehand: private runtime files are created locally.
+Files under `data\`, including the old CLI's `catalog-seed.json`, are private and
+are never in Git; the demo uses the fictional files under `fixtures/poc-demo/`.
+The separate live OpenAI mode on Carlos's machine needs Carlos's private key and
+authorization. Never request or share keys in chat or files, and never copy his
+credentials to a teammate's machine. See the [demo runbook](docs/poc-demo-runbook.md)
+for the free workflow and its limits.
+
 Local agent integration is implemented: 11 scoped STDIO MCP tools connect to
 the website, with human source authorization and product approval in the UI.
 The website follows agent-started runs and shares the saved review summary.
