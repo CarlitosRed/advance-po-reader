@@ -449,7 +449,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                     continue
                 operation["security"] = [{"LocalToken": []}, {"LocalBrowserSession": []}]
                 parameters = operation.setdefault("parameters", [])
-                unscoped = path in {"/tenants", "/website/workspaces", "/website/readiness", "/website/corpus"} or path.startswith("/website/corpus/")
+                unscoped = path in {"/tenants", "/website/workspaces", "/website/readiness"} or path.startswith("/website/corpus/")
                 if not unscoped and not any(p.get("name") == "X-Tenant-ID" for p in parameters):
                     parameters.append({"name": "X-Tenant-ID", "in": "header", "required": True,
                                        "schema": {"type": "string", "format": "uuid"},

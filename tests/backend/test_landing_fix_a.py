@@ -149,3 +149,32 @@ def test_s02_synthetic_receipt_version_matches_the_payload(kind):
     result = SyntheticProvider().extract(generate_fixture(kind), "application/pdf", 1)
     assert result.state == "succeeded"
     assert result.schema_version == result.payload.schema_version
+
+
+# R04 follow-up: the generic launcher fails closed in live mode ------------------------
+
+def test_r04_generic_launcher_refuses_live_processing(monkeypatch, capsys):
+    from backend import __main__ as launcher
+    started = []
+    monkeypatch.setattr(launcher.uvicorn, "run", lambda *args, **kwargs: started.append(kwargs))
+    live = Settings(_env_file=None, local_api_token=SecretStr("a-private-looking-token-1234"),
+                    live_processing_enabled=True, openai_api_key=SecretStr("sk-fictional-not-a-key"),
+                    storage_directory=ROOT / "data" / "landing-fix-a" / "live")
+    assert launcher.main(live) == 2 and started == []
+    shown = capsys.readouterr()
+    assert shown.out == "" and "scripts/serve_backend.py" in shown.err and "start-poc-demo.ps1 -Live" in shown.err
+    assert "sk-fictional" not in shown.err and "a-private-looking" not in shown.err
+    free = Settings(_env_file=None, local_api_token=SecretStr("a-private-looking-token-1234"),
+                    storage_directory=ROOT / "data" / "landing-fix-a" / "free")
+    assert launcher.main(free) == 0 and len(started) == 1
+
+
+# R07 follow-up: corpus listing documents its required tenant header ------------------
+
+def test_r07_corpus_listing_documents_the_tenant_header():
+    paths = offline_app().openapi()["paths"]
+    listing = [p["name"] for p in paths["/website/corpus"]["get"]["parameters"]]
+    assert "X-Tenant-ID" in listing
+    for path, operations in paths.items():
+        if path.startswith("/website/corpus/"):
+            assert "X-Tenant-ID" not in [p["name"] for p in operations["get"].get("parameters", [])]

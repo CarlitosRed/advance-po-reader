@@ -5811,7 +5811,18 @@
     "/website/corpus": {
       "get": {
         "operationId": "library_website_corpus_get",
-        "parameters": [],
+        "parameters": [
+          {
+            "description": "Explicit local tenant scope, not an authenticated identity.",
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
