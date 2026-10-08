@@ -1,38 +1,36 @@
-# Purchase Order Reader mockup
+# Purchase Order Reader mockup v2
 
-Interactive, owner-private Sites prototype for the SmarterCommerce / Werner purchase-order workflow. Source is deliberately contained in this folder, with its own Git history. Reader logic in the parent repository is a separate work stream. The parent baseline inspected during creation was `93a1b5c`.
+T-005 is a static, phone-first review walkthrough. It uses the existing synthetic purchase order DEMO-1042, its seven rendered line snippets, and the existing 18-product sample catalog. No login, backend, provider calls, or cart integration are needed.
 
-Open the Site to upload or drop a PDF/photo, or choose **Try a sample purchase order**. The sample exercises exact matches, conflicting product numbers, pack-unit confirmation, a non-product instruction, shipping-charge exclusion, and the cart.
+Open `dist/index.html` in a browser, or serve `dist/` with an ordinary local static server. Choose **Try the sample purchase order** to explore the complete flow. A PDF or photo selection also works, but it is local preview only: the following review always uses clearly labeled sample observations and snippets.
 
-## What works
+For a local browser preview, run `node web/po-reader-mockup/serve.cjs` from the repository root and open `http://127.0.0.1:4315`. The read-only server serves static files only and binds to loopback. Set `MOCKUP_PORT` to change the port.
 
-- One PDF, JPG, PNG, or WebP selection/drop, validated by size, extension and signature; 25 MB maximum. Uploaded files remain local browser object URLs, with a document preview.
-- SmarterCommerce and Werner logo loading sequence, cancellation, reduced-motion support.
-- Source PDF/page and actual rendered row snippets from a synthetic PO with no customer data.
-- SKU/name search across the existing 18-product provisional sample catalog, explicit product/quantity/unit confirmation, non-product dismissal and restoration.
-- Matched and confirmed cart lines, quantity changes, removal/restoration, unresolved-line flags, quantities grouped by unit, and simulated cart confirmation.
-- Accessible semantic controls, focus/error feedback, browser back navigation, and responsive upload/review/cart views.
-- Optional WebMCP actions with the same validation and in-memory state as the interface.
+## Review flow
 
-## Prototype boundaries
+1. Select one PDF, JPG, PNG, or WebP (25 MB maximum), or use the sample. A cancellable reading simulation follows.
+2. **Certain:** three exact-code suggestions start selected, with zero reviewed or accepted lines. Tap **Approve line** on each, or change the product.
+3. **Probable:** the roof-rack-clamp suggestion needs confirmation of its printed pack unit. Confirm it, or search for another sample product.
+4. **Uncertain:** conflicting codes, a delivery instruction, and a shipping charge each keep their source snippet and exactly three answers: **This is product X**, **New product**, **Not a product**.
+5. Catalog selection and editing fields only prepare a draft. **Approve line** saves an existing-product decision. **Add sample product & review line** adds a product to the in-memory sample catalog and records the explicit review. **Not a product** preserves the source in the collapsed **Ignored** section.
+6. Review all seven source lines to unlock the final summary, then tap **Approve all reviewed lines**. Editing any decision revokes the full-review approval and reopens that line.
 
-There is no live extraction in this website yet. Uploading a new document leads to clearly labeled **sample review results**, alongside a separate preview of the user's file. Example rows and snippets are never presented as extracted from the upload. The website does not call local Ollama, the reader CLI, an external AI API, a real store catalog, or a store cart. There are no prices, customer details, checkout, training, or order submission. Browser refresh clears the in-memory session and decisions.
+Quantities remain strings in observations and decisions. EA, PK, and BOX totals are separate; the UI never converts packs into individual items. Missing or invalid quantities/units block product review. New product codes must be unique within the sample catalog. Refresh or a new review clears all additions and decisions.
 
-`dist/assets/catalog.json` contains only sample IDs/names. It excludes PDF provenance, emails, addresses and source customer documents. Ordering-unit controls in the mockup are example choices; production support and conversions require the real catalog contract.
+## Verification
 
-## Continue implementation
+Run the focused browser suite from the repository root:
 
-Connect the reader through an authenticated adapter that maps preserved raw observations and reviewed candidate decisions to the UI states. Replace sample catalog choices with authoritative product/variant keys, ordering rules and availability. Revalidate every confirmed line against the current catalog before sending a cart operation. Preserve source document hash, page, region, raw quantities/units, corrections and idempotency keys. Review decisions must remain observations until approved by a human; no training is authorized.
+```powershell
+node web/po-reader-mockup/tests/mockup-v2.cjs
+```
 
-`create-demo-document.py` rebuilds the synthetic PO, row PNGs and stripped sample catalog using the parent sample catalog. It is a development utility and is not deployed as server code. Normal hosting uses the tracked static `dist/` output with `.openai/hosting.json`.
+The suite serves only `dist/` over loopback and exercises real controls using the bundled Playwright runtime and installed Edge. Its runtime/browser defaults match this Windows workspace; they can be overridden as documented in the script. It rejects external requests and API transports, checks approval gates and responsive behavior, and captures the after screenshots. See [QA.md](QA.md) and the [before/after evidence](../../docs/mockup-v2/README.md).
 
-## Design and asset sources
+## Static boundaries
 
-The requested `npx skills use "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill" --skill "ui-ux-pro-max"` was run and its complete output read. Relative support files were resolved from the emitted temporary supporting directory. Its minimal enterprise style, document-grey/scan-blue palette and accessibility guidance informed this working surface. Marketing-layout recommendations were not suitable for the upload/review task.
+`sample-catalog.js` is a local script containing the same ID/name pairs as `assets/catalog.json`; using a script lets the demo also open from disk without a catalog fetch. The content security policy includes `connect-src 'none'`. There are no API clients, WebMCP mutation hooks, credentials, remote fonts, storage writes, database writes, or order submission. A chosen file uses a temporary browser object URL that is revoked on cancellation or reset.
 
-Official logos, used without changing their source pixels:
+The prototype does not extract, match, or validate a real uploaded PO. It does not prove reader accuracy, production readiness, catalog authority, or persistent audit behavior. The displayed confidence tiers are fixed sample scenarios. The probable scenario has a matching product code but needs a human pack-unit decision; the uncertain scenario retains both conflicting source codes.
 
-- SmarterCommerce: https://www.smartercommerce.net/images/smartercommerce2022libraries/smartercommerce/assets/sc-logo-black-gotham-topbottom-1.png?sfvrsn=24442ed1_6
-- Werner: https://www.prodrivenbrands.com/images/default-source/brand-logos/werner_li_2000x2000x300.jpg?sfvrsn=35102d8d_2
-
-UI icons use Lucide-style outline geometry. Product names remain the provisional labels already in this project.
+All existing sample assets were retained unchanged. The old `create-demo-document.py` utility uses the repository's data directory and is outside T-005; do not run it for this workflow. This task does not deploy or modify the existing hosted Site.

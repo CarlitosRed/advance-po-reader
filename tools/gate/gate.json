@@ -1,0 +1,120 @@
+{
+  "_about": "Settings for tools/gate/po_gate.py. Changing this file is a Tier 3 change (it is in tools/gate/). Plain JSON: no comments. Leave repo empty: the gate asks gh which repository the current folder belongs to.",
+  "repo": "",
+  "base": "main",
+  "owner_names": [
+    "Carlos"
+  ],
+  "vendors": {
+    "Claudio": "anthropic",
+    "Claude": "anthropic",
+    "Codex": "openai",
+    "Chat": "openai"
+  },
+  "branch_vendors": {
+    "claude/": "anthropic",
+    "codex/": "openai",
+    "chat/": "openai"
+  },
+  "approvals_required": {
+    "1": 0,
+    "2": 1,
+    "3": 1
+  },
+  "same_vendor_ok_tiers": [],
+  "reviewer_chats": [
+    "Codex \u00b7 PR review",
+    "Claudio \u00b7 PR review"
+  ],
+  "owner_approval_tiers": [
+    3
+  ],
+  "plan_go_tiers": [
+    2,
+    3
+  ],
+  "evidence_tiers": [
+    2,
+    3
+  ],
+  "evidence_headings": [
+    "Plan",
+    "Evidence",
+    "Cost"
+  ],
+  "tier1_paths": [
+    "docs/*",
+    "README.md"
+  ],
+  "required_checks": [
+    "tests",
+    "gate-tests",
+    "scan"
+  ],
+  "protected_paths": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "ROLES.md",
+    "PROJECT_GOAL.md",
+    "CODEOWNERS",
+    ".github/*",
+    ".githooks/*",
+    ".claude/*",
+    "tools/gate/*",
+    "backend/providers.py",
+    "po_reader/model_provider.py",
+    "reader.py",
+    "benchmark_vision.py",
+    "scripts/*",
+    "alembic/*",
+    "*/alembic/*",
+    "*/migrations/*"
+  ],
+  "forbidden_globs": [
+    "*.pdf",
+    "*.png",
+    "*.jpg",
+    "*.jpeg",
+    "*.gif",
+    "*.tif",
+    "*.tiff",
+    "*.gguf",
+    "*.safetensors",
+    "*.pt",
+    "*.pth",
+    "*.onnx",
+    "*.sqlite3",
+    "*.pem",
+    "*.key",
+    ".env",
+    ".env.*",
+    "data/*",
+    "output/*",
+    "tmp/*",
+    ".venv/*"
+  ],
+  "scan_allow": [
+    ".env.example",
+    ".env.*.example",
+    "docs/mockup-v2/screenshots/after-approval-phone.png",
+    "docs/mockup-v2/screenshots/after-desktop.png",
+    "docs/mockup-v2/screenshots/after-phone.png",
+    "docs/mockup-v2/screenshots/after-uncertain-phone.png",
+    "docs/mockup-v2/screenshots/before-desktop.png",
+    "docs/mockup-v2/screenshots/before-phone.png",
+    "web/po-reader-mockup/dist/assets/line-1.png",
+    "web/po-reader-mockup/dist/assets/line-2.png",
+    "web/po-reader-mockup/dist/assets/line-3.png",
+    "web/po-reader-mockup/dist/assets/line-4.png",
+    "web/po-reader-mockup/dist/assets/line-5.png",
+    "web/po-reader-mockup/dist/assets/line-6.png",
+    "web/po-reader-mockup/dist/assets/line-7.png",
+    "web/po-reader-mockup/dist/assets/sample-page.png",
+    "web/po-reader-mockup/dist/assets/sample-purchase-order.pdf",
+    "web/po-reader-mockup/dist/assets/smartercommerce.png",
+    "web/po-reader-mockup/dist/assets/werner.jpg"
+  ],
+  "max_file_mb": 5,
+  "shared_account": true,
+  "audit_exempt": []
+}

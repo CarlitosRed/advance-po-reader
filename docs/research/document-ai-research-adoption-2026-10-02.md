@@ -61,6 +61,10 @@ After a high-level scenario review, the user selected local Gate A only for the 
 
 The next workstream may implement only the local FastAPI health/configuration foundation, PostgreSQL/Alembic baseline, and first versioned contract boundary. It must start without credentials and use synthetic fixtures. It does not upload or process private PDFs, call a provider, build catalog matching/review/cart behavior, deploy to AWS, implement Apple, or train. See `docs/local-logic-rules-2026-10-02.md` for exact state meanings and scope.
 
+## October 3 implementation decision
+
+The user selected the OpenAI API only for model-backed implementation and directed removal of local-model and training code. T-002 removes Ollama/Qwen/gpt-oss, local semantic retrieval and reranking, model setup/readiness scripts, and VLM dataset preparation/review code. Historical guides and reports are retained under `docs/archive/`, and the original self-hosted research DOCX remains here as source evidence. The archived source material is historical and does not authorize restoring the removed code. Gate A remains a separate local-only workstream and makes no provider request.
+
 ## Gate A implementation follow-up — October 2, 2026
 
 The separate authorized workstream has implemented the bounded local foundation described above. [The Gate A guide](../gate-a.md) distinguishes the health/configuration service, tenant-only PostgreSQL migration and versioned envelope/state validators from the still-unbuilt full extraction payload and all later workflows. Verification uses synthetic fixtures, native PostgreSQL and live HTTP; Docker Compose and remote CI are separate, unexecuted states. The original research review and its documentation-only execution statements above remain historical. No provider, customer-document processing, Apple privacy decision, AWS resource or training was added by Gate A.
