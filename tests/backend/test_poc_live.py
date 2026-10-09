@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import poc_live_support as live  # noqa: E402
 from poc_demo_support import FIXTURES  # noqa: E402
+from tests.isolated_postgres import require_test_database_url
 
 TOKEN = "private-test-token-long-enough"
 FAKE_KEY = "offline-placeholder-key-value"
@@ -160,10 +161,10 @@ def live_engine():
     value = os.environ.get("PO_BACKEND_API_TEST_DATABASE_URL")
     if not value:
         pytest.skip("isolated PostgreSQL API database is not configured")
-    url = make_url(value)
-    if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
-        pytest.fail("live-mode tests require a loopback isolated test database")
+    try:
+        url = require_test_database_url(value)
+    except ValueError as error:
+        pytest.fail(f"live-mode tests require a loopback isolated test database: {error}")
     engine = create_engine(url, connect_args={"connect_timeout": 3})
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:

@@ -32,6 +32,7 @@ from backend.providers import OpenAIProvider
 from backend.synthetic import fixture_payload,generate_fixture
 import backend.website as website
 from gate_a.models import Tenant
+from tests.isolated_postgres import require_test_database_url
 
 
 def main():
@@ -39,7 +40,8 @@ def main():
     parser.add_argument("--outcome",choices=["success","timeout"],default="success")
     args=parser.parse_args()
     production=Settings()
-    test_url=make_url(production.database_url.get_secret_value()).set(database="gate_a_test_backend_website_browser_mock")
+    test_url=require_test_database_url(make_url(production.database_url.get_secret_value()).set(
+        database="gate_a_test_backend_website_browser_mock").render_as_string(hide_password=False))
     create_database(test_url.render_as_string(hide_password=False))
     engine=create_engine(test_url,connect_args={"connect_timeout":3})
     configuration=Config(str(ROOT/"backend.alembic.ini"))

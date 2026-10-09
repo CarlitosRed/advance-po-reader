@@ -10,12 +10,19 @@ BINDING_ACTIONS = {"this_is_product", "new_product", "propose_candidate"}
 EXCLUSION_ACTIONS = {"not_a_product", "not_product"}
 
 
+def _in_run_scope(session, tenant, run, product):
+    """True when this product may be chosen for the run (pool membership, or the legacy vendor scope)."""
+    if product is None or not product.active:
+        return False
+    if run.catalog_pool_id is not None:
+        return validate_pool_candidate(session, tenant, run.catalog_pool_id, product.vendor_id, product.id)
+    return product.vendor_id == run.vendor_id and product.review_pool_id is None
+
+
 def scoped_product(session, tenant, run, catalog_id):
     product = session.scalar(select(CatalogProduct).where(CatalogProduct.tenant_id == tenant,
         CatalogProduct.id == catalog_id, CatalogProduct.active.is_(True)))
-    if product is None or (run.catalog_pool_id is not None and not validate_pool_candidate(
-            session, tenant, run.catalog_pool_id, product.vendor_id, product.id)) or (
-            run.catalog_pool_id is None and (product.vendor_id != run.vendor_id or product.review_pool_id is not None)):
+    if not _in_run_scope(session, tenant, run, product):
         raise BackendError("proposed_candidate_outside_catalog", 422)
     return product
 
@@ -37,9 +44,13 @@ def explicit_answer(session, tenant, run, row, request):
                 raise BackendError("new_product_vendor_outside_pool", 422)
         elif vendor != run.vendor_id:
             raise BackendError("new_product_vendor_outside_run", 422)
-        if session.scalar(select(CatalogProduct.id).where(CatalogProduct.tenant_id == tenant,
-                CatalogProduct.vendor_id == vendor, CatalogProduct.sku == request.product.sku)):
-            raise BackendError("product_exists_use_this_is_product", 409)
+        existing = session.scalar(select(CatalogProduct).where(CatalogProduct.tenant_id == tenant,
+                CatalogProduct.vendor_id == vendor, CatalogProduct.sku == request.product.sku))
+        if existing is not None:
+            # Only recommend "this is the product" when that action can succeed for this run;
+            # a product that belongs to another pool stays isolated and gets its own truthful error.
+            raise BackendError("product_exists_use_this_is_product" if _in_run_scope(session, tenant, run, existing)
+                               else "product_exists_outside_catalog_pool", 409)
         _require_vendor(session, tenant, vendor)
         product = CatalogProduct(tenant_id=tenant, vendor_id=vendor, sku=request.product.sku,
             description=request.product.description, normalized_sku=normalize_identifier(request.product.sku),

@@ -354,3 +354,20 @@ before re-merging `origin/claude/landing-prep`; that dependency remains pending.
 P3 findings and deferred UI/batch evidence remain outside this correction.
 Cost $0; no paid calls, dotenv opens, private data, existing-service changes,
 approval or PR merge. Only disposable test-owned PostgreSQL clusters were used.
+
+## PR #20 refreshed onto main — Codex · integration, October 9, 2026
+
+Normally merged main `7338ad1c26efa461cda2d55ac4cf889db52e61be` into the
+approved PR #20 head `e3354ec0d5ed6a02102c7e3cce7e73ff7223ae3b`.
+Main's squash landing required resolving ancestry-only conflicts using the shared
+pre-landing source `9d1195a`; the four content conflicts retain typed Safety Net
+evidence, main's NUL rejection and fail-closed catalog handling, and the measured
+goal scorecard. Regenerated the OpenAPI snapshot from the merged application.
+Nested typed evidence is included in request NUL validation, and the fictional
+goal provider reports its fixture's schema version so main's receipt guard holds.
+
+The Safety Net setting still defaults OFF. Main's web, scripts, gate and shared
+test-database guard are preserved exactly; new Safety Net UI remains deferred.
+Local suite counts, unchanged-main-test OFF compatibility proof and owned-runtime
+cleanup are recorded in `project-notes/audits/codex-v11-main-merge-2026-10-09.md`.
+PR #20 remains Tier 3 and draft for independent review of the new head.

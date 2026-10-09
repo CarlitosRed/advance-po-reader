@@ -1,5 +1,7 @@
 """Synthetic-only tests for persisted aggregate catalog boundaries."""
+import ast
 import os
+from types import SimpleNamespace
 from uuid import uuid4
 from uuid import UUID
 
@@ -12,16 +14,19 @@ from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from backend import configure_catalog_pool
 from backend.app import create_app
 from backend.catalog import ProductInput, import_products, retrieve_candidates
 from backend.config import ROOT, Settings
 from backend.errors import BackendError
-from backend.models import (CatalogNamespace, CatalogPoolMember, CatalogProduct,
+from backend.review_answers import explicit_answer
+from backend.models import (CatalogNamespace, CatalogPool, CatalogPoolMember, CatalogProduct,
                             CatalogSourceProduct, Vendor, SourceDocument, ProcessingRun, Suggestion)
 from backend.pools import configure_pool, pool_vendor_ids, validate_pool_candidate
 from backend.synthetic import generate_fixture
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
+from tests.isolated_postgres import require_test_database_url
 
 TOKEN = "synthetic-all-products-token"
 
@@ -31,9 +36,10 @@ def engine():
     value = os.environ.get("PO_BACKEND_POOL_TEST_DATABASE_URL")
     if not value:
         pytest.skip("Set PO_BACKEND_POOL_TEST_DATABASE_URL to the isolated all-products PostgreSQL database")
-    url = make_url(value)
-    if url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"} or url.database not in {"gate_a_test_backend_all_products", "gate_a_test_backend_all_products_v2", "gate_a_test_backend_all_products_v3"} or url.query:
-        pytest.fail("All-products checks require their isolated loopback test database")
+    try:
+        url = require_test_database_url(value, names={"gate_a_test_backend_all_products", "gate_a_test_backend_all_products_v2", "gate_a_test_backend_all_products_v3"})
+    except ValueError as error:
+        pytest.fail(f"All-products checks require their isolated loopback test database: {error}")
     engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:
@@ -243,9 +249,10 @@ def test_0008_upgrade_preserves_existing_immutable_suggestions():
     value = os.environ.get("PO_BACKEND_POOL_MIGRATION_TEST_DATABASE_URL")
     if not value:
         pytest.skip("Set PO_BACKEND_POOL_MIGRATION_TEST_DATABASE_URL to a separate migration test database")
-    url = make_url(value)
-    if url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"} or url.database != "gate_a_test_backend_all_products_migration" or url.query:
-        pytest.fail("Migration history test requires its separate loopback database")
+    try:
+        url = require_test_database_url(value, names={"gate_a_test_backend_all_products_migration"})
+    except ValueError as error:
+        pytest.fail(f"Migration history test requires its separate loopback database: {error}")
     migration_engine = create_db_engine(url, connect_timeout_seconds=10)
     config = Config(str(ROOT / "backend.alembic.ini"))
     with migration_engine.connect() as connection:
@@ -299,3 +306,94 @@ def test_0008_upgrade_preserves_existing_immutable_suggestions():
         assert suggestion.reason == "Historical synthetic suggestion"
         assert session.get(Tenant, tenant_id) is not None
     migration_engine.dispose()
+
+
+# --- PR #33 round-1 findings R06, R18, R19 -------------------------------------
+
+def default_names(session, tenant_id):
+    session.flush()
+    return sorted(pool.name for pool in session.scalars(select(CatalogPool).where(
+        CatalogPool.tenant_id == tenant_id, CatalogPool.is_default.is_(True))))
+
+
+def test_r06_replacing_the_default_pool_works_in_every_direction(session):
+    tenant, first, second, _, _ = two_catalogs(session)
+    configure_pool(session, tenant.id, "Pool A", [first[1].id], make_default=True)
+    # The versioned replacement named by the membership error must be creatable as the new default.
+    configure_pool(session, tenant.id, "Pool B", [first[1].id, second[1].id], make_default=True)
+    assert default_names(session, tenant.id) == ["Pool B"]
+    # Promote an existing pool over the current default, in both directions.
+    configure_pool(session, tenant.id, "Pool A", [first[1].id], make_default=True)
+    assert default_names(session, tenant.id) == ["Pool A"]
+    configure_pool(session, tenant.id, "Pool B", [first[1].id, second[1].id], make_default=True)
+    assert default_names(session, tenant.id) == ["Pool B"]
+    # A rerun without --default never changes the default.
+    configure_pool(session, tenant.id, "Pool A", [first[1].id], make_default=False)
+    assert default_names(session, tenant.id) == ["Pool B"]
+
+
+def review_product(session, tenant_id, vendor_id, pool_id, sku):
+    product = CatalogProduct(tenant_id=tenant_id, vendor_id=vendor_id, sku=sku, description="Fictional reviewed item",
+                             normalized_sku=sku, origin="review", review_pool_id=pool_id)
+    session.add(product)
+    session.flush()
+    return product
+
+
+def new_product_request(vendor_id, sku):
+    return SimpleNamespace(action="new_product", vendor_id=vendor_id, catalog_id=None,
+                           product=ProductInput(sku=sku, description="Fictional reviewed item"))
+
+
+def run_in(pool, vendor_id):
+    return SimpleNamespace(catalog_pool_id=pool.id if pool else None, vendor_id=vendor_id)
+
+
+def test_r18_duplicate_recovery_message_is_only_offered_when_it_can_succeed(session):
+    tenant, first, second, _, _ = two_catalogs(session)
+    pool_a = configure_pool(session, tenant.id, "Pool A", [first[1].id], make_default=True)
+    pool_b = configure_pool(session, tenant.id, "Pool B", [first[1].id, second[1].id], make_default=False)
+    reviewed = review_product(session, tenant.id, first[0].id, pool_a.id, "REVIEWED-1")
+    row = SimpleNamespace(row_kind="product", row_role="product_item")
+    # Same pool: choosing the existing product works, so the instruction is truthful.
+    with pytest.raises(BackendError) as same:
+        explicit_answer(session, tenant.id, run_in(pool_a, first[0].id), row, new_product_request(first[0].id, "REVIEWED-1"))
+    assert same.value.code == "product_exists_use_this_is_product"
+    assert explicit_answer(session, tenant.id, run_in(pool_a, first[0].id), row,
+                           SimpleNamespace(action="this_is_product", catalog_id=reviewed.id, vendor_id=None, product=None)
+                           )["decision"] == "this_is_product"
+    # Overlapping pool: this_is_product is always rejected, so it must not be recommended.
+    with pytest.raises(BackendError) as chosen:
+        explicit_answer(session, tenant.id, run_in(pool_b, first[0].id), row,
+                        SimpleNamespace(action="this_is_product", catalog_id=reviewed.id, vendor_id=None, product=None))
+    assert chosen.value.code == "proposed_candidate_outside_catalog"
+    with pytest.raises(BackendError) as duplicate:
+        explicit_answer(session, tenant.id, run_in(pool_b, first[0].id), row, new_product_request(first[0].id, "REVIEWED-1"))
+    assert duplicate.value.code == "product_exists_outside_catalog_pool" and duplicate.value.status == 409
+    # The legacy single-vendor path is isolated from pool-reviewed products the same way.
+    with pytest.raises(BackendError) as legacy:
+        explicit_answer(session, tenant.id, run_in(None, first[0].id), row, new_product_request(first[0].id, "REVIEWED-1"))
+    assert legacy.value.code == "product_exists_outside_catalog_pool"
+    # Pool isolation is preserved: nothing was created or shared by the failed attempts.
+    assert session.scalars(select(CatalogProduct).where(CatalogProduct.sku == "REVIEWED-1")).all() == [reviewed]
+
+
+def test_r19_pool_receipt_counts_only_products_in_the_selected_pool(engine, monkeypatch, capsys):
+    with Session(engine, expire_on_commit=False) as setup:
+        tenant = Tenant(name="Synthetic receipt tenant " + uuid4().hex)
+        setup.add(tenant)
+        setup.flush()
+        vendor, namespace = make_namespace(setup, tenant.id, "Fictional receipt source", "receipt-1", [
+            ("RECEIPT-1", "Fictional imported one"), ("RECEIPT-2", "Fictional imported two")])
+        pool_a = configure_pool(setup, tenant.id, "Receipt A", [namespace.id], make_default=True)
+        review_product(setup, tenant.id, vendor.id, pool_a.id, "RECEIPT-REVIEW")
+        setup.commit()
+        tenant_id, namespace_id = tenant.id, namespace.id
+    settings = Settings(_env_file=None, database_url=SecretStr(engine.url.render_as_string(hide_password=False)))
+    monkeypatch.setattr(configure_catalog_pool, "Settings", lambda: settings)
+    monkeypatch.setattr("sys.argv", ["configure", "--tenant-id", str(tenant_id), "--namespace-id", str(namespace_id),
+                                     "--name", "Receipt B"])
+    configure_catalog_pool.main()
+    receipt = ast.literal_eval(capsys.readouterr().out.strip())
+    assert receipt["name"] == "Receipt B" and receipt["member_count"] == 1
+    assert receipt["product_count"] == 2

@@ -7,13 +7,14 @@ from uuid import UUID
 from sqlalchemy import select, text
 
 from backend.api_models import RunRequest, ReviewRequest, PageCountRequest
-from backend.catalog import retrieve_candidates
+from backend.catalog import CatalogScopeError, retrieve_candidates
 from backend.contracts import ExtractionPayload, validate_payload, parsed_payload
 from backend.errors import BackendError
 from backend.models import SourceDocument, ProcessingRun, ProviderAttempt, Suggestion, ReviewEvent
 from backend.models import CatalogProduct, CatalogSourceProduct, CatalogPoolMember
 from backend.pools import pool_vendor_ids, validate_pool_candidate
 from backend.providers import OpenAIProvider, SyntheticProvider
+from backend.synthetic import fixture_identity
 from backend.uploads import read_source
 from backend.review_answers import explicit_answer, BINDING_ACTIONS, EXCLUSION_ACTIONS
 from backend.tiers import review_suggestions
@@ -129,7 +130,8 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                               prompt_version=getattr(provider, "prompt_version", "po-extraction-1.1"),
                               schema_version=getattr(provider, "schema_version", None) or
                                   ("1.2" if run.provider == "openai" or
-                                   (run.external_authorization or {}).get("fixture_name") == "continuation" else "1.1"),
+                                   (run.external_authorization or {}).get("fixture_name") == "continuation" or
+                                   fixture_identity(data, source.media_type) == "continuation" else "1.1"),
                               usage={}, latency_ms=0,
                               error_code="attempt_in_progress_or_interrupted", synthetic=run.provider == "synthetic")
     session.add(attempt)
@@ -163,7 +165,11 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
     attempt.error_code = outcome.error_code
     attempt.finished_at = now()
     # Model/prompt/schema were persisted before call, and must agree with its outcome.
-    if (outcome.schema_version not in {"1.1", "1.2"} or outcome.model != attempt.model or outcome.prompt_version != attempt.prompt_version):
+    # Receipt, persisted attempt and payload must all name the same extraction schema version.
+    payload_version = getattr(outcome.payload, "schema_version", None)
+    if (outcome.schema_version not in {"1.1", "1.2"} or outcome.model != attempt.model or outcome.prompt_version != attempt.prompt_version
+            or outcome.schema_version != attempt.schema_version
+            or (payload_version is not None and payload_version != outcome.schema_version)):
         attempt.state = "invalid_output"
         attempt.error_code = "provider_version_mismatch"
         outcome_payload = None
@@ -206,11 +212,14 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                             row.description.raw_value, settings.candidate_limit,
                             vendor_ids=scoped_vendors, pool_id=run.catalog_pool_id,
                             safety_net_finish_blocking=settings.safety_net_finish_blocking)
-                    except ValueError:
+                    except (CatalogScopeError, ValueError) as error:
                         partial = True
+                        reason = ("Catalog scope could not be verified for this run; human review required"
+                                  if isinstance(error, CatalogScopeError) else
+                                  "Retrieval input exceeds the bounded search contract; human review required")
                         candidate_result = {"method": "none", "outcome": "no_match", "candidates": [],
                                             "retrieval_version": "catalog-retrieval-v2", "evidence": [],
-                                            "reason": "Retrieval input exceeds the bounded search contract; human review required"}
+                                            "reason": reason}
                     session.add(Suggestion(tenant_id=tenant, run_id=run.id, row_id=row.row_id, **candidate_result))
                 advance(run, "partial" if partial or settings.safety_net_finish_blocking else "completed")
                 run.outcome_code = ("review_required" if partial else

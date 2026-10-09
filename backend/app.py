@@ -1,5 +1,6 @@
 """Loopback backend API for synthetic preparation and later authorized use."""
 from contextlib import asynccontextmanager
+from copy import deepcopy
 import hmac
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -199,7 +200,8 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
 
     @app.get("/contracts/product-document/v1.1/schema")
     def extraction_schema():
-        return ExtractionPayload.model_json_schema()
+        # The frozen 1.1 contract, identical to contracts/product-document-extraction-1.1.json.
+        return strict_schema("1.1")
 
     @app.get("/contracts/product-document/v1.1/provider-schema")
     def provider_schema():
@@ -429,9 +431,14 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
 
     register_website(app, configuration, private, tenant_for, vendor_for, idempotency)
     default_openapi = app.openapi
+    documented = {}
 
     def documented_openapi():
-        schema = default_openapi()
+        # FastAPI caches and returns its own schema object; annotate a private copy once so
+        # repeated /openapi.json or /docs reads can never append the same header again.
+        if "schema" in documented:
+            return documented["schema"]
+        schema = deepcopy(default_openapi())
         schema.setdefault("components", {}).setdefault("securitySchemes", {})["LocalToken"] = {
             "type": "apiKey", "in": "header", "name": "X-Local-Token",
             "description": "Local development API token; not production tenant authentication."}
@@ -451,12 +458,13 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                     continue
                 operation["security"] = [{"LocalToken": []}, {"LocalBrowserSession": []}]
                 parameters = operation.setdefault("parameters", [])
-                unscoped = path in {"/tenants", "/website/workspaces", "/website/readiness", "/website/corpus"} or path.startswith("/website/corpus/")
+                unscoped = path in {"/tenants", "/website/workspaces", "/website/readiness"} or path.startswith("/website/corpus/")
                 if not unscoped and not any(p.get("name") == "X-Tenant-ID" for p in parameters):
                     parameters.append({"name": "X-Tenant-ID", "in": "header", "required": True,
                                        "schema": {"type": "string", "format": "uuid"},
                                        "description": "Explicit local tenant scope, not an authenticated identity."})
-                if method in {"post", "put", "patch", "delete"}:
+                if method in {"post", "put", "patch", "delete"} and not any(
+                        p.get("name") == "X-Website-CSRF" for p in parameters):
                     parameters.append({"name": "X-Website-CSRF", "in": "header", "required": False,
                         "schema": {"type": "string"},
                         "description": "Required for cookie-authenticated browser mutations; not needed with an explicit CLI token."})
@@ -464,6 +472,7 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                     parameters.append({"name": "Idempotency-Key", "in": "header", "required": True,
                                        "schema": {"type": "string", "minLength": 1, "maxLength": 120},
                                        "description": "Tenant-scoped request key; different payload with same key conflicts."})
+        documented["schema"] = schema
         return schema
 
     app.openapi = documented_openapi

@@ -4,10 +4,17 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StrictStr, StrictInt, StrictBool, field_validator, model_validator
 from backend.catalog import ProductInput
 from gate_a.contracts import EvidenceReference
+from backend.text_guard import reject_nul
 
 
 class RequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    @model_validator(mode="after")
+    def no_nul_text(self):
+        # Every persisted client string (and nested JSON string) is checked once, here.
+        reject_nul(self.model_dump(mode="python"))
+        return self
 
 
 class PageSourceEvidence(RequestModel):

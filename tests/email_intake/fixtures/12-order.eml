@@ -1,0 +1,9 @@
+From: buyer@taller-nube.example
+To: intake@ficcion.example
+Subject: Changed message with reused ID
+Message-ID: <fictional-1@taller-nube.example>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Please order 9 NUBE stools, FIC-PO-012.

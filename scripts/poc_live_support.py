@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
+import math
 import os
 from pathlib import Path
 import secrets
@@ -67,7 +68,9 @@ def price_rates(environment=None):
         rates = (float(environment["PO_POC_INPUT_USD_PER_MTOK"]), float(environment["PO_POC_OUTPUT_USD_PER_MTOK"]))
     except (KeyError, ValueError):
         return None
-    return rates if all(rate >= 0 for rate in rates) else None
+    # Safety parameter: NaN, infinite, zero or negative rates would make the dollar cap meaningless,
+    # so they count as "no prices" and the run-count limit applies instead.
+    return rates if all(math.isfinite(rate) and rate > 0 for rate in rates) else None
 
 
 def estimate_cost(usage, rates):
@@ -76,8 +79,33 @@ def estimate_cost(usage, rates):
     return (usage.get("input_tokens", 0) * rates[0] + usage.get("output_tokens", 0) * rates[1]) / 1_000_000
 
 
+# A live attempt whose usage is missing or unreadable (timeout, 5xx, unknown outcome) may still have
+# been billed. It is charged this deliberately high amount instead of zero.
+UNKNOWN_INPUT_TOKENS = 100_000
+UNKNOWN_OUTPUT_TOKENS = 16_000
+
+
+def _token_count(value, fallback):
+    if type(value) is int and value >= 0:
+        return min(value, 10 ** 12)  # clamp so float math cannot overflow; still far above any cap
+    return fallback
+
+
+def conservative_cost(usage, rates):
+    """Estimated dollars for one stored attempt; unknown or invalid token counts are charged at the worst case."""
+    usage = usage if isinstance(usage, dict) else {}
+    tokens_in = _token_count(usage.get("input_tokens"), UNKNOWN_INPUT_TOKENS)
+    tokens_out = _token_count(usage.get("output_tokens"), UNKNOWN_OUTPUT_TOKENS)
+    return (tokens_in * rates[0] + tokens_out * rates[1]) / 1_000_000
+
+
 class SpendGuard:
-    """Counts live attempts stored by the backend and blocks new ones at the cap."""
+    """Counts live attempts stored by the backend and blocks new ones at the cap.
+
+    Safety parameters fail closed: a cap that is not a finite positive number falls back to $3,
+    a run ceiling that is not a whole number falls back to 5 (a value below 1 blocks everything),
+    and the run ceiling is always on, also when prices are set.
+    """
 
     def __init__(self, engine, environment=None):
         environment = os.environ if environment is None else environment
@@ -87,25 +115,31 @@ class SpendGuard:
             self.cap_usd = float(environment.get("PO_POC_SPEND_CAP_USD", "3"))
         except ValueError:
             self.cap_usd = 3.0
+        if not math.isfinite(self.cap_usd) or self.cap_usd <= 0:
+            self.cap_usd = 3.0
         self.runs_explicit = "PO_POC_MAX_LIVE_RUNS" in environment
         try:
             self.max_runs = int(environment.get("PO_POC_MAX_LIVE_RUNS", "5"))
         except ValueError:
             self.max_runs = 5
 
-    def status(self):
+    def _usages(self):
         from sqlalchemy import select
         from sqlalchemy.orm import Session
         from backend.models import ProviderAttempt
         with Session(self.engine) as session:
-            usages = session.scalars(select(ProviderAttempt.usage).where(ProviderAttempt.synthetic.is_(False))).all()
+            return session.scalars(select(ProviderAttempt.usage).where(ProviderAttempt.synthetic.is_(False))).all()
+
+    def status(self):
+        usages = self._usages()
         runs = len(usages)
         by_cost = self.rates is not None
-        estimated = sum(estimate_cost(usage, self.rates) or 0 for usage in usages) if by_cost else None
-        blocked = ((by_cost and estimated >= self.cap_usd) or
-                   (runs >= self.max_runs and (not by_cost or self.runs_explicit)))
+        estimated = sum(conservative_cost(usage, self.rates) for usage in usages) if by_cost else None
+        # "not (x < cap)" so that any unexpected NaN blocks instead of passing.
+        blocked = ((by_cost and not estimated < self.cap_usd) or runs >= self.max_runs)
         if by_cost:
-            detail = f"Estimated spend ${estimated:.2f} of ${self.cap_usd:.2f} · {runs} live {'run' if runs == 1 else 'runs'}"
+            detail = (f"Estimated spend ${estimated:.2f} of ${self.cap_usd:.2f} · "
+                      f"{runs} of {self.max_runs} live {'run' if self.max_runs == 1 else 'runs'} used")
         else:
             detail = (f"{runs} of {self.max_runs} live runs used. Cost is not recorded here, so this limit counts runs")
         message = (detail + ". The limit for this demo is reached: raise PO_POC_SPEND_CAP_USD or PO_POC_MAX_LIVE_RUNS "
@@ -135,10 +169,13 @@ def install_live_guard(app, guard):
             return await call_next(request)
         if creates:
             try:
-                if (await request.json()).get("provider") != "openai":
-                    return JSONResponse({"error": "poc_live_openai_only"}, status_code=409)
+                body = await request.json()
             except ValueError:
                 return JSONResponse({"error": "invalid_request"}, status_code=422)
+            if not isinstance(body, dict):  # valid JSON that is not an object ([], null, "x", 1, true)
+                return JSONResponse({"error": "invalid_request"}, status_code=422)
+            if body.get("provider") != "openai":
+                return JSONResponse({"error": "poc_live_openai_only"}, status_code=409)
             if (await run_in_threadpool(guard.status))["blocked"]:
                 return JSONResponse({"error": "poc_spend_cap_reached"}, status_code=409)
             return await call_next(request)

@@ -431,11 +431,13 @@ function renderSummary() {
     (needsWarnings ? `<div class="callout">${payload.warnings.map(escapeHTML).join("<br>")}<div class="button-row"><button class="button secondary" id="ack-warnings">I read these warnings</button></div></div>` : "") +
     (summary.blockers.includes("failed_pages_require_new_processing_run") ? '<div class="callout">A page failed. This review cannot be finished; start a new reading after checking the source.</div>' : "");
   for (const button of document.querySelectorAll("[data-ack-page]")) button.onclick = () => saveReview("acknowledge_page", {
-    evidence_reference: [{page_number: Number(button.dataset.ackPage), region_reference: null}]}).then(renderSummary).catch(fail);
+    evidence_reference: [{page_number: Number(button.dataset.ackPage), region_reference: null}]}).then(summaryIfStillHere(state.run.id)).catch(fail);
   if ($("ack-warnings")) $("ack-warnings").onclick = () => saveReview("acknowledge_document", {
-    evidence_reference: [{page_number: payload.pages[0].page_number, region_reference: null}]}).then(renderSummary).catch(fail);
-  $("finish-review").onclick = () => saveReview("resolve").then(renderSummary).catch(fail);
+    evidence_reference: [{page_number: payload.pages[0].page_number, region_reference: null}]}).then(summaryIfStillHere(state.run.id)).catch(fail);
+  $("finish-review").onclick = () => saveReview("resolve").then(summaryIfStillHere(state.run.id)).catch(fail);
 }
+
+function summaryIfStillHere(runId) { return () => { if (state.run?.id === runId) renderSummary(); }; }
 
 function agentHandoffHTML() {
   if (!state.run || !state.source) return "";
@@ -443,18 +445,24 @@ function agentHandoffHTML() {
 }
 
 async function processSavedRun(runId) {
+  // The run and the navigation generation are captured now and re-checked after EVERY awaited response.
+  const token = state.nav;
+  const here = () => state.nav === token && state.run?.id === runId;
   const readiness = await api("/runs/" + runId + "/readiness");
+  if (!here()) return;
   if (!readiness.can_process) throw new Error(readiness.blockers[0] || "processing_not_ready");
   state.processingRequest = runId;
   const processing = api("/runs/" + runId + "/process", {method: "POST"});
   renderDocument();
   try {
     await processing;
-    if (state.run?.id !== runId) return;
+    if (!here()) return;
     state.processingRequest = null;
-    state.run = await api("/runs/" + runId);
+    const run = await api("/runs/" + runId);
+    if (!here()) return;
+    state.run = run;
     await loadRun();
-    if (state.view === "upload") renderDocument();
+    if (here() && state.view === "upload") renderDocument();
   } finally { if (state.processingRequest === runId) state.processingRequest = null; }
 }
 
@@ -476,10 +484,17 @@ function enhancePending() {
   }
   section.insertAdjacentHTML("beforeend", agentHandoffHTML());
   if ($("refresh-run")) $("refresh-run").onclick = async () => {
-    try { state.run = await api("/runs/" + state.run.id); await loadRun(); renderDocument(); } catch (error) { fail(error); }
+    const runId = state.run.id;
+    try { const run = await api("/runs/" + runId); if (state.run?.id !== runId) return; state.run = run; await loadRun(); if (state.run?.id === runId) renderDocument(); } catch (error) { fail(error); }
   };
   if ($("cancel-run")) $("cancel-run").onclick = async () => {
-    try { await api("/runs/" + state.run.id + "/cancel", {method: "POST"}); state.processingRequest = null; state.run = await api("/runs/" + state.run.id); await loadRun(); renderDocument(); } catch (error) { fail(error); }
+    const runId = state.run.id;
+    try {
+      await api("/runs/" + runId + "/cancel", {method: "POST"});
+      const run = await api("/runs/" + runId);
+      if (state.run?.id !== runId) return;
+      state.processingRequest = null; state.run = run; await loadRun(); if (state.run?.id === runId) renderDocument();
+    } catch (error) { fail(error); }
   };
   if ($("process-authorized-run")) $("process-authorized-run").onclick = async () => {
     if (state.busy) return;
@@ -501,23 +516,37 @@ function enhancePending() {
     const auth = {authorized: $("allow-external").checked, source_sha256: state.source.sha256,
       authorized_by: $("authorized-by").value, policy_reference: $("policy-reference").value,
       reason: $("authorization-reason").value};
+    const sourceId = state.source.id;
     state.busy = true;
     try {
-      state.run = await api("/documents/" + state.source.id + "/runs", {method: "POST",
-        json: {provider: "openai", external_authorization: auth}, headers: {"Idempotency-Key": crypto.randomUUID()}});
-      await loadRun();
-      renderDocument();
-      if (mode === "process") {
-        await processSavedRun(state.run.id);
-      } else { toast("Authorization saved. Your agent can continue with this run."); }
+      await authorizeSource(sourceId, mode, auth);
     } catch (error) {
       state.processingRequest = null;
-      try { if (state.run) { state.run = await api("/runs/" + state.run.id); await loadRun(); } } catch {}
+      const runId = state.run?.id;
+      try { if (runId) { const run = await api("/runs/" + runId); if (state.run?.id === runId) { state.run = run; await loadRun(); } } } catch {}
       if (state.view === "upload") renderDocument();
       fail(error);
     } finally { state.busy = false; }
   };
 }
+/* authorize:start */
+// Authorization and paid processing belong to the run this click created for this source. If the person has
+// opened another document meanwhile, the authorization stays saved but nothing else is touched or processed.
+async function authorizeSource(sourceId, mode, auth) {
+  const token = state.nav;
+  const created = await api("/documents/" + sourceId + "/runs", {method: "POST",
+    json: {provider: "openai", external_authorization: auth}, headers: {"Idempotency-Key": crypto.randomUUID()}});
+  const here = () => state.nav === token && state.source?.id === sourceId;
+  if (!here()) { toast("Authorization saved for the earlier document. Open it to continue."); return; }
+  state.run = created;
+  await loadRun();
+  if (!here() || state.run?.id !== created.id) { toast("Authorization saved for the earlier document. Open it to continue."); return; }
+  renderDocument();
+  if (mode === "process") {
+    await processSavedRun(created.id);
+  } else { toast("Authorization saved. Your agent can continue with this run."); }
+}
+/* authorize:end */
 
 /* ---------- Three-tab review page ---------- */
 const TAB_INFO = {
@@ -827,45 +856,62 @@ function wireTabs(groups, tab) {
     if (form && entry) handleTabForm(form, card, entry);
   };
 }
+/* review-actions:start */
+// A click belongs to the run, tenant and reviewer it was made for. Every write of one operation uses that
+// context, and an operation stops (fails closed) as soon as the person has moved to another run.
+function reviewContext() {
+  return {runId: state.run.id, tenantId: state.workspace?.id, attribution: readAttribution()};
+}
+function inReviewContext(ctx) {
+  return state.run?.id === ctx.runId && state.workspace?.id === ctx.tenantId;
+}
 async function reviewAction(work) {
   if (state.busy) return;
   state.busy = true; clearMessages();
-  try { await work(); }
+  let ctx = null;
+  try { ctx = reviewContext(); await work(ctx); }
   catch (error) {
-    try { await refreshAfterReview(); } catch {}
+    try { if (ctx) await refreshAfterReview(ctx); } catch {}
     fail(error);
-    if (state.result?.extraction && state.mode === "tabs") renderDocument();
+    if (ctx && inReviewContext(ctx) && state.result?.extraction && state.mode === "tabs") renderDocument();
   } finally { state.busy = false; }
 }
-async function postReview(action, extra = {}, row = null) {
-  const body = {action, ...readAttribution(), evidence_reference: row?.evidence || [], ...(row ? {row_id: row.row_id} : {}), ...extra};
-  return api("/runs/" + state.run.id + "/reviews", {method: "POST", json: body});
+async function postReview(ctx, action, extra = {}, row = null) {
+  if (!inReviewContext(ctx)) throw new Error("review_context_changed");
+  const body = {action, ...ctx.attribution, evidence_reference: row?.evidence || [], ...(row ? {row_id: row.row_id} : {}), ...extra};
+  return api("/runs/" + ctx.runId + "/reviews", {method: "POST", json: body});
 }
-async function refreshAfterReview() {
-  state.run = await api("/runs/" + state.run.id);
+// Refreshes the operation's own run. Returns false, and leaves the screen alone, when the person has moved on.
+async function refreshAfterReview(ctx) {
+  const run = await api("/runs/" + ctx.runId);
+  if (!inReviewContext(ctx)) return false;
+  state.run = run;
   await loadRun();
+  if (!inReviewContext(ctx)) return false;
   state.reason = "";
+  return true;
 }
 // One click on a suggestion is the human choice. An unclear line first records that exact choice, as the backend requires.
-async function confirmEntry(entry, candidateId) {
-  if (entry.tier === "uncertain" && entry.boundId !== candidateId) await postReview("this_is_product", {catalog_id: candidateId}, entry.row);
-  await postReview("approve", {selected_candidate_id: candidateId}, entry.row);
+async function confirmEntry(ctx, entry, candidateId) {
+  if (entry.tier === "uncertain" && entry.boundId !== candidateId) await postReview(ctx, "this_is_product", {catalog_id: candidateId}, entry.row);
+  await postReview(ctx, "approve", {selected_candidate_id: candidateId}, entry.row);
 }
 function bulkConfirm(groups) {
   const visible = [...document.querySelectorAll("#tab-cards .tab-card:not([hidden])")].map(card => card.dataset.rowId);
   const targets = bulkTargets(groups.sure, visible);
   if (!targets.length) return;
-  reviewAction(async () => {
+  reviewAction(async ctx => {
     let saved = 0;
     try {
       for (const target of targets) {
         const entry = groups.sure.find(e => e.row.row_id === target.rowId);
-        await postReview("approve", {selected_candidate_id: target.candidateId}, entry.row);
+        await postReview(ctx, "approve", {selected_candidate_id: target.candidateId}, entry.row);
         saved++;
       }
     } finally {
-      if (saved) await refreshAfterReview();
+      if (saved) await refreshAfterReview(ctx);
     }
+    if (!inReviewContext(ctx)) return;
     toast(saved + (saved === 1 ? " line confirmed." : " lines confirmed."));
     renderDocument();
   });
@@ -882,9 +928,10 @@ function handleTabAction(button, card, entry, tab) {
   if (act === "move") { toggleMark("moved", rowId, true); state.tabs.tab = "check"; renderDocument(); return; }
   if (act === "edit") { toggleMark("moved", rowId, true); state.tabs.edit[rowId] = true; state.tabs.tab = "check"; renderDocument(); return; }
   if (act === "confirm") {
-    reviewAction(async () => {
-      await confirmEntry(entry, button.dataset.cid);
-      await refreshAfterReview();
+    const candidateId = button.dataset.cid;
+    reviewAction(async ctx => {
+      await confirmEntry(ctx, entry, candidateId);
+      if (!await refreshAfterReview(ctx)) return;
       delete state.tabs.edit[rowId];
       toast("Confirmed.");
       renderDocument();
@@ -892,9 +939,9 @@ function handleTabAction(button, card, entry, tab) {
     return;
   }
   if (act === "not-product") {
-    reviewAction(async () => {
-      await postReview("not_a_product", {}, entry.row);
-      await refreshAfterReview();
+    reviewAction(async ctx => {
+      await postReview(ctx, "not_a_product", {}, entry.row);
+      if (!await refreshAfterReview(ctx)) return;
       toggleMark("moved", rowId, false);
       delete state.tabs.edit[rowId];
       toast("Moved to Ignored lines.");
@@ -903,9 +950,10 @@ function handleTabAction(button, card, entry, tab) {
     return;
   }
   if (act === "choose") {
-    reviewAction(async () => {
-      await postReview("this_is_product", {catalog_id: button.dataset.cid}, entry.row);
-      await refreshAfterReview();
+    const candidateId = button.dataset.cid;
+    reviewAction(async ctx => {
+      await postReview(ctx, "this_is_product", {catalog_id: candidateId}, entry.row);
+      if (!await refreshAfterReview(ctx)) return;
       delete state.tabs.edit[rowId];
       toast("Choice saved. Confirm it to finish this line.");
       renderDocument();
@@ -926,14 +974,16 @@ function handleTabForm(form, card, entry) {
   }
   const vendor = form.elements.vendor?.value;
   if (state.run.catalog_pool_id && !vendor) { fail(new Error("choose_catalog_vendor")); return; }
-  reviewAction(async () => {
-    await postReview("new_product", {product: {sku: form.elements.sku.value, description: form.elements.description.value}, decision_key: form.dataset.key, ...(vendor ? {vendor_id: vendor} : {})}, row);
-    await refreshAfterReview();
+  const product = {sku: form.elements.sku.value, description: form.elements.description.value}, decisionKey = form.dataset.key;
+  reviewAction(async ctx => {
+    await postReview(ctx, "new_product", {product, decision_key: decisionKey, ...(vendor ? {vendor_id: vendor} : {})}, row);
+    if (!await refreshAfterReview(ctx)) return;
     delete state.tabs.edit[row.row_id];
     toast("New product saved. Confirm it to finish this line.");
     renderDocument();
   });
 }
+/* review-actions:end */
 async function openSnapshot(entry, tab) {
   const page = entry.row.evidence?.[0]?.page_number || 1;
   const box = regionBox(state.result.extraction, entry.row);

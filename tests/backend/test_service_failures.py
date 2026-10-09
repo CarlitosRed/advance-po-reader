@@ -14,8 +14,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 import pytest
 
+from backend import service
 from backend.app import create_app
-from backend.catalog import ProductInput, import_products
+from backend.catalog import CatalogScopeError, ProductInput, import_products
 from backend.config import Settings
 from backend.contracts import ExtractionPayload
 from backend.models import SourceDocument, Vendor
@@ -24,6 +25,7 @@ from backend.synthetic import fixture_payload, generate_fixture
 from backend.uploads import digest, write_source
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
+from tests.isolated_postgres import require_test_database_url
 
 
 @pytest.fixture(scope="module")
@@ -31,10 +33,10 @@ def engine():
     value = os.environ.get("PO_BACKEND_CONTRACT_TEST_DATABASE_URL")
     if not value:
         pytest.skip("Set PO_BACKEND_CONTRACT_TEST_DATABASE_URL to isolated gate_a_test_backend_website_contract")
-    url = make_url(value)
-    if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
-        pytest.fail("Failure tests require an isolated loopback synthetic test database")
+    try:
+        url = require_test_database_url(value)
+    except ValueError as error:
+        pytest.fail(f"Failure tests require an isolated loopback synthetic test database: {error}")
     result = create_db_engine(url, connect_timeout_seconds=10)
     config = Config("backend.alembic.ini")
     with result.begin() as connection:
@@ -439,3 +441,35 @@ def test_request_validation_does_not_echo_arbitrary_unknown_property_names(resou
                                     json={"name": "Synthetic tenant", "sk" + "-proj-SENTINEL-PRIVATE-TEXT": "secret-value"})
     assert response.status_code == 422
     assert "SENTINEL" not in response.text and "secret-value" not in response.text
+
+
+def test_s02_receipt_attempt_and_payload_versions_must_agree(resource_factory):
+    continuation = fixture_payload("continuation")
+    stale = OfflineProvider(ProviderResult(continuation, "succeeded", usage={"total_tokens": 1}, model=OfflineProvider.model))
+    resource = resource_factory(stale, kind="continuation")
+    run = resource.run()
+    assert resource.process(run).json()["state"] == "failed"
+    result = resource.result(run)
+    assert result["extraction"] is None
+    assert result["attempts"][0]["error_code"] == "provider_version_mismatch"
+    assert result["attempts"][0]["usage"]["total_tokens"] == 1
+
+
+def test_s02_synthetic_continuation_persists_matching_versions(resource_factory):
+    resource = resource_factory(None, kind="continuation")
+    run = resource.run("synthetic")
+    assert resource.process(run).json()["state"] in {"partial", "completed"}
+    result = resource.result(run)
+    assert result["extraction"]["schema_version"] == "1.2"
+    assert result["attempts"][0]["schema_version"] == "1.2"
+
+
+def test_s04_scope_failure_has_its_own_reason_not_the_search_size_reason(resource_factory, monkeypatch):
+    def broken(*args, **kwargs):
+        raise CatalogScopeError("Pool vendor scope does not match its persisted membership")
+    monkeypatch.setattr(service, "retrieve_candidates", broken)
+    resource = resource_factory(None)
+    run = resource.run("synthetic")
+    assert resource.process(run).json()["state"] == "partial"
+    reasons = {item["reason"] for item in resource.suggestions(run)}
+    assert reasons == {"Catalog scope could not be verified for this run; human review required"}

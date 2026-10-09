@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from poc_demo_support import (DATA, FIXTURES, OUTPUT, ROOT, FixedProvider, app_settings,
-    load_catalog, local_database, offline_boundary, payload_for, process_fixture, render_source, seed_catalog, write_json)
+    install_free_runs_only, load_catalog, local_database, offline_boundary, payload_for, process_fixture, render_source, seed_catalog, write_json)
 
 
 def prepare_app(engine, port, catalog_file=None):
@@ -46,15 +46,7 @@ def prepare_app(engine, port, catalog_file=None):
     settings = app_settings(engine, port)
     app = create_app(settings, engine=engine, provider=provider)
 
-    @app.middleware('http')
-    async def free_runs_only(request: Request, call_next):
-        if request.method == 'POST' and request.url.path.startswith('/documents/') and request.url.path.endswith('/runs'):
-            try:
-                if (await request.json()).get('provider') != 'synthetic':
-                    return JSONResponse({'error': 'poc_offline_only_use_demo_entry'}, status_code=409)
-            except ValueError:
-                return JSONResponse({'error': 'invalid_request'}, status_code=422)
-        return await call_next(request)
+    install_free_runs_only(app)
 
     with TestClient(app, base_url=f'http://127.0.0.1:{port}', headers={
             'X-Local-Token': settings.local_api_token.get_secret_value(), 'X-Tenant-ID': scope['tenant_id']}) as client:

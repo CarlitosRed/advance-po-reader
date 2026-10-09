@@ -220,6 +220,8 @@ def register_website(app, settings, private, tenant_for, vendor_for, idempotency
                 if pool is None:
                     raise BackendError("default_catalog_pool_setup_required", 409)
                 pool_id = pool.id
+            if "\x00" in q:
+                raise BackendError("search_text_invalid", 422)
             conditions = [CatalogProduct.tenant_id == tenant, CatalogProduct.active.is_(True)]
             if pool_id is not None:
                 members = pool_members(session, tenant, pool_id)

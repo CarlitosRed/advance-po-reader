@@ -30,6 +30,7 @@ from backend.config import Settings
 from backend.models import ProcessingRun, ProviderAttempt, SourceDocument
 from backend.providers import OpenAIProvider
 from backend.synthetic import fixture_payload, generate_fixture
+from tests.isolated_postgres import require_test_database_url
 
 ROOT = Path(__file__).resolve().parents[2]
 TOKEN = "test-token-long-enough"
@@ -41,10 +42,10 @@ def api_engine():
     value = os.environ.get("PO_BACKEND_API_TEST_DATABASE_URL")
     if not value:
         pytest.skip("isolated PostgreSQL API database is not configured")
-    url = make_url(value)
-    if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
-        pytest.fail("API tests require a loopback isolated test database with no query overrides")
+    try:
+        url = require_test_database_url(value)
+    except ValueError as error:
+        pytest.fail(f"API tests require a loopback isolated test database with no query overrides: {error}")
     engine = create_engine(url, connect_args={"connect_timeout": 3})
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:
@@ -471,3 +472,36 @@ def test_one_hundred_individual_fictional_sources_upload_without_processing(api_
         assert session.query(SourceDocument).filter_by(tenant_id=tenant["id"]).count() == 100
         assert session.query(ProcessingRun).filter_by(tenant_id=tenant["id"]).count() == 0
         assert session.query(ProviderAttempt).filter_by(tenant_id=tenant["id"]).count() == 0
+
+
+def test_r11_nul_in_client_strings_is_a_validation_error_not_a_database_outage(api_client):
+    _, vendor, _ = scope(api_client, "NUL", products=False)
+    nul = "fictional\u0000text"
+    missing = str(uuid4())
+    evidence = [{"page_number": 1, "region_reference": "r1"}]
+    cases = [
+        ("/tenants", {"name": nul}),
+        ("/vendors", {"name": nul}),
+        ("/catalog/import", {"vendor_id": vendor["id"], "products": [{"sku": nul, "description": "ok"}]}),
+        ("/catalog/import", {"vendor_id": vendor["id"], "products": [{"sku": "NUL-1", "description": nul}]}),
+        ("/catalog/import", {"vendor_id": vendor["id"], "products": [
+            {"sku": "NUL-2", "description": "ok", "aliases": [{"value": nul, "source_role": "sku"}]}]}),
+        ("/catalog/import", {"vendor_id": vendor["id"], "products": [
+            {"sku": "NUL-3", "description": "ok", "aliases": [{"value": "alias", "source_role": nul}]}]}),
+        (f"/runs/{missing}/reviews", {"action": "acknowledge", "row_id": "r1", "reviewer": nul,
+                                      "reason": "why", "evidence_reference": evidence}),
+        (f"/runs/{missing}/reviews", {"action": "correct", "row_id": "r1", "reviewer": "who", "reason": "why",
+                                      "field_name": "description", "new_value": nul, "evidence_reference": evidence}),
+        (f"/runs/{missing}/reviews", {"action": "acknowledge", "row_id": "r1", "reviewer": "who", "reason": "why",
+                                      "evidence_reference": [{"page_number": 1, "region_reference": nul}]}),
+        (f"/documents/{missing}/runs", {"provider": "synthetic", "fixture_name": nul}),
+        (f"/documents/{missing}/runs", {"provider": "openai", "external_authorization": {
+            "authorized": True, "source_sha256": "a" * 64, "authorized_by": nul,
+            "policy_reference": "policy", "reason": "reason"}}),
+    ]
+    for path, body in cases:
+        response = api_client.post(path, json=body, headers={"Idempotency-Key": uuid4().hex})
+        assert response.status_code == 422, (path, response.status_code, response.text)
+        assert response.json()["error"] == "invalid_request"
+    search = api_client.get("/website/catalog", params={"vendor_id": vendor["id"], "q": nul})
+    assert search.status_code == 422 and search.json()["error"] == "search_text_invalid"

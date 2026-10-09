@@ -26,6 +26,7 @@ from backend.synthetic import generate_fixture
 from backend.uploads import digest, write_source
 from gate_a.database import create_db_engine
 from gate_a.models import Tenant
+from tests.isolated_postgres import require_test_database_url
 
 ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.postgresql
@@ -36,10 +37,10 @@ def workflow_engine():
     value = os.environ.get("PO_BACKEND_TEST_DATABASE_URL")
     if not value:
         pytest.skip("Set isolated local catalog test database to exercise workflow guards")
-    url = make_url(value)
-    if (url.drivername != "postgresql+psycopg" or url.host not in {"127.0.0.1", "localhost", "::1"}
-            or not (url.database or "").startswith(("gate_a_test_backend_", "orderlens_product_rows")) or url.query):
-        pytest.fail("Workflow guards require an isolated loopback synthetic test database")
+    try:
+        url = require_test_database_url(value)
+    except ValueError as error:
+        pytest.fail(f"Workflow guards require an isolated loopback synthetic test database: {error}")
     engine = create_db_engine(url, 10)
     config = Config(str(ROOT / "backend.alembic.ini"))
     with engine.begin() as connection:
