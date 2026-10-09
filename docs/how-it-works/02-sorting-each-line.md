@@ -67,7 +67,7 @@ The person has to answer lines 1 and 6. Lines 3, 4 and 5 can be ignored without 
 ## How we know it works
 - Tests: `tests/goal/test_goal_tabs.py` (every line is placed in exactly one tab), `tests/goal/test_goal_tabs_data.py` and `tests/backend/test_poc_demo_tabs.py` (a sample with every kind of line fills all three tabs), `tests/backend/test_review_summary.py` (document details no longer need an answer).
 - Reviews: #16 Approved at `906dbef` by Codex; #15 Approved at `2d038c8`.
-- Measured on the 33 sample orders (from `decisions.md`, 2026-10-06): about 155 notes, totals, subtotals, charges and taxes were found in all, and none of them is in the must-answer list; the 150 product lines are. This count comes from stored runs, categories only; no human audited each label.
+- Measured on the 33 sample orders (from the private project notes, not in this repository, 2026-10-06): about 155 notes, totals, subtotals, charges and taxes were found in all, and none of them is in the must-answer list; the 150 product lines are. This count comes from stored runs, categories only; no human audited each label.
 - Not measured: how often the model calls a real product a note, or the reverse.
 
 ## Status

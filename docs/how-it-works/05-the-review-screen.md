@@ -134,7 +134,7 @@ In this walk the person finished without ever opening the Ignored lines tab. Tha
 ## How we know it works
 - Tests: `tests/goal/test_goal_tabs.py` (node check of tab assignment and crop geometry), `tests/goal/test_goal_tabs_data.py` (tabs fed by the real routes), `tests/goal/test_goal_tabs_dom.py` (a real browser opens empty tabs without error), `tests/goal/test_goal_review_controls.py`, `tests/backend/test_poc_demo_tabs.py`, and `scripts/verify-poc-demo.cjs` (browser walk-through of the demo). The real-browser tests are skipped in CI where no browser is installed (the CI file says so); not re-run for this page.
 - Reviews: #16 was "Not approved" at `1cac21c` (a crash when opening an empty tab; an out-of-date verifier) and Approved at `906dbef` after both were fixed. #13 Approved at `9b69c4e`.
-- Measured on the 33 sample orders (`decisions.md`, derived from the tier counts): of 150 product lines, 120 start in Sure and 30 in Check; two more unknown lines start in Check. Notes, totals, charges and taxes (about 155 lines) are placed in the Ignored lines tab, not in Sure or Check (`assignTabs`, lines 43-49). No usability study has been done.
+- Measured on the 33 sample orders (the private project notes, not in this repository; derived from the tier counts): of 150 product lines, 120 start in Sure and 30 in Check; two more unknown lines start in Check. Notes, totals, charges and taxes (about 155 lines) are placed in the Ignored lines tab, not in Sure or Check (`assignTabs`, lines 43-49). No usability study has been done.
 
 ## Status
 In version 1: tabs, snapshots, Confirm, the reason sentence on Check cards, the check-mark on Sure cards and the optional Ignored lines tab (checked against `integration/ui-and-matching` at `a76aa4a`).

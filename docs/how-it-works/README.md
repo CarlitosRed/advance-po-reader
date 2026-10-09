@@ -4,7 +4,7 @@ You do not need to program, or know anything about AI, to follow this. The app r
 
 All examples in these pages are invented (codes such as `ACME-1001`). No real order, customer, supplier or catalog code appears here.
 
-**Written against:** the version 1 stack on the branch `integration/ui-and-matching` at commit `a76aa4a` (date of writing: 2026-10-07). That commit contains PR #21 (merged as `a9c6fe3`). Code links to the version 1 stack use `a76aa4a` or the earlier commit `7426663`. Every link that still uses `7426663` was compared (git blob) with the same path at `a76aa4a` and the content is identical; links to the files PR #21 changed use `a76aa4a`. Anything that is not in that stack is marked "not in version 1".
+**Written against:** the version 1 stack on the branch `integration/ui-and-matching` at commit `a76aa4a` (date of writing: 2026-10-07). That commit contains PR #21 (merged as `a9c6fe3`). Code links to the version 1 stack use `a76aa4a` or the earlier commit `7426663`. Every link that still uses `7426663` was compared (git blob) with the same path at `a76aa4a` and the content is identical; links to the files PR #21 changed use `a76aa4a`. Anything that is not in that stack is marked "not in version 1". Version 1 has since landed on `main` (commit `3e23801`, tag `poc-v1`); the pins below were not changed.
 
 ## The whole flow on one page
 ```mermaid
@@ -63,7 +63,7 @@ Two rules hold at every step: **the app never approves a product by itself** (ev
 Also: [Glossary](glossary.md) (tier, catalog, alias, SKU and other words).
 
 ## What version 1 is, in numbers
-Measured by running the stored readings of the 33 sample orders, with no new spending (from `decisions.md` in the project notes, 2026-10-06; the product list used was built from these same orders, so brand-new orders are likely to do worse):
+Measured by running the stored readings of the 33 sample orders, with no new spending (from the private project notes, not in this repository, 2026-10-06; the product list used was built from these same orders, so brand-new orders are likely to do worse):
 
 | | Measured on the 33 sample orders |
 | --- | --- |
@@ -82,7 +82,7 @@ Not measured: accuracy on orders the catalog was not built from; a human check o
 - Notes, totals and charges can be agreed or flagged on the screen, but the flags stay on that device and do not reach the spreadsheet.
 - The reviewer's name is typed in; there are no logins yet.
 - "Sure" means the printed code matched exactly one product and nothing contradicted it. It is not a measured accuracy figure.
-- The version 1 code is not yet in the `main` branch (checked against `origin/main` on 2026-10-07).
+- The version 1 code is in the `main` branch (commit `3e23801`, tag `poc-v1`).
 
 ## How these pages were checked
-Each page was written by reading the code in this branch and the pull requests, and says "not verified" where I could not confirm something. A different reviewer is asked to check the facts. Numbers come only from the repository or from the project notes (`decisions.md`) and are labelled "measured on the 33 sample orders" where they come from the batch run. I ran no tests, started no server and made no model calls for these pages.
+Each page was written by reading the code in this branch and the pull requests, and says "not verified" where I could not confirm something. A different reviewer is asked to check the facts. Numbers come only from the repository or from the project notes (not in this repository) and are labelled "measured on the 33 sample orders" where they come from the batch run. I ran no tests, started no server and made no model calls for these pages.

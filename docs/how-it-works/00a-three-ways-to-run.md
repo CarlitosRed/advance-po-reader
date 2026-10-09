@@ -80,4 +80,4 @@ Order `PO-TEST-020` is a made-up one-page PDF, saved on a computer.
 - No accuracy figure applies: these ways decide where the answer comes from, not whether it is right.
 
 ## Status
-Part of the version 1 stack (PRs #12 and #14), not in `main` as of this writing.
+Part of the version 1 stack (PRs #12 and #14), now in `main`.

@@ -9,7 +9,7 @@ After the lookup, every product line gets one of three tiers. The tier says how 
 - **Probable:** one product, but found by something weaker (a spelling variant, an alias, a code inside the description). The line starts in **Check**, labelled "Probably right".
 - **Uncertain:** anything else: several candidates, none, something unreadable, or a code on the line that conflicts (it does not have to be another catalog product; see the table below). The line starts in **Check**, labelled "Needs a look".
 
-**A tier is not an approval.** Even a Certain line is only pre-selected; a person must still confirm it. This is a hard rule of the project (`AGENTS.md`; `decisions.md`, 2026-10-03).
+**A tier is not an approval.** Even a Certain line is only pre-selected; a person must still confirm it. This is a hard rule of the project (`AGENTS.md`; the private project notes, not in this repository, 2026-10-03).
 
 ## How a line gets its tier
 The checks run in this order; the first that applies wins (`confidence_tier` in `backend/tiers.py`).
@@ -57,7 +57,7 @@ These are the rules added by PR #19 (`_same_code`, `_split_hints`, `_split_codes
 | A reading that cannot be compared safely, for example one with look-alike letters from other alphabets | **Conflict: Uncertain** (non-English letters are never silently converted) |
 | A second reading in a product-code column (a column the model labelled vendor product code, SKU or vendor SKU) when the line does NOT print the candidate's code literally, for example an alias of the candidate written in such a column | **Conflict: Uncertain** |
 
-Known risk, written down in `decisions.md` (2026-10-06): a second code that is a real product missing from our catalog no longer blocks Certain. The person still has to confirm.
+Known risk, written down in the private project notes, not in this repository (2026-10-06): a second code that is a real product missing from our catalog no longer blocks Certain. The person still has to confirm.
 
 ## Worked example (invented)
 Catalog: `ACME-1001` Brass hinge 50mm; `ACME-1002` Brass hinge 75mm; `ACME-2001` Steel bolt M8x40, box of 100. Supplier prefix: `ZED`.
@@ -90,9 +90,9 @@ Catalog: `ACME-1001` Brass hinge 50mm; `ACME-1002` Brass hinge 75mm; `ACME-2001`
 [#7](https://github.com/CarlitosRed/advance-po-reader/pull/7) (the tiers: certain, probable, uncertain, and the rule that a person always approves); [#19](https://github.com/CarlitosRed/advance-po-reader/pull/19) (supplier prefix, sizes, second codes, bounded lookup, skipped check never Certain).
 
 ## How we know it works
-- Tests: `tests/backend/test_catalog_database.py` and `tests/backend/test_identifier_roles.py` (run against a real PostgreSQL database), `tests/goal/test_goal_tiers.py`. The builder reported 371 backend tests passed on PostgreSQL for #19's last commit (`decisions.md`; not re-run for this page).
+- Tests: `tests/backend/test_catalog_database.py` and `tests/backend/test_identifier_roles.py` (run against a real PostgreSQL database), `tests/goal/test_goal_tiers.py`. The builder reported 371 backend tests passed on PostgreSQL for #19's last commit (the private project notes, not in this repository; not re-run for this page).
 - Reviews: Codex reviewed #19 three times. Findings fixed: a supplier prefix hid a real second product; look-alike letters compared equal; an unbounded lookup crashed on 330 rows; a skipped check relaxed the rules. Approved at `9cc9aca`.
-- Measured on the 33 sample orders (`decisions.md`, 2026-10-06, stored runs, no spend): of the 150 product lines, **120 were Certain, 13 Probable and 17 Uncertain**; two more lines were labelled unknown and are also Uncertain (19 Uncertain in all; the 17 is derived from the logged totals). An earlier version of PR #19 (before its second-code rule) measured 95 Certain on the same orders. The 19 Uncertain were: 13 with two to four candidates found only by text similarity, 2 with no candidate, 2 unknown lines, 2 still in conflict.
+- Measured on the 33 sample orders (the private project notes, not in this repository, 2026-10-06, stored runs, no spend): of the 150 product lines, **120 were Certain, 13 Probable and 17 Uncertain**; two more lines were labelled unknown and are also Uncertain (19 Uncertain in all; the 17 is derived from the logged totals). An earlier version of PR #19 (before its second-code rule) measured 95 Certain on the same orders. The 19 Uncertain were: 13 with two to four candidates found only by text similarity, 2 with no candidate, 2 unknown lines, 2 still in conflict.
 - Caveats: the catalog was built from these same orders. "Certain" is how sure the app is, not a measured accuracy; no human audited every Certain line.
 
 ## Status
