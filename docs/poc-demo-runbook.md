@@ -4,10 +4,10 @@ For Carlos · Wednesday, October 7, 2026 (counts updated for the landing head). 
 
 **Prerequisites:** open a **NORMAL PowerShell** (Start menu → PowerShell, **NOT Run as administrator**). PostgreSQL refuses administrator sessions; the launcher stops before setup if elevated. This desk has Python 3.12, pinned `.venv-backend` dependencies and PostgreSQL 17 binaries. Port 8020 must be free. The restricted agent sandbox cannot start PostgreSQL.
 
-**Start:** paste both lines in PowerShell and leave that terminal open.
+**Start:** from the folder where you cloned the repository (README, "Run the free demo on Windows"), paste both lines in PowerShell and leave that terminal open.
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\carlo\dev\advance-po-reader.worktrees\poc-demo'
+Set-Location -LiteralPath .\advance-po-reader   # your clone of the repository (main); see the README
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1
 ```
 

@@ -2,7 +2,7 @@
 
 ## Run the free demo on Windows
 
-Use **`integration/ui-and-matching` until v1 lands on `main`**. This demo runs
+Use **`main`**: it contains the whole version 1 demo (tag `poc-v1`). This demo runs
 the local review screens with fictional orders, a bundled fictional catalog,
 and fixed extraction answers. It does not read new orders with AI or need an
 API key. The launcher creates its own local database and temporary local token.
@@ -19,13 +19,13 @@ API key. The launcher creates its own local database and temporary local token.
 From a fresh clone:
 
 ```powershell
-git clone --branch integration/ui-and-matching --single-branch https://github.com/CarlitosRed/advance-po-reader.git
+git clone https://github.com/CarlitosRed/advance-po-reader.git
 Set-Location -LiteralPath .\advance-po-reader
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-poc-demo.ps1
 ```
 
-For an existing clone, run `git fetch origin`, `git switch integration/ui-and-matching`,
-and `git pull --ff-only origin integration/ui-and-matching` before the same start command.
+For an existing clone, run `git fetch origin`, `git switch main`,
+and `git pull --ff-only origin main` before the same start command.
 If Python is not found, add `-Python 'YOUR_PYTHON_3_12_EXE'`; if PostgreSQL is not
 found, add `-PostgresBin 'YOUR_POSTGRES_BIN_FOLDER'`. The first start installs the
 pinned Python dependencies and needs access to the package index.
@@ -50,7 +50,7 @@ and one human-authorized PDF processed once with OpenAI; extraction accuracy is 
 
 The active local website is implemented in `web/local-reader/`, served by the FastAPI backend. It connects the three supplied catalog namespaces, private original PDF library, saved uploads/runs, source previews, and evidence-preserving review/audit. Read [the website runbook](docs/local-website.md) and [verification record](docs/website-verification.md). It runs locally without an API key. Live extraction runs only when the server key is set and `live_processing_enabled` is on (`backend/config.py:26`), for a source a person has authorized.
 
-The user selected one local test workspace with three manually selected catalogs (WernerCo, United Kingdom, Australia), and the original 33-PDF email archive. Product IDs remain separate across catalogs. No country is inferred for WernerCo. This worktree owns port 8014, database gate_a_backend_website, and its private data/output directories. Source changes are on codex/local-website-catalogs. Gate A on 8010 and backend preparation on 8012 remain preserved checkpoints.
+The user selected one local test workspace with three manually selected catalogs (WernerCo, United Kingdom, Australia), and the original 33-PDF email archive. Product IDs remain separate across catalogs. No country is inferred for WernerCo. That local workspace used port 8014, database gate_a_backend_website, and its own private data/output directories; none of these are part of a fresh clone. The free demo above uses port 8020. Gate A on 8010 and backend preparation on 8012 remain preserved checkpoints.
 
 Read [PROJECT_GOAL.md](PROJECT_GOAL.md), [local logic rules](docs/local-logic-rules-2026-10-02.md), and [agent handoff](docs/agent-handoff.md) before continuing. The extraction payload is version 1.2 (`backend/contracts.py:20`; legacy 1.1 is still accepted, `backend/contracts.py:21`; the OpenAI adapter emits 1.2, `backend/providers.py:187`); source observations, parses, catalog suggestions and human decisions remain separate. Every product approval is explicit. The reviewed-product summary has no cart/order writes. Training, deployment, Apple, AWS and cart or order writes are not part of this phase.
 

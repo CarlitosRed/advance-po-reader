@@ -2,7 +2,7 @@
 
 [Back to the map](README.md) | Previous: [Gate 6](06-decisions-and-saved-data.md) | Next: [Gate 8, how a change gets in](08-how-a-change-gets-in.md)
 
-> **Status: built and approved, but not part of version 1.** The code lives in PR #9, which is not in the base this documentation was written against (`integration/ui-and-matching`). Carlos decided on 2026-10-06 that the Safety Net moves to version 2 (`decisions.md`). Everything below that describes what the Safety Net does was read from the PR #9 branch (`codex/close-goal-gaps-b`, head `100f1d8`), not from this base.
+> **Status: built and approved, but not part of version 1.** The code lives in PR #9, which is not in `main`. Carlos decided on 2026-10-06 that the Safety Net moves to version 2 (the private project notes, not in this repository). Everything below that describes what the Safety Net does was read from the PR #9 branch (`codex/close-goal-gaps-b`, head `100f1d8`), not from `main`.
 
 ## In one minute
 Everything in gates 1 to 6 relies on the AI model telling the truth about what is on the page. The Safety Net adds **checks that do not trust the model**:
@@ -56,4 +56,4 @@ In PR #9's version of the summary screen (`web/local-reader/workflow.js` on that
 - Not measured: how many real mistakes the counts or the text check would catch, how much extra time they add per order, or how they behave on scanned originals.
 
 ## Status
-**Built, not in version 1.** Version 2 card V2-1 (`tasks/v2-backlog.md`, project notes). Merging it also needs Carlos's word and the merge gate ([gate 8](08-how-a-change-gets-in.md)).
+**Built, not in version 1.** Version 2 card V2-1 (private project notes, not in this repository). Merging it also needs Carlos's word and the merge gate ([gate 8](08-how-a-change-gets-in.md)).

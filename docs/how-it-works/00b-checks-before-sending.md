@@ -100,4 +100,4 @@ From [`SpendGuard`, lines 79-115](https://github.com/CarlitosRed/advance-po-read
 - No measured figure applies: this gate decides whether a document may be sent, not how well it is read.
 
 ## Status
-In version 1 (live checks from PR #14), not in `main` as of this writing.
+In version 1 (live checks from PR #14), now in `main`.
