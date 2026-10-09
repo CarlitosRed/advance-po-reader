@@ -445,18 +445,24 @@ function agentHandoffHTML() {
 }
 
 async function processSavedRun(runId) {
+  // The run and the navigation generation are captured now and re-checked after EVERY awaited response.
+  const token = state.nav;
+  const here = () => state.nav === token && state.run?.id === runId;
   const readiness = await api("/runs/" + runId + "/readiness");
+  if (!here()) return;
   if (!readiness.can_process) throw new Error(readiness.blockers[0] || "processing_not_ready");
   state.processingRequest = runId;
   const processing = api("/runs/" + runId + "/process", {method: "POST"});
   renderDocument();
   try {
     await processing;
-    if (state.run?.id !== runId) return;
+    if (!here()) return;
     state.processingRequest = null;
-    state.run = await api("/runs/" + runId);
+    const run = await api("/runs/" + runId);
+    if (!here()) return;
+    state.run = run;
     await loadRun();
-    if (state.view === "upload") renderDocument();
+    if (here() && state.view === "upload") renderDocument();
   } finally { if (state.processingRequest === runId) state.processingRequest = null; }
 }
 
@@ -527,9 +533,10 @@ function enhancePending() {
 // Authorization and paid processing belong to the run this click created for this source. If the person has
 // opened another document meanwhile, the authorization stays saved but nothing else is touched or processed.
 async function authorizeSource(sourceId, mode, auth) {
+  const token = state.nav;
   const created = await api("/documents/" + sourceId + "/runs", {method: "POST",
     json: {provider: "openai", external_authorization: auth}, headers: {"Idempotency-Key": crypto.randomUUID()}});
-  const here = () => state.source?.id === sourceId;
+  const here = () => state.nav === token && state.source?.id === sourceId;
   if (!here()) { toast("Authorization saved for the earlier document. Open it to continue."); return; }
   state.run = created;
   await loadRun();
