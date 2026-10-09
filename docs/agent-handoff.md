@@ -1,50 +1,169 @@
-# Agent handoff — October 2, 2026
+# Project handoff — October 2, 2026
 
-Read `PROJECT_GOAL.md` and `AGENTS.md` before work. The October 3 decision is OpenAI API only; local-model inference and training code have been removed. Historical guides and results are in `docs/archive/`; original supplied research and its searchable copies remain in `docs/research/`. The research adoption note explains which proposals were adopted or superseded.
+> **Superseded checkpoint (banner added 2026-10-08).** This handoff describes the October 2 workspace-organization task, the source and backup checkpoints of that day, and a Gate A-only boundary. Since then the upload, extraction, catalog, review and web workflow were built on this branch, a server key was configured and one human-authorized PDF was processed once with OpenAI; entries added by later tasks follow below. Current scope and the Implemented versus Intended list are in [PROJECT_GOAL.md](../PROJECT_GOAL.md) and [AGENTS.md](../AGENTS.md); later evidence is in [api-activation-verification.md](api-activation-verification.md) and [live-demo-continuation.md](live-demo-continuation.md). The text below is kept unchanged as historical evidence.
 
-The latest user request adopts four logic-tightening rules and selects **local Gate A only**. The bounded foundation is now implemented in the isolated Gate A worktree; its [setup/verification guide](gate-a.md) reports the actual behavior and runtime evidence. This workstream stops at Gate A and does not authorize later gates.
+This document is the sanitized project handoff. The latest user request for this chat is workspace organization: map the workstations, assign ownership only where verified, improve the operating standard, and verify source/runtime backup coverage. Do not continue extraction debugging during this task.
 
-## Direction to continue from
+## Current source checkpoints
 
-Build a phone-first B2B purchase-order workflow. The long-term backend direction is server-side OpenAI after local validation. Keep one backend responsible for tenant scope, catalog retrieval, matching, review, and audit. Apple is a separate Milestone 2 whose local-only semantics are intentionally unresolved for now. Local-model inference and training are outside the adopted implementation direction.
+- The primary saved checkout is `codex/po-reader-logic` at `097f71ea87af97bd36f703ceb0b34b3916e16b3c`; it has an untracked `web/` directory that must be preserved.
+- The current integrated website/catalog code is `codex/local-website-catalogs` at `a80be44e1d206295b1076882c410851344476221`. Its active owner chat is not confirmed by app inventory; treat ownership as `Unknown` until reconciled.
+- The backend-preparation checkpoint is `codex/local-backend-preparation` at `ce1a025d98ff87ef9cccbdb81849f1a327c16d93`, associated with “Advance PO Reader — Local Backend Preparation.”
+- The source-database checkpoint is `codex/source-databases` at `1403527d2ca19e0069939ecb2f0442eb43a59406`; the current owner is `Unknown`.
+- The catalog-exploration checkout is detached at `52c46e25d6475d81800b3501e71f317b608396a3`; owner and lifecycle are `Unknown` pending inspection.
+- A separate unregistered directory holds the live PostgreSQL cluster used by the integrated local service. Preserve it as a runtime dependency. The complete private workstation map and recovery notes are in the ignored local registry, not this tracked document.
 
-The recommended stack is Python 3.12, FastAPI, Pydantic, PostgreSQL, Alembic, Docker for local PostgreSQL, and private local file storage. AWS later may use private S3, ECS/Fargate, RDS/Aurora PostgreSQL and server-side secrets. The supplied documents suggest version-specific OpenAI model names, API calls, package versions, AWS service details and prices; recheck official sources before implementation or release. The `OPENAI_API_KEY` must stay on the backend. ChatGPT Plus and API billing are separate.
+## Backup state at handoff
 
-Use [the local logic rules](local-logic-rules-2026-10-02.md) as the canonical resolution of the first four review findings. Preserve `PAGE_EXTRACTION_SCHEMA` as the legacy per-page visual observation format. The new contract distinguishes observed, uncertain, unreadable, not-present, and not-applicable fields; raw values/evidence stay separate from parses, catalog suggestions, and human decisions. Source documents and processing runs are versioned separately, with independent run and review states. V1 accepts purchase orders only. Every match requires explicit human approval; no cart/order action is allowed. The full extraction payload is not frozen until its gate.
+The configured remote is `https://github.com/CarlitosRed/advance-po-reader.git`. A live `git ls-remote --heads origin` check advertised `main` and `codex/po-reader-development` at `a41bf23c23bce63d38db8d04ccef1fb1137c279d`, `codex/local-gate-a` at `d67616c2f5e4210b06391ee32537df290a6d89d7`, and `codex/source-databases` at `1403527d2ca19e0069939ecb2f0442eb43a59406`.
 
-Use tenant/vendor-scoped candidates: exact IDs first, cautious normalized lookup and `pg_trgm` retrieval next, optional vector search if its recall gain is measured. A model sees a small candidate list and may return only a candidate or ambiguity/no match. Calibrate acceptance using reviewed results; abstain while uncertain. Preserve audit events.
+The integrated source tip `a80be44e1d206295b1076882c410851344476221` is twelve commits beyond the remote `main` baseline and has no advertised remote branch. The GitHub account can read the refs, but no backup of the integrated tip is established. The local source history contains live operational handoff material, so do not push that history as-is. Build a sanitized source/documentation snapshot only after a complete relevant-history and final-tree review; retain private runtime and customer evidence locally under a separate recovery plan.
 
-## What already exists
+## Scope and evidence limits
 
-The repository retains a legacy native PDF/CLI reader; vision-model analysis is unavailable through this CLI. The local-model, semantic-service, reranker, and training-dataset code was removed in T-002. Historical evaluation reports and operating guides were moved to `docs/archive/`; the prior source history remains available in Git. The 18-product catalog is sample-derived, not authoritative. Historical measurements do not evaluate the native CLI path or establish safe automatic acceptance.
+The project documents describe local Gate A as the authorized implementation boundary. Later local integration exists in a separate source checkpoint; do not infer that the wider workflow was validated by Gate A. Prior synthetic suites (141 backend checks and 21 scoped agent checks) are not extraction-accuracy evidence. The required evaluation plan covers all 33 supplied PDFs and varied incoming handwritten, scanned, photographed, structured, and one-to-100-line orders.
 
-The provided PDFs and prior reviewed source labels remain private. They may be used in local evaluation. Sending them to a cloud model requires the applicable customer privacy authorization and a user-directed API task. Unreviewed model observations remain predictions. Do not train from them. Existing model digests, source references and prior measurements remain in `config/` and the historical infrastructure/evaluation docs.
+A terminal failed provider attempt is preserved as private evidence. Do not retry it or create another provider attempt during workspace organization. Do not approve review items, train, deploy, or write to carts/orders. Refer to the ignored private handoff for exact recovery details when a later authorized task needs them.
 
-## Implemented workstream: Gate A only
+## Next actions
 
-The local `gate_a` package implements FastAPI health/configuration and contract-schema GET routes, lazy local PostgreSQL connections, an explicit tenant-only Alembic revision, and ProductDocument v1 envelope/observation/state validators. It starts without a provider key or database. The extraction payload is not finalized. Synthetic-only checks cover config, liveness/readiness, database/migration behavior and contract validation; native PostgreSQL and live HTTP were exercised. Docker Compose is defined but was not executed because Docker was absent. The new Gate A GitHub workflow is prepared, with remote execution still unverified.
+1. Use the workstation registry and tracked worktree standard to assign one writer per checkout and one integration owner.
+2. Audit and create a safe source-only GitHub backup, then read back its exact remote ref and SHA.
+3. Keep ignored runtime/evidence backups separate and verify their recovery path before any cleanup.
+4. Report documentation updates separately from implemented behavior, and leave unresolved ownership or backup details marked `Unknown`.
 
-Do not add upload endpoints, process supplied PDFs, run Qwen, call OpenAI, create a catalog/matcher, add a review UI/cart, deploy to AWS, implement Apple, or train. Stop when Gate A is verified. Report what ran locally and distinguish infrastructure checks from later unbuilt workflow.
+## Goal acceptance tests — October 3, 2026
 
-## Evaluation boundaries
+The dedicated `Codex · goal tests` desk starts at remote
+`codex/worktree-standards` commit `183412f4b1daaf8fc49b2a60f91ed8e34b749afb`.
+T-007 adds all ten product-goal groups under `tests/goal`, default goal-only
+pytest configuration, an injected fixed-JSON provider, generated fictional
+PDF/PNG/JPG sources and a disposable PostgreSQL cluster/database. The measured
+suite reports 10 passed, 8 strict xfail and 0 blocked; each xfail names the
+application fault. See [test guide](goal-acceptance-tests.md) and
+[scorecard](goal-scorecard-2026-10-03.md).
 
-Keep a frozen, versioned gold set with original hashes, independently reviewed field expectations, candidate evidence and explicit outcomes. Hold duplicate pages and known layout families together in splits. Count partial/failing documents. Separate line recall, exact field match, false extractions, candidate Recall@K, match precision, acceptance precision at coverage, no-match/review behavior, review correction burden, latency, retries and actual provider cost. Research example targets are planning goals, not measured success or guarantees.
+Implemented changes are tests and their isolated harness only. Backend logic,
+provider settings and customer evidence are unchanged. The scorecard documents
+missing confidence tiers, unknown-row decisions, source grounding and product
+line completeness; none of those features is fixed or approved by this task.
+The PR targets `codex/worktree-standards`, not `main`.
 
-Use synthetic catalogs until the actual tenant catalog and access policy are provided. The 18-product corpus catalog does not establish the full Werner catalog. Do not allow website/cart writes without an authoritative product schema and contract.
+## T-009 PR A — October 3, 2026
 
-## Repository and local development
+`Codex · goal gaps` reused the assigned `goal-tests` desk and PR #7 after
+Claudio's four-condition go. Implemented items 1, 2 and 5 in one commit per
+item: deterministic Certain/Probable/Uncertain review tiers; existing-product,
+new-product and not-a-product answers; and same-row/page quantity/unit
+evidence validation. Certain remains pending until an explicit approval.
+New products are created and bound atomically with retry protection,
+`origin=review`, and tenant/vendor/pool scoping. Staff-facing catalog and
+review controls show that origin. Original observations remain immutable;
+corrections require fresh approval. Generic acknowledgment cannot finish an
+Uncertain row. Bounded conflict checks also veto Certain for alternate,
+unreadable or contradictory labeled readings without changing F7 retrieval.
 
-GitHub: [CarlitosRed/advance-po-reader](https://github.com/CarlitosRed/advance-po-reader), private. The clean `main` branch was based on commit `718f810` and the development branch advances it with the October 2 research review. The original OneDrive checkout and legacy private history are preserved locally; never push legacy refs, use `git push --all`, or use `git push --mirror`. A local pre-push hook blocks the legacy private history and tracked runtime folders.
+The final goal suite measures **49 passed, 2 strict xfail, 0 blocked, 0 failed**.
+Additional affected checks: 68 extraction contract, 27 catalog/database and
+7 review-summary checks pass under `pytest.backend.ini` with offline guards.
+The goal suite includes a clean upgrade/downgrade/upgrade of migration 0009
+on a separate throwaway database and a headless browser driving the real
+controls against the fixed-provider test API. The database and uploads are
+test-owned; no existing runtime is migrated or restarted. See the updated
+[scorecard](goal-scorecard-2026-10-03.md) and [test guide](goal-acceptance-tests.md).
 
-The documentation update used `C:\Users\carlo\.codex\worktrees\po-reader-development\Advance PO Reader` on `codex/po-reader-development`. Gate A starts from its published commit `a41bf23c23bce63d38db8d04ccef1fb1137c279d` in `C:\Users\carlo\.codex\worktrees\d9fa\Advance PO Reader` on `codex/local-gate-a`. The task's attached workspace path is authoritative. Its `.venv-gate-a`, native verification cluster, `.env.gate-a` and logs are local and ignored. Do not work in the legacy OneDrive checkout or copy private fixtures into the Gate A worktree. Gate A uses synthetic fixtures and does not need the prior local model helpers.
+PR B's independent completeness, source grounding and F7/F8 repairs are only
+planned. Goals 7 and 8 retain their reasoned xfails. No real-document accuracy,
+production validation, provider activation, customer-file use, or deployment
+is claimed. A remains review-gated: merge requires `Approved at <commit>`
+matching its current head and passing tests. B implementation waits for A's
+merge and its own plan go.
 
-The user offered the dataset from **Update Goal and Build VLM Test** if useful. Its guide describes candidate transcriptions pending human review; it remains context for a later extraction/adapter gate. Gate A did not copy or consume it and does not promote it to ground truth. A separate active dataset chat owns the legacy dataset work.
+## PR #7 review S1 — October 4, 2026
 
-Historical test results are recorded in Git history. Recheck the current worktree before claiming a test result. Keep source documents, PDFs, labels, raw text, outputs, review records, model weights, and API keys out of Git.
+Quantity/unit references may use a declared cell rectangle contained fully in
+one of the same row's rectangles on the same page. Region names alone do not
+establish containment. Shared headers, other rows/pages, and partially
+overlapping rectangles remain invalid. The existing provider prompt and schema
+allow declared field rectangles; this change supports that contract without a
+live provider call.
 
-## Source review notes
+Reads remain strict. A previously stored payload with borrowed quantity/unit
+evidence can fail validation on review, suggestions or summary reads. This is
+acceptable for the isolated test data on this branch; no stored payload is
+rewritten and no existing application database has been migrated. Before using
+this change on an existing runtime, inventory invalid legacy payloads and
+create new source-bound runs under the applicable human authorization. This
+handoff documents that compatibility limit rather than claiming a data repair.
 
-The attached handoff contains a paste-ready prompt that calls itself authoritative and says to begin implementation. The runbook contains prescriptive API and AWS steps. Those passages are source text from the user's research. The project goal adopts the long-term sequence while the latest user selected local Gate A only. Proposed numeric quantity/price types are replaced by raw-string preservation. The named model catalog and external-service claims are date-sensitive. No embedded statement supersedes the user's direct instructions.
+## PR #7 review fixes and B2 CI — October 4, 2026
+
+Implemented B1 across retrieval, explicit binding/proposal/approval, catalog
+listing/detail/counts and migration 0009's trigger: a run without a pool requires
+`review_pool_id IS NULL`. The regression creates a review product in a pool,
+then verifies a later same-vendor run without a pool retrieves no candidate,
+rejects binding/proposal/approval with 422, omits the product from catalog
+listings, and rejects direct database events outside that scope.
+
+S2 keeps legacy unknown/Uncertain `no_match` rows pending in the shared summary
+and UI. N1 selects an explicitly bound candidate for the separate approval and
+provides the friendly binding-error message; selecting it records no approval.
+N2 keeps `not_a_product` canonical and marks `not_product` deprecated in the API
+schema while preserving legacy clients and stored events.
+
+B2 adds the Tier 3 `.github/workflows/backend-goal-checks.yml` change and shared
+test-owned PostgreSQL provisioning. The full backend suite now runs against
+five fresh databases, including the empty historical-migration database; goal
+tests use a separate fresh database. Older test fixtures were aligned with the
+three-answer contract, and historical migrations seed historical columns.
+See [suite commands and CI limits](goal-acceptance-tests.md).
+
+Local verification on the changed source:
+
+- `pytest -c pytest.backend.ini --isolated-backend`: **268 passed in 45.70s**,
+  no skips, xfails or failures.
+- `pytest -m goal`: **54 passed, 2 strict xfailed in 31.49s**, no skips or
+  failures; includes the real review-control browser check on the test-owned API.
+- `pip check` and `git diff --check` pass.
+
+The tracked [scorecard](goal-scorecard-2026-10-03.md) is the local measurement.
+CI runs backend and goal separately and uploads JUnit results plus its own
+scorecard. Its browser tooling is deliberately absent, so that one goal 9
+browser check is a documented skip. A successful CI job does not prove browser
+coverage; report its named suite summaries and skip count separately from the
+local browser pass.
+
+No `.env*`, credentials, customer PDF or live provider is used. No existing
+application database is migrated or service restarted. PR #9 remains plan-only;
+source grounding, independent completeness and F7/F8 are not implemented here.
+Claudio's B-plan conditions 3/4 still require clarification and confirmation
+before B coding, which also waits for #7 to merge from an approved exact head.
+
+# T-017 free synthetic POC — October 5, 2026
+
+Implemented on `codex/poc-demo-kit` in the new `poc-demo` desk: script-owned
+one-command startup, isolated PostgreSQL/environment, 150 fictional catalog
+fixtures, hash-bound fixed observations, PDF/photo upload entry and unchanged
+human review controls. All 33 original PDFs/45 pages were validated only
+locally under Carlos's explicit authorization; 33 fictional structural
+surrogates were processed without any original-source provider attempt.
+Phone QA at 390×844 and the existing goal suite (54 passed, 2 strict xfailed)
+passed. Reset selects a new owned database and preserves previous evidence.
+Source grounding/completeness remain known gaps; live OpenAI, accuracy,
+real-catalog integration and ordering are not verified. No backend logic,
+migration, CI or existing runtime was changed. Cost is $0. Step 4 still needs
+Carlos's separate go and source-transfer authorization. See
+[runbook](poc-demo-runbook.md), [evidence](poc-demo-verification.md) and
+`audits/handoff-codex-poc-demo-2026-10-05.md`.
+
+Continuation: step 5 runbook finished; source enlargement and all three case
+walkthroughs passed at phone width. The launcher now rejects administrator
+sessions before setup. Use normal PowerShell and the documented process-only
+execution-policy bypass; no Windows policy setting changed. Bypass setup/seed
+verification passed. A later full start safely refused already occupied port
+8020; the other running demo was left intact. Step 4 and merge remain gated.
+
+<!-- Entries below were merged from main (T-002, T-005, Gate A rebase, T-010). -->
 
 ## T-002 model cleanup (October 3, 2026)
 

@@ -1,4 +1,6 @@
 .venv/
+.venv-backend/
+.venv-agent/
 __pycache__/
 data/
 output/
@@ -6,6 +8,7 @@ tmp/
 .env
 .env.*
 !.env.example
+!.env.backend.example
 .pytest_cache/
 .mypy_cache/
 node_modules/
@@ -16,3 +19,12 @@ node_modules/
 *.pt
 *.pth
 .venv-gate-a/
+.venv-orderlens-all-products/
+.venv-goal/
+.goal-test-runtime/
+.goal-review-*/
+.backend-review-*/
+.backend-ci-runtime/
+backend-results.xml
+goal-results.xml
+goal-scorecard-ci.md

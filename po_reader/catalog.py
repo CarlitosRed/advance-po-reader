@@ -15,7 +15,13 @@ def normalize_id(value):
 
 
 def build_catalog(seed=SEED, destination=DB):
-    document = json.loads(Path(seed).read_text(encoding="utf-8"))
+    try:
+        document = json.loads(Path(seed).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise SystemExit(
+            "The catalog seed file is private and is not in Git. "
+            "For the free demo, see README.md: Run the free demo on Windows."
+        ) from None
     destination.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(destination) as db:
         db.execute("CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, name TEXT NOT NULL, variants TEXT NOT NULL, provenance TEXT NOT NULL)")
