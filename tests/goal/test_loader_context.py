@@ -59,3 +59,10 @@ def test_no_source_or_run_is_assigned_straight_from_an_await():
     for name in ("app.js", "workflow.js"):
         text = (ROOT / "web/local-reader" / name).read_text(encoding="utf8")
         assert not re.search(r"state\.(source|run)\s*=\s*await\b", text), name
+
+
+def test_download_names_the_file_after_the_document_it_was_clicked_for():
+    # The file name is read before the download is awaited, so a late download never carries the next document's name.
+    text = (ROOT / "web/local-reader/app.js").read_text(encoding="utf8")
+    assert "link.download=state.name" not in text
+    assert text.count("link.download=fileName") == 2
