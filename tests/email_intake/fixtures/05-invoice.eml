@@ -1,0 +1,23 @@
+From: buyer@taller-nube.example
+To: intake@ficcion.example
+Subject: Fictional invoice
+Message-ID: <fictional-5@taller-nube.example>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="fictional-boundary-5"
+
+--fictional-boundary-5
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Invoice only, payment is due.
+
+--fictional-boundary-5
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="fictional-5.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQKRmljdGlvbmFsIG9wYXF1ZSBhdHRhY2htZW50LCBub3QgYSByZWFsIGRvY3VtZW50
+LgolJUVPRgo=
+
+--fictional-boundary-5--

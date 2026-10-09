@@ -1,0 +1,62 @@
+{
+  "d4b0b12143c0fc8d5aa4e7b82f13abad6f1c10fca416ce4d22ceb73bb7a5e1d6": {
+    "category": "order",
+    "lane": "order",
+    "reason_code": "new_order"
+  },
+  "0c3324b17f044cc64f7207e9a8fdabb5791664cce8e758f2b4a05ddac122f407": {
+    "category": "change",
+    "lane": "needs_a_look",
+    "reason_code": "change_requested"
+  },
+  "9d64d54eb4518584c3b0640e9870aa1025e94c64705071201c76edc6301316c6": {
+    "category": "cancellation",
+    "lane": "needs_a_look",
+    "reason_code": "cancel_requested"
+  },
+  "f3aa7dc590fc9c19ce9ca85afe762cffc3277b08bddfcccb01aabcfb25e19d68": {
+    "category": "quote_request",
+    "lane": "needs_a_look",
+    "reason_code": "quote_requested"
+  },
+  "78c009c1e9f35a0dff1ba93ada2368de03b77d27f890864c05f64659334c308f": {
+    "category": "invoice",
+    "lane": "not_an_order",
+    "reason_code": "invoice_only"
+  },
+  "7fd2df1742880caf03502363c8a6836afc6becda504d891c4eeee3c53a32b158": {
+    "category": "status_question",
+    "lane": "not_an_order",
+    "reason_code": "status_only"
+  },
+  "8b2d390313385fcc8e07ddafaf25392151879f39f701f845c3cb3e396b107697": {
+    "category": "other_business",
+    "lane": "not_an_order",
+    "reason_code": "other_business_only"
+  },
+  "89e9e8204efd95b85794f80d05df752a59b1d5a91176f90ae9b7cdfdc99add3c": {
+    "category": "spam",
+    "lane": "not_an_order",
+    "reason_code": "spam_only"
+  },
+  "566bb921c46b936990b482331e184b55c51bd823865134603cc7bf5c8d632ded": {
+    "category": "unsure",
+    "lane": "needs_a_look",
+    "reason_code": "unclear"
+  },
+  "24eaa75eccc300b14bcb893478f297d46d73e7538f52d32d8180fcf011ad2917": {
+    "category": "order",
+    "lane": "order",
+    "reason_code": "new_order"
+  },
+  "29a3da450d4528bf99e97665c06b927abfcc1824ab40133bf41196949f2f9a89": {
+    "category": "order",
+    "lane": "order",
+    "reason_code": "new_order"
+  },
+  "b63e56115fc5ce492655d9767542b7222e019bb66d7d59134627aef6ba274491": {
+    "category": "order",
+    "lane": "order",
+    "reason_code": "new_order"
+  }
+}
