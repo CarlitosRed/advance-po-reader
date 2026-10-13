@@ -85,6 +85,46 @@ with a hash of the original parsed text. English/Spanish WinAnsi text that fits
 control characters or overflow require a look with `PDF_LIMIT`; the full text and
 original remain available. No replacement characters or truncated PDF is emitted.
 
+## Optional known-sender hint
+
+Add --known-senders PATH_TO_LIST to either offline or separately authorized live
+intake. The UTF-8 list contains one exact address or exact domain per line, for
+example buyer@customer.example.test or trusted.example.test. Blank lines,
+surrounding spaces/tabs, a UTF-8 BOM, duplicates and uppercase ASCII are accepted.
+Matching lowercases ASCII only. The file is bounded to 64 KiB and must have at
+least one valid entry; one invalid entry refuses the entire run with exit 2 and
+UNKNOWN_SENDER before provider construction, key lookup or ledger initialization.
+Missing, unreadable, directory, alias and .env* paths also refuse.
+
+This is a conservative list format: dotted ASCII DNS domains and unquoted
+ASCII local parts without plus-tags or wildcard characters. Display names,
+comments, groups, IP literals, trailing domain dots, internationalized or punycode
+domains and wildcard patterns are not list entries. A listed domain matches
+exactly; it grants no trust to subdomains or suffix/prefix look-alikes. A plus-tag
+never inherits an address/domain's trust and cannot be listed.
+
+Only the single top-level parsed From mailbox supplies identity. Display names,
+Reply-To, Sender, Return-Path, subjects and bodies cannot supply a match. Missing,
+multiple or defective From headers keep their existing PARSE_FAILED review
+route; ambiguous groups/mailbox lists and unsupported identities cannot match.
+An otherwise parsed unknown sender goes to needs_a_look / UNKNOWN_SENDER before
+classification, with zero classifier calls/reservations and no prepared reader
+files. Its original and opaque attachment evidence remain available for a person.
+UNKNOWN_SENDER is local; it is not part of the classifier output schema.
+
+A known sender merely continues through existing classification and review
+rules; text-only, empty-body, unsupported, duplicate, conflict and provider-error
+outcomes cannot be promoted by this hint. The From header is a claim, not
+authenticated sender proof: a forged exact From can match. This feature does
+not verify mailbox ownership or authorize automatic product approval.
+
+Hint-enabled output folders retain a canonical policy hash in sender-policy.json.
+The same normalized list can replay immutable outcomes. Enabling a list over
+existing outcomes, changing the list, or disabling it on that output folder
+refuses with CONFLICT: use a separate empty output folder for a new policy.
+This prevents an old order outcome bypassing the hint on replay. Output folders
+that have never enabled the option retain the existing behavior and file format.
+
 ## Deferred live path
 
 The builder has made no paid calls. Carlos can later run the following only with

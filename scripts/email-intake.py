@@ -10,6 +10,7 @@ from email_intake.ledger import LedgerError, SpendLedger, safe_path
 from email_intake.providers import FakeProvider, LiveProvider
 from email_intake.locking import LockError
 from email_intake.runner import run
+from email_intake.senders import SenderListError, load as load_senders
 
 
 def main(argv=None):
@@ -21,8 +22,10 @@ def main(argv=None):
     ap.add_argument("--ledger", type=Path, help="One shared classifier spend ledger for all phase-one runs")
     ap.add_argument("--init-ledger", action="store_true", help="Create a missing or recover a zero-byte ledger; never reset spend history")
     ap.add_argument("--fake-results", type=Path, help="Offline only: trusted JSON map of original SHA to classifier result")
+    ap.add_argument("--known-senders", type=Path, help="Optional exact address/domain list; unknown senders require review")
     args = ap.parse_args(argv)
     try:
+        known_senders = load_senders(args.known_senders) if args.known_senders is not None else None
         if args.init_ledger and (not args.live or args.ledger is None):
             print(json.dumps({"reason_code": "LEDGER"}))
             return 2
@@ -42,12 +45,16 @@ def main(argv=None):
                     raise ValueError("INVALID")
             provider = FakeProvider(results)
         results = run(args.drop, args.out, provider, break_lock=args.break_lock,
-                      report=lambda message: print(json.dumps(message), file=sys.stderr))
+                      report=lambda message: print(json.dumps(message), file=sys.stderr),
+                      known_senders=known_senders)
         for result in results:
             print(json.dumps(result))
         if args.live and results and all(result["reused"] for result in results):
             print(json.dumps({"warning": "ALL_REUSED", "hint": "All emails reused stored outcomes; no new classification was attempted."}), file=sys.stderr)
         return 0
+    except SenderListError:
+        print(json.dumps({"reason_code": "UNKNOWN_SENDER", "hint": "Use a non-empty UTF-8 list of exact addresses or domains."}))
+        return 2
     except LockError:
         print(json.dumps({"reason_code": "CONFLICT", "hint": "Intake is locked. --break-lock recovers only a dead owner; active or unknown owners refuse."}))
         return 2

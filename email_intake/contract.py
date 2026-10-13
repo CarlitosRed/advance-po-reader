@@ -14,7 +14,8 @@ PAIRS = {
 }
 LOCAL_REASONS = frozenset({"REFUSED", "INCOMPLETE", "INVALID", "TRANSPORT_PENDING",
                            "PARSE_FAILED", "LIMIT", "CAP", "CONFLICT", "MISSING_KEY",
-                           "LIVE_DISABLED", "LEDGER", "DUPLICATE", "PDF_LIMIT", "TEXT_ONLY_ORDER"})
+                           "LIVE_DISABLED", "LEDGER", "DUPLICATE", "PDF_LIMIT", "TEXT_ONLY_ORDER",
+                           "UNKNOWN_SENDER"})
 REASONS = LOCAL_REASONS | {pair[1] for pair in PAIRS.values()}
 SCHEMA = {"type": "object", "properties": {
     "category": {"type": "string", "enum": list(PAIRS)},

@@ -6,6 +6,8 @@ from hashlib import sha256
 from html.parser import HTMLParser
 import re
 
+from .senders import from_address
+
 MAX_EMAIL = 2 * 1024 * 1024
 MAX_HEADERS = 32 * 1024
 MAX_DEPTH = 8
@@ -54,6 +56,7 @@ class Parsed:
     body_segments: list
     attachments: list
     payloads: dict = field(repr=False)
+    sender_address: str | None = None
 
     def record(self):
         return {"sender": self.sender, "subject": self.subject, "message_id": self.message_id,
@@ -75,7 +78,7 @@ def preflight(raw):
         raise ParseError("LIMIT")
 
 
-def parse(raw):
+def parse(raw, *, sender_hint=False):
     preflight(raw)
     try:
         msg = BytesParser(policy=policy.default).parsebytes(raw)
@@ -158,8 +161,12 @@ def parse(raw):
         mid = str(msg["Message-ID"]).strip() if msg.get("Message-ID") else None
         if mid and not re.fullmatch(r"<[^\s<>@]+@[^\s<>@]+>", mid):
             raise ParseError("PARSE_FAILED")
+        sender_address = None
+        if sender_hint:
+            raw_from = next(value for name, value in msg.raw_items() if name.lower() == "from")
+            sender_address = from_address(msg["From"], raw_from)
         return Parsed(str(msg["From"]), str(msg["Subject"]), mid, body,
-                      segments, attachments, payloads)
+                      segments, attachments, payloads, sender_address)
     except ParseError:
         raise
     except (ValueError, TypeError, LookupError, UnicodeError, RecursionError, IndexError):
