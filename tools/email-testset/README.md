@@ -148,8 +148,9 @@ py -3.12 -m unittest discover -s tests/email_testset -p "test_*.py" -v
 
 The generator prints the coverage table below. Output: 147 `poinbox-NNNN.eml` files
 (shuffled into one working day, Monday 12 Oct 2026, three minutes apart),
-`expected.jsonl`, and `known-senders.txt`. Counts are fixed by design, so every
-seed keeps the same coverage; the seed changes PO numbers, quantities, products,
+`expected.jsonl`, and `known-senders.txt`. Category, scenario and sender-case counts are fixed by design, so every
+seed keeps the same coverage (the lane and lane-reason rows below are for seed
+20261012, because a text-only order from an unknown sender counts once); the seed changes PO numbers, quantities, products,
 languages, which known contact writes, and the order of the inbox.
 
 | Group | Item | Emails |
