@@ -243,8 +243,8 @@ class PoInboxTests(unittest.TestCase):
         entries = ["buyer@taller-nemul.example.test", "opra-trading.example.test"]
         for address, known in (
             ("buyer@taller-nemul.example.test", True), ("BUYER@TALLER-NEMUL.example.test", True),
-            ("buyer+po7@taller-nemul.example.test", True), ("anyone@opra-trading.example.test", True),
-            ("anyone@OPRA-TRADING.example.test", True), ("buyer@mail.taller-nemul.example.test", False),
+            ("buyer+po7@taller-nemul.example.test", False), ("anyone@opra-trading.example.test", True),
+            ("anyone@OPRA-TRADING.example.test", True), ("anyone+x@opra-trading.example.test", True), ("buyer@mail.taller-nemul.example.test", False),
             ("buyer@taller-nemul.example.test.relay.example.test", False), ("buyer@taller-nernul.example.test", False),
             ("anyone@billing.opra-trading.example.test", False), ("other@taller-nemul.example.test", False),
             ("orders@quick-parts.example.test", False),
@@ -276,7 +276,7 @@ class PoInboxTests(unittest.TestCase):
                     self.assertTrue(sender_is_known(sender.display_name, self.known))
                 if case == "case_variant":
                     self.assertNotEqual(sender.addr_spec, sender.addr_spec.lower())
-                if case == "plus_address":
+                if case == "plus_tag":
                     self.assertIn("+", sender.username)
                 if case == "subdomain_trick":
                     self.assertNotIn(sender.domain, self.known)

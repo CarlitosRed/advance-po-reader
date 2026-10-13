@@ -323,18 +323,18 @@ ORDER_SCENARIOS = (
     ("pdf_packing_logo", 16), ("multi_po", 6), ("png_scan", 6), ("text_only", 14),
 )
 ORDER_SENDER_CASES = (
-    ("known_address", 56), ("known_domain", 18), ("case_variant", 12), ("plus_address", 12),
+    ("known_address", 56), ("known_domain", 18), ("case_variant", 12), ("plus_tag", 12),
     ("unknown", 8), ("display_name_trick", 7), ("subdomain_trick", 7), ("typo_domain", 6),
 )
 # (category, sender cases) for the 21 non-order emails.
 OTHER_EMAILS = (
     ("change", ("known_address", "known_domain", "case_variant")),
-    ("cancellation", ("known_address", "plus_address", "known_domain")),
+    ("cancellation", ("known_address", "plus_tag", "known_domain")),
     ("status_question", ("known_address", "known_domain", "case_variant")),
     ("quote_request", ("unknown", "known_address", "known_domain")),
     ("spam", ("unknown", "unknown")),
     ("invoice", ("unknown", "subdomain_trick")),
-    ("other_business", ("known_address", "known_domain", "plus_address")),  # out-of-office auto replies
+    ("other_business", ("known_address", "known_domain", "plus_tag")),  # out-of-office auto replies
     ("unsure", ("known_address", "unknown")),
 )
 
@@ -363,7 +363,7 @@ def logo_png(seed_value):
             + chunk(b"IDAT", zlib.compress(raw, level=9)) + chunk(b"IEND", b""))
 
 
-KNOWN_BASED = ("known_address", "case_variant", "plus_address", "subdomain_trick", "typo_domain", "display_name_trick")
+KNOWN_BASED = ("known_address", "case_variant", "plus_tag", "subdomain_trick", "typo_domain", "display_name_trick")
 
 
 def pick_sender(case, rng, index):
@@ -379,7 +379,7 @@ def pick_sender(case, rng, index):
     if case == "case_variant":
         label, _, rest = domain.partition(".")
         return name, f"{local.upper()}@{label.upper()}.{rest}"
-    if case == "plus_address":
+    if case == "plus_tag":  # strict rule: a plus tag is not the listed address
         return name, f"{local}+po{index:04d}@{domain}"
     if case == "unknown":
         return rng.choice(UNKNOWN_SENDERS)

@@ -42,10 +42,10 @@ LANE_REASONS = {
 ANSWER_LANE_EXCEPTIONS = (("order", "needs_a_look"), ("status_question", "needs_a_look"))
 # Optional expected-row field `sender_case`.
 SENDER_CASES = (
-    "known_address", "known_domain", "case_variant", "plus_address",
-    "unknown", "display_name_trick", "subdomain_trick", "typo_domain",
+    "known_address", "known_domain", "case_variant",
+    "plus_tag", "unknown", "display_name_trick", "subdomain_trick", "typo_domain",
 )
-KNOWN_SENDER_CASES = SENDER_CASES[:4]
+KNOWN_SENDER_CASES = SENDER_CASES[:3]
 ATTACHMENT_ROLES = ("order", "packing_list", "logo_image")
 
 
@@ -53,17 +53,17 @@ def sender_is_known(address, entries):
     """Reference rule for the known-sender hint (fictional test oracle).
 
     `address` is the real address (addr-spec), never a display name. Case is
-    ignored, a `+tag` on the local part is ignored, an entry containing `@` must
+    ignored. The rule is strict and fails closed: an entry containing `@` must
     equal the whole address, and an entry without `@` must equal the whole
-    domain exactly (a subdomain or a longer host name does not match).
+    domain exactly. A plus-tagged address (user+tag@host) does NOT match a
+    listed user@host, and a subdomain or longer host name does not match.
     """
-    local, _, domain = address.strip().lower().rpartition("@")
-    local = local.split("+", 1)[0]
+    address = address.strip().lower()
+    domain = address.rpartition("@")[2]
     for entry in entries:
         entry = entry.strip().lower()
         if "@" in entry:
-            entry_local, _, entry_domain = entry.rpartition("@")
-            if (entry_local.split("+", 1)[0], entry_domain) == (local, domain):
+            if entry == address:
                 return True
         elif entry and entry == domain:
             return True

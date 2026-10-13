@@ -158,8 +158,8 @@ languages, which known contact writes, and the order of the inbox.
 | category | change / cancellation / status_question / quote_request | 3 / 3 / 3 / 3 |
 | category | invoice / spam / unsure | 2 / 2 / 2 |
 | category | other_business (out-of-office auto replies) | 3 |
-| lane | order (Sure) / needs_a_look / not_an_order | 85 / 55 / 7 |
-| lane reason | text_only_order / unknown_sender / status_reply_needs_look | 14 / 27 / 3 |
+| lane | order (Sure) / needs_a_look / not_an_order | 73 / 67 / 7 |
+| lane reason | text_only_order / unknown_sender / status_reply_needs_look | 14 / 39 / 3 |
 | order scenario | PDF only, empty body (`empty_body`) | 44 |
 | order scenario | PDF plus short cover note (`cover_note`) | 24 |
 | order scenario | PDF plus a recap of it in the body (`recap_in_body`) | 16 |
@@ -167,7 +167,7 @@ languages, which known contact writes, and the order of the inbox.
 | order scenario | two or three PO PDFs in one email (`multiple_orders`) | 6 |
 | order scenario | PNG scan stand-in (`png_scan_standin`) | 6 |
 | order scenario | order only in the text (`text_only_order`) | 14 |
-| sender case, all emails | known_address / known_domain / case_variant / plus_address | 62 / 23 / 14 / 14 |
+| sender case, all emails | known_address / known_domain / case_variant / plus_tag | 62 / 23 / 14 / 14 |
 | sender case, all emails | unknown / display_name_trick / subdomain_trick / typo_domain | 13 / 7 / 8 / 6 |
 | sender case, orders only | the same eight cases | 56 / 18 / 12 / 12 / 8 / 7 / 7 / 6 |
 
@@ -192,17 +192,20 @@ counts it as an order that must not be lost, but its lane can be `needs_a_look`:
 `known-senders.txt` is written next to the emails: one entry per line, a full
 address (contains `@`) or a bare domain, all `example.test`, plain ASCII with LF
 endings. The reference rule is `email_testset_contract.sender_is_known(address,
-entries)`: case is ignored, a `+tag` on the local part is ignored, an address
-entry must match the whole address, a domain entry must equal the whole domain
-(a subdomain or a longer host name does not match). It judges the real address,
-never the display name. A test recomputes `known_sender` from each parsed email.
+entries)`. It is strict and fails closed: after lowercasing, a sender matches only
+if its exact address, or its exact domain when a domain is listed, is in the
+file. Case differences match. A plus-tagged address (`user+tag@host`) does **not**
+match a listed `user@host` (a customer who wants it lists the exact address), and
+a subdomain or longer host name of a listed domain does not match. The file has no
+comment lines, so a reader can treat every line as an entry. It judges the real
+address, never the display name. A test recomputes `known_sender` from each parsed email.
 
 | `sender_case` | What the email shows | Known? |
 | --- | --- | --- |
 | `known_address` | an address on the list | yes |
 | `known_domain` | any person at a listed domain | yes |
 | `case_variant` | listed address with upper-case letters | yes |
-| `plus_address` | listed address with `+poNNNN` added | yes |
+| `plus_tag` | listed address with `+poNNNN` added: not an exact match | no |
 | `unknown` | a stranger | no |
 | `display_name_trick` | display name is a listed address, real address is a stranger's | no |
 | `subdomain_trick` | `mail.<listed domain>` or `<listed host>.relay.example.test` | no |
@@ -231,5 +234,5 @@ An answer may now also say `order` or `status_question` with lane `needs_a_look`
 (the only added category/lane pairs; every other pair stays invalid). The pass
 bar is unchanged: at least 100 true-order emails and zero lost orders. With
 perfect answers `order_or_needs_a_look_recall` is 1.0 and `order_recall` is the
-share of orders expected in Sure (85 of 126), because text-only orders and
+share of orders expected in Sure (73 of 126), because text-only orders and
 unknown-sender orders are expected in Check, not Sure.
