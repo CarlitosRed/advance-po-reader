@@ -42,7 +42,7 @@ def generate(root):
         iid = sha256(raw).hexdigest()
         results[iid] = decision(category)
         expected.append({"fixture": name, "sha256": iid, "fake_category": category,
-                         "final_lane": "needs_a_look" if index in {9, 12} else decision(category)["lane"]})
+                         "final_lane": "needs_a_look" if index in {1, 9, 10, 11, 12} else decision(category)["lane"]})
     (root / "fake-results.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     (root / "expectations.json").write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
 
