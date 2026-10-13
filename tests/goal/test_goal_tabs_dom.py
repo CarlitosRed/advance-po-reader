@@ -8,7 +8,7 @@ from threading import Thread
 
 import pytest
 
-from conftest import ROOT, PRODUCTS, process, product_row
+from tests.goal.conftest import ROOT, PRODUCTS, process, product_row
 
 pytestmark = pytest.mark.goal
 

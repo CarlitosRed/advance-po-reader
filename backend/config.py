@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     validation_timeout_seconds: int = Field(default=15, ge=1, le=30)
     candidate_limit: int = Field(default=5, ge=1, le=10)
     live_processing_enabled: bool = False
+    safety_net_finish_blocking: bool = False
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")
     extraction_model: str = Field(default="gpt-6-luna", min_length=1, max_length=120)
     provider_store: bool = False

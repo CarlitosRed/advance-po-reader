@@ -127,6 +127,7 @@ class FixedJSONProvider:
 
     def set_payload(self, value):
         self.json_text = json.dumps(deepcopy(value))
+        self.schema_version = value["schema_version"]
 
     def extract(self, source_bytes, media_type, page_count, fixture_name=None):
         self.calls.append((source_bytes, media_type, page_count))
@@ -136,14 +137,19 @@ class FixedJSONProvider:
 
 
 @pytest.fixture
-def desk(goal_engine, tmp_path, monkeypatch):
+def safety_net_finish_blocking(request):
+    return getattr(request, "param", False)
+
+
+@pytest.fixture
+def desk(goal_engine, tmp_path, monkeypatch, safety_net_finish_blocking):
     # Relocate only the configuration/storage boundary; all product logic stays real.
     monkeypatch.setattr(backend.config, "ROOT", tmp_path)
     monkeypatch.setattr(backend.uploads, "ROOT", tmp_path)
     settings = backend.config.Settings(_env_file=None,
         database_url=SecretStr(goal_engine.url.render_as_string(hide_password=False)),
         storage_directory=tmp_path / "data" / "uploads", local_api_token=SecretStr(TOKEN),
-        live_processing_enabled=False, openai_api_key=None)
+        live_processing_enabled=False, openai_api_key=None, safety_net_finish_blocking=safety_net_finish_blocking)
     provider = FixedJSONProvider()
     with TestClient(create_app(settings, engine=goal_engine, provider=provider),
                     base_url="http://127.0.0.1:8014", headers={"X-Local-Token": TOKEN}) as client:

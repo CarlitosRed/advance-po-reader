@@ -149,3 +149,13 @@ For a full local backend run with the same isolation:
 $env:GOAL_POSTGRES_BIN = '<PostgreSQL binary directory>'
 .\.venv-goal\Scripts\python.exe -m pytest -c pytest.backend.ini --isolated-backend --basetemp=tmp/backend-checks -q --tb=short
 ```
+
+> v1.1 backend integration, October 8: Safety Net defaults OFF. Inherited #9 backend tests explicitly enable it; original v1 grounding/completeness gaps remain strict expected failures under OFF. New Safety Net controls and their browser proof belong to the new UI track. See [mode ledger](integrate-safety-net-plan.md).
+
+PR B item 3 expands `pytest.backend.ini` to collect `tests/backend` and
+`tests/goal` with importlib collection. Every new B acceptance case therefore
+runs in both commands in the same `backend-goal` job. The first command's
+totals include the goal cases, while the separate goal command measures that
+suite again and generates its scorecard. Each command gets fresh databases.
+Local browser tooling enables the website check in both commands; CI omits
+it, so both commands report that browser case as a blocked skip.
