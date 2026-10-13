@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
+from backend.api_models import ReviewEvidence
 
 from backend.contracts import ExtractionPayload
 from gate_a.contracts import EvidenceReference
@@ -125,7 +126,7 @@ class ReviewResponse(ResponseModel):
     action: str
     reviewer: str
     reason: str
-    evidence_reference: list[EvidenceReference]
+    evidence_reference: list[ReviewEvidence]
     old_value: Any | None
     new_value: Any | None
     selected_candidate_id: UUID | None
@@ -200,6 +201,42 @@ class ExcludedRowResponse(ResponseModel):
     decision: str
 
 
+class PageCoverageResponse(ResponseModel):
+    page_number: int
+    source_sha256: str
+    provider_product_count: int
+    independent_product_count: int | None
+    status: Literal["matched", "mismatch", "unavailable"]
+    method: str | None
+    latest_event_id: UUID | None
+    reviewer: str | None
+    reason: str | None
+    recorded_at: datetime | None
+    source_discrepancy: bool
+    remedy: Literal["new_source_bound_run"] | None
+
+
+class SourceTextObservationResponse(ResponseModel):
+    field_name: str
+    page_number: int
+    region_reference: str
+    literal_observed_text: str | None
+    literal_source_text: str
+    normalized_observed_text: str
+    normalized_source_text: str
+    status: Literal["supported", "unsupported", "unavailable"]
+
+
+class SourceGroundingResponse(ResponseModel):
+    row_id: str
+    source_sha256: str
+    method: str
+    status: Literal["supported", "unsupported", "unavailable"]
+    observations: list[SourceTextObservationResponse]
+    unsupported_reviewed: bool
+    unconfirmed_page_numbers: list[int]
+
+
 class ReviewSummaryResponse(ResponseModel):
     run_id: UUID
     state: str
@@ -213,3 +250,5 @@ class ReviewSummaryResponse(ResponseModel):
     blockers: list[str]
     can_finish_review: bool
     source_observations_unchanged: bool
+    page_coverage: list[PageCoverageResponse]
+    source_grounding: list[SourceGroundingResponse]

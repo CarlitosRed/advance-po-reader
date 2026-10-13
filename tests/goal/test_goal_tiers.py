@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from conftest import PRODUCTS, ok, process, product_row, review_body
+from tests.goal.conftest import PRODUCTS, ok, process, product_row, review_body
 
 pytestmark = pytest.mark.goal
 
@@ -16,6 +16,9 @@ def test_goal_4_only_certain_lines_cannot_resolve_without_approval(desk):
     response = desk.client.post(f"/runs/{result.run['id']}/reviews", json=request)
     assert response.status_code == 409
     assert result.summary["approved_products"] == []
+    ok(desk.client.post(f"/runs/{result.run['id']}/page-counts", json={
+        "page_number": 1, "source_sha256": result.source["sha256"], "product_count": 1,
+        "source_discrepancy": False, "reviewer": "Fictional reviewer", "reason": "Counted the generated page"}))
     ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json=review_body(
         rows[0], "approve", selected_candidate_id=suggestion["suggested_candidate_id"])))
     assert desk.client.post(f"/runs/{result.run['id']}/reviews", json=request).status_code == 201

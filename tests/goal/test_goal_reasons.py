@@ -11,7 +11,7 @@ import subprocess
 
 import pytest
 
-from conftest import ROOT, PRODUCTS, field, ok, process, product_row, review_body
+from tests.goal.conftest import ROOT, PRODUCTS, field, ok, process, product_row, review_body
 
 pytestmark = pytest.mark.goal
 

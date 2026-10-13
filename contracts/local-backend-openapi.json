@@ -485,6 +485,41 @@
         "title": "CatalogResponse",
         "type": "object"
       },
+      "DocumentSourceEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "document",
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_document_id": {
+            "format": "uuid",
+            "title": "Source Document Id",
+            "type": "string"
+          },
+          "source_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "source_document_id",
+          "run_id",
+          "source_sha256"
+        ],
+        "title": "DocumentSourceEvidence",
+        "type": "object"
+      },
       "ErrorResponse": {
         "additionalProperties": false,
         "properties": {
@@ -953,6 +988,211 @@
         "title": "ObservationState",
         "type": "string"
       },
+      "PageCountRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "correction_kind": {
+            "anyOf": [
+              {
+                "const": "independent_count_error",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Kind"
+          },
+          "corrects_event_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corrects Event Id"
+          },
+          "page_number": {
+            "minimum": 1.0,
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "product_count": {
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Product Count",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "reviewer": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Reviewer",
+            "type": "string"
+          },
+          "scope": {
+            "const": "page",
+            "default": "page",
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_discrepancy": {
+            "title": "Source Discrepancy",
+            "type": "boolean"
+          },
+          "source_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_number",
+          "source_sha256",
+          "product_count",
+          "reviewer",
+          "reason",
+          "source_discrepancy"
+        ],
+        "title": "PageCountRequest",
+        "type": "object"
+      },
+      "PageCoverageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "independent_product_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Independent Product Count"
+          },
+          "latest_event_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Event Id"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "page_number": {
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "provider_product_count": {
+            "title": "Provider Product Count",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "const": "new_source_bound_run",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remedy"
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer"
+          },
+          "source_discrepancy": {
+            "title": "Source Discrepancy",
+            "type": "boolean"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "matched",
+              "mismatch",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_number",
+          "source_sha256",
+          "provider_product_count",
+          "independent_product_count",
+          "status",
+          "method",
+          "latest_event_id",
+          "reviewer",
+          "reason",
+          "recorded_at",
+          "source_discrepancy",
+          "remedy"
+        ],
+        "title": "PageCoverageResponse",
+        "type": "object"
+      },
       "PageObservation": {
         "additionalProperties": false,
         "properties": {
@@ -996,6 +1236,35 @@
           "uncertainty"
         ],
         "title": "PageObservation",
+        "type": "object"
+      },
+      "PageSourceEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "page_number": {
+            "minimum": 1.0,
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "scope": {
+            "const": "page",
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "page_number",
+          "source_sha256"
+        ],
+        "title": "PageSourceEvidence",
         "type": "object"
       },
       "ProductInput": {
@@ -1131,6 +1400,32 @@
         "title": "Region",
         "type": "object"
       },
+      "RegionReviewEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "page_number": {
+            "minimum": 1.0,
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "region_reference": {
+            "title": "Region Reference",
+            "type": "string"
+          },
+          "scope": {
+            "const": "region",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "page_number",
+          "region_reference",
+          "scope"
+        ],
+        "title": "RegionReviewEvidence",
+        "type": "object"
+      },
       "ResultResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1186,6 +1481,8 @@
                   "resolve",
                   "acknowledge_page",
                   "acknowledge_document",
+                  "confirm_source_text",
+                  "confirm_unavailable_page_text",
                   "propose_candidate",
                   "this_is_product",
                   "new_product",
@@ -1246,8 +1543,20 @@
           },
           "evidence_reference": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EvidenceReference"
+                },
+                {
+                  "$ref": "#/components/schemas/RegionReviewEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/PageSourceEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/DocumentSourceEvidence"
+                }
+              ]
             },
             "maxItems": 50,
             "title": "Evidence Reference",
@@ -1391,7 +1700,20 @@
           },
           "evidence_reference": {
             "items": {
-              "$ref": "#/components/schemas/EvidenceReference"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EvidenceReference"
+                },
+                {
+                  "$ref": "#/components/schemas/RegionReviewEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/PageSourceEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/DocumentSourceEvidence"
+                }
+              ]
             },
             "title": "Evidence Reference",
             "type": "array"
@@ -1515,6 +1837,13 @@
             "title": "Excluded Rows",
             "type": "array"
           },
+          "page_coverage": {
+            "items": {
+              "$ref": "#/components/schemas/PageCoverageResponse"
+            },
+            "title": "Page Coverage",
+            "type": "array"
+          },
           "pending_row_ids": {
             "items": {
               "type": "string"
@@ -1534,6 +1863,13 @@
             "format": "uuid",
             "title": "Run Id",
             "type": "string"
+          },
+          "source_grounding": {
+            "items": {
+              "$ref": "#/components/schemas/SourceGroundingResponse"
+            },
+            "title": "Source Grounding",
+            "type": "array"
           },
           "source_observations_unchanged": {
             "title": "Source Observations Unchanged",
@@ -1560,7 +1896,9 @@
           "review_event_count",
           "blockers",
           "can_finish_review",
-          "source_observations_unchanged"
+          "source_observations_unchanged",
+          "page_coverage",
+          "source_grounding"
         ],
         "title": "ReviewSummaryResponse",
         "type": "object"
@@ -1840,6 +2178,61 @@
         "title": "RunsResponse",
         "type": "object"
       },
+      "SourceGroundingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/SourceTextObservationResponse"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "row_id": {
+            "title": "Row Id",
+            "type": "string"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "unsupported",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "unconfirmed_page_numbers": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unconfirmed Page Numbers",
+            "type": "array"
+          },
+          "unsupported_reviewed": {
+            "title": "Unsupported Reviewed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "row_id",
+          "source_sha256",
+          "method",
+          "status",
+          "observations",
+          "unsupported_reviewed",
+          "unconfirmed_page_numbers"
+        ],
+        "title": "SourceGroundingResponse",
+        "type": "object"
+      },
       "SourceResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1937,6 +2330,67 @@
           "created_at"
         ],
         "title": "SourceResponse",
+        "type": "object"
+      },
+      "SourceTextObservationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "field_name": {
+            "title": "Field Name",
+            "type": "string"
+          },
+          "literal_observed_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Literal Observed Text"
+          },
+          "literal_source_text": {
+            "title": "Literal Source Text",
+            "type": "string"
+          },
+          "normalized_observed_text": {
+            "title": "Normalized Observed Text",
+            "type": "string"
+          },
+          "normalized_source_text": {
+            "title": "Normalized Source Text",
+            "type": "string"
+          },
+          "page_number": {
+            "title": "Page Number",
+            "type": "integer"
+          },
+          "region_reference": {
+            "title": "Region Reference",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "unsupported",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field_name",
+          "page_number",
+          "region_reference",
+          "literal_observed_text",
+          "literal_source_text",
+          "normalized_observed_text",
+          "normalized_source_text",
+          "status"
+        ],
+        "title": "SourceTextObservationResponse",
         "type": "object"
       },
       "SuggestionResponse": {
@@ -4261,6 +4715,143 @@
           }
         ],
         "summary": "Cancel"
+      }
+    },
+    "/runs/{run_id}/page-counts": {
+      "post": {
+        "operationId": "page_count_runs__run_id__page_counts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Explicit local tenant scope, not an authenticated identity.",
+            "in": "header",
+            "name": "X-Tenant-ID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Required for cookie-authenticated browser mutations; not needed with an explicit CLI token.",
+            "in": "header",
+            "name": "X-Website-CSRF",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PageCountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "LocalToken": []
+          },
+          {
+            "LocalBrowserSession": []
+          }
+        ],
+        "summary": "Page Count"
       }
     },
     "/runs/{run_id}/process": {
