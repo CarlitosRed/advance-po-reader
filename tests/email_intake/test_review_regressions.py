@@ -173,7 +173,11 @@ class ReviewRegressions(unittest.TestCase):
         self.assertFalse(ledger.path.exists())
         ledger.path.touch()
         with self.assertRaisesRegex(LedgerError, "LEDGER"):
-            SpendLedger(ledger.path, initialize=True)
+            SpendLedger(ledger.path)
+        # Explicit recovery is E2 item 3; connect/reserve must still refuse.
+        recovered = SpendLedger(ledger.path, initialize=True)
+        with recovered.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM attempts").fetchone()[0], 0)
 
     def test_body_pdf_failure_with_attachment_retains_sources_for_review(self):
         raw = email(body="Fictional order: 2 stools, price ₡ 10.",

@@ -128,7 +128,15 @@ def parse(raw):
                                     "supported": supported})
                 payloads[aid] = data
             else:
-                text = data.decode(part.get_content_charset() or "utf-8", errors="strict")
+                charset = part.get_content_charset()
+                try:
+                    text = data.decode(charset or "utf-8", errors="strict")
+                except UnicodeDecodeError:
+                    if charset is not None:
+                        raise
+                    # Only undeclared text gets this fallback. Undefined CP1252
+                    # bytes still refuse; explicit charsets are never repaired.
+                    text = data.decode("cp1252", errors="strict")
                 if media == "text/html":
                     cleaner = TextHTML()
                     cleaner.feed(text)
