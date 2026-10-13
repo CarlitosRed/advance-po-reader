@@ -8,7 +8,6 @@ import hashlib
 import html
 import json
 import random
-import re
 import struct
 import sys
 import zlib
@@ -133,36 +132,9 @@ def po_invoice_text(po, language):
     return spanish if language == "es" else english if language == "en" else english + "\n" + spanish
 
 
-# Every word the po-inbox profile can emit into a body or document, by language. Words that
-# are the same in both languages, brand names and ids are neutral and are not listed.
-EN_WORDS = frozenset("""new purchase order please supply units unit these goods fictional scan stand in packing list reference only
-confirm this thank you find the attached as per pdf po receipt change earlier reduce quantity to replaces do not create a cancel
-entirely ship it is being placed quote cloud stools price enquiry we have invoice for already supplied under payment notice no
-purchase when will arrive tracking question place another our office has moved imaginary blue moon building update hours win
-glitter planet unsolicited promotion request visit here thing discussed can handle i cannot say whether quote or revision automatic
-reply am out of until monday auto moon tray star rack stool an""".split())
-ES_WORDS = frozenset("""orden compra nueva por favor suministrar unidades unidad de estos bienes ficticio ficticia simulacro escaneo
-empaque lista referencia solo confirmar este pedido nuevo adjunto la gracias oc segun el adjunto recepcion cambiar anterior reducir
-cantidad reemplaza cancelar completo enviar se solicita un cotizar bancos nube consulta precio hemos hecho factura bienes ya
-entregados del cobro es una compra cuando llega seguimiento hacer otro oficina traslado al edificio luna azul actualizar horario
-gane planeta brillantina promocion solicitada sin solicitud lo conversado puede tramitar aclaro si cotizacion o cambio respuesta
-automatica estoy fuera hasta lunes taburete bandeja estante estrella consultar crear imaginaria imaginario""".split())
-NEUTRAL_WORDS = frozenset("fic fict zunel vopra nemul inv no".split())
-
-
-def text_languages(text):
-    """Languages of the words really emitted (case-insensitive, URLs ignored); unknown words fail loudly."""
-    found = set()
-    for word in re.findall(r"[a-z]+", re.sub(r"https?://\S+", " ", text.lower())):
-        if word in NEUTRAL_WORDS:
-            continue
-        if word in ES_WORDS and word not in EN_WORDS:
-            found.add("es")
-        elif word in EN_WORDS and word not in ES_WORDS:
-            found.add("en")
-        elif word not in EN_WORDS and word not in ES_WORDS:
-            raise ValueError(f"unclassified word in emitted text: {word!r}")
-    return found
+def by_language(language, english, spanish, both):
+    """Pick the wording written in the email's construction language ("en-es" gets the bilingual form)."""
+    return spanish if language == "es" else english if language == "en" else both
 
 
 def non_order_text(category, po, language):
@@ -520,8 +492,10 @@ def out_of_office_text(language):
 def make_po_inbox_fixture(seed, index, spec, rng):
     fixture_id = f"poinbox-{index:04d}"
     category, scenario = spec["category"], spec["scenario"]
+    # The language is chosen here and every visible piece of text (body, subject, attachment
+    # text, attachment file names) is then written in it, so the label is set by construction.
     language = rng.choice(("en", "en", "es", "en-es"))
-    tags = set()  # language tags are added at the end, from the content actually emitted
+    tags = {{"en": "english", "es": "spanish", "en-es": "code_switching"}[language]}
     po = f"FIC-{rng.randrange(100000, 1000000)}-{index:04d}"
     quantity = rng.randrange(1, 20)
     product = rng.choice(("FICT-ZUNEL CLOUD STOOL", "FICT-VOPRA MOON TRAY", "FICT-NEMUL STAR RACK"))
@@ -530,16 +504,16 @@ def make_po_inbox_fixture(seed, index, spec, rng):
     sources = {"body": False, "attachments": []}
     roles = {}
     attachments = []  # (filename, payload, maintype, subtype, inline)
-    documents = []  # text of every PDF/scan attachment, in the document's own words
     count = 0
     body = ""
-    subject = rng.choice(("Documents", "Documentos", "For processing", "Hello"))
+    subject = rng.choice(by_language(language, ("Documents", "Order documents", "For processing", "Hello"),
+                                     ("Documentos", "Documentos del pedido", "Para tramitar", "Hola"),
+                                     ("Documents", "Documentos", "For processing", "Hello")))
     subject_has_po = rng.randrange(2) == 0
 
     def add_order(order_po, image=False):
         filename = f"{order_po}.{'png' if image else 'pdf'}"
         text = po_attachment_text(order_po, quantity, product, product_es, language)
-        documents.append(text)
         attachments.append((filename, scan_png(text, f"{index}:{filename}") if image else tiny_pdf(text),
                             "image" if image else "application", "png" if image else "pdf", False))
         sources["attachments"].append(filename)
@@ -580,9 +554,8 @@ def make_po_inbox_fixture(seed, index, spec, rng):
                 add_order(po, image=scenario == "png_scan")
                 count = 1
             if scenario == "pdf_packing_logo":
-                packing = f"packing-list-{po}.pdf"
+                packing = by_language(language, f"packing-list-{po}.pdf", f"lista-de-empaque-{po}.pdf", f"packing-list-{po}.pdf")
                 packing_text = po_packing_text(po, quantity, product, product_es, language)
-                documents.append(packing_text)
                 attachments.append((packing, tiny_pdf(packing_text), "application", "pdf", False))
                 roles[packing] = "packing_list"
                 logo = f"logo-{index:04d}.png"
@@ -593,31 +566,31 @@ def make_po_inbox_fixture(seed, index, spec, rng):
                     tags.add("inline_image")
                 rng.shuffle(attachments)
         if subject_has_po:
-            subject = rng.choice((f"PO {po}", f"Purchase order {po}", f"Orden de compra {po}"))
+            subject = rng.choice(by_language(language, (f"PO {po}", f"Purchase order {po}", f"Order {po}"),
+                                             (f"OC {po}", f"Orden de compra {po}", f"Pedido {po}"),
+                                             (f"PO {po}", f"Purchase order {po}", f"Orden de compra {po}")))
     else:
         if category in MUTATIONS:
             tags.add(category)
         if category == "other_business":
             tags.add("out_of_office")
             body = out_of_office_text(language)
-            subject = "Automatic reply / Respuesta automatica"
+            subject = by_language(language, "Automatic reply", "Respuesta automatica", "Automatic reply / Respuesta automatica")
         else:
             body = non_order_text(category, po, language)
-            subject = {"change": f"Change to {po}", "cancellation": f"Please cancel {po}",
+            english = {"change": f"Change to {po}", "cancellation": f"Please cancel {po}",
                        "status_question": f"Where is {po}?", "quote_request": "Quote request",
                        "invoice": f"Invoice FIC-INV-{po[4:]}", "spam": "You may have won!",
                        "unsure": "Here it is"}[category]
+            spanish = {"change": f"Cambio en {po}", "cancellation": f"Favor cancelar {po}",
+                       "status_question": f"Donde esta {po}?", "quote_request": "Solicitud de cotizacion",
+                       "invoice": f"Factura FIC-INV-{po[4:]}", "spam": "Puede haber ganado!",
+                       "unsure": "Aqui esta"}[category]
+            subject = by_language(language, english, spanish, english + " / " + spanish)
         if category == "invoice":
             name = f"FIC-INV-{po[4:]}.pdf"
             invoice_text = po_invoice_text(po, language)
-            documents.append(invoice_text)
             attachments.append((name, tiny_pdf(invoice_text), "application", "pdf", False))
-
-    # Language label = languages of ALL the text really emitted (body plus every PDF/scan
-    # attachment, case-insensitive). Subject lines and file names are excluded (see README).
-    emitted = text_languages("\n".join([body, *documents]))
-    language = "en-es" if emitted == {"en", "es"} else emitted.pop()
-    tags.add({"en": "english", "es": "spanish"}.get(language, "code_switching"))
 
     display, address = pick_sender(spec["sender_case"], rng, index)
     known = spec["sender_case"] in KNOWN_SENDER_CASES

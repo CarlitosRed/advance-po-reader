@@ -227,13 +227,23 @@ The default profile's rows have none of these and validate exactly as before.
 | `lane_reason` | Present exactly when `lane` differs from the category's canonical lane: `text_only_order`, `unknown_sender` (order, sender not known) or `status_reply_needs_look` (status question). The lane is then `needs_a_look` |
 | `attachment_roles` | a map from each attachment filename to `order`, `packing_list` or `logo_image`; the `order` files equal `where_order.attachments`. Per the 2026-10-09 decision nobody picks the attachment: the system runs every document-like file, so packing lists are runnable files that are not orders and tiny logos (under 5 KB, under 100 px) are skipped |
 
-Labels are derived from the content actually emitted: `language` and the language
-tag come, case-insensitively and word by word, from the body (if any) plus the text of
-EVERY PDF and scan attachment (order, packing list, invoice), so no document carries
-wording of a language the label does not name. A Spanish document is Spanish
-throughout (heading, units, request, scan banner, product nouns); an `en-es` email shows both
-languages. Subject lines and file names are not counted. A test recomputes language, tags, `where_order`, `number_of_orders`,
-`attachment_roles` and `sender_case` from every email's bytes. Order PNG scans
+Every label is set by construction, never guessed from the text afterwards. The
+generator first picks each email's `language`, then writes everything a reader
+sees in that language: body, subject, attachment file names, and the text of every
+PDF and scan (order, packing list, invoice). A Spanish email is Spanish throughout
+(heading, units, request, scan banner, product nouns, subject, `lista-de-empaque-`
+file name); an `en-es` email shows both languages. Category, tags, `where_order`,
+`number_of_orders`, `attachment_roles`, `sender_case` and lane come from the same
+construction choices. A test then checks the labels independently against every
+email's bytes. For language it uses its own word lists in which only words that
+exist in one language decide; shared tokens count for neither (file formats such
+as `pdf`/`png`, ids and product codes, and words such as `a`, `no`, `si`, `de`,
+`la`, `en`). It fails if an `en` or `es` email shows any word exclusive to the
+other language in its body, subject, any attachment file name, text or metadata,
+and it accepts `en-es` only when both languages' exclusive words appear. Sender
+and recipient display names are proper names and are not counted. The test runs
+over seven seeds (1,029 emails). It also recomputes tags, `where_order`,
+`number_of_orders`, `attachment_roles` and `sender_case` from the bytes. Order PNG scans
 are noisy pages at least 100 px on each side and well over 5 KB, so the
 tiny-image skip rule (under 5 KB or under 100x100 px) never skips an order;
 logo PNGs stay 48x32 px and about 0.2 KB.

@@ -390,34 +390,101 @@ class PoInboxTests(unittest.TestCase):
 
     # --- labels recomputed from the emitted bytes (class: label assigned before content edited) ---
 
-    # Independent word lists (not imported from the generator). Matching is case-insensitive and
-    # URLs are ignored; a word in neither list fails the test, so new text cannot slip through.
-    EN = frozenset("""new purchase order please supply units goods fictional scan stand in packing list reference only confirm this
-    thank you find the attached as per pdf po receipt change earlier reduce quantity to replaces do not create a cancel entirely
-    ship it is being placed quote cloud stools stool price enquiry we have invoice for already supplied under payment notice
-    purchase when will arrive tracking question place another our office has moved imaginary blue moon building update hours win an
-    glitter planet unsolicited promotion request visit here thing discussed can handle i cannot say whether or revision automatic
-    reply am out of until monday auto tray star rack moon these""".split())
-    ES = frozenset("""orden compra nueva por favor suministrar unidades de estos bienes ficticio ficticia simulacro de escaneo empaque
-    lista referencia solo confirmar este pedido nuevo adjunto la gracias oc segun el recepcion cambiar anterior reducir cantidad
-    reemplaza cancelar completo enviar se solicita un cotizar bancos nube consulta precio hemos hecho factura ya o entregados del
-    cobro es una compra cuando llega seguimiento hacer otro oficina traslado al edificio luna azul actualizar horario gane planeta
-    brillantina promocion solicitada sin solicitud lo conversado puede tramitar aclaro si cotizacion cambio respuesta automatica
-    estoy fuera hasta lunes taburete bandeja estante estrella consultar crear imaginaria imaginario""".split())
-    NEUTRAL = frozenset("fic fict zunel vopra nemul inv no".split())
+    # Independent vocabulary (not imported from the generator, which has none: it sets the language
+    # label by construction). Three disjoint lists. Only a word that exists in ONE language decides;
+    # SHARED tokens count for neither: file-format acronyms, ids and product codes, proper-name parts,
+    # and short or common words that are real words in both languages (Spanish "a" is a preposition,
+    # "solo"/"favor"/"auto"/"revision"/"has"/"lo" are words in both). Matching is case-insensitive;
+    # URLs and email addresses are ignored; a word in no list fails, so new text cannot slip through.
+    EN_ONLY = frozenset("""new purchase order please supply units unit these goods fictional scan stand in packing list reference
+    only confirm this thank you find the attached as per po receipt change earlier reduce quantity to replaces do not create cancel
+    entirely ship it is being placed quote cloud stools stool price enquiry we have invoice for already supplied under payment notice
+    when will arrive tracking question place another our office moved imaginary blue moon building update hours win an glitter
+    planet unsolicited promotion request visit here thing discussed can handle i cannot say whether or automatic reply am out of
+    until monday tray star rack documents processing hello where may won""".split())
+    ES_ONLY = frozenset("""orden compra nueva nuevo por suministrar unidades unidad estos este bienes ficticio ficticia simulacro
+    escaneo empaque lista referencia confirmar pedido adjunto gracias oc segun el recepcion cambiar anterior reducir cantidad
+    reemplaza cancelar completo enviar se solicita un una cotizar bancos nube consulta precio hemos hecho factura ya entregados del
+    cobro es cuando llega seguimiento hacer otro oficina traslado al edificio luna azul actualizar horario gane planeta
+    brillantina promocion solicitada sin solicitud conversado puede tramitar aclaro cotizacion cambio respuesta automatica estoy
+    fuera hasta lunes taburete bandeja estante estrella consultar crear imaginaria imaginario documentos para hola aqui donde esta
+    haber ganado""".split())
+    SHARED = frozenset("""pdf png jpg eml logo fic fict inv zunel vopra nemul a o e y no si en la de color total mensaje solo
+    favor auto revision has lo""".split())
 
     @classmethod
     def languages_of(cls, text):
+        """Languages whose EXCLUSIVE words appear in `text` (shared tokens are neutral)."""
         found = set()
-        for word in re.findall(r"[a-z]+", re.sub(r"https?://\S+", " ", text.lower())):
-            if word in cls.NEUTRAL:
+        for word in re.findall(r"[a-z]+", re.sub(r"https?://\S+|[\w.+-]+@[\w.-]+", " ", text.lower())):
+            if word in cls.SHARED:
                 continue
-            in_en, in_es = word in cls.EN, word in cls.ES
+            in_en, in_es = word in cls.EN_ONLY, word in cls.ES_ONLY
             if not (in_en or in_es):
                 raise AssertionError(f"word in no language list: {word!r} in {text!r}")
-            if in_en != in_es:
-                found.add("en" if in_en else "es")
+            found.add("en" if in_en else "es")
         return found
+
+    @staticmethod
+    def label_for(found):
+        """en-es only when BOTH languages' exclusive words appear; otherwise the one language seen."""
+        if not found:
+            raise AssertionError("no language-exclusive word in the email")
+        return "en-es" if found == {"en", "es"} else next(iter(found))
+
+    @staticmethod
+    def pdf_strings(payload):
+        """Every literal string anywhere in the PDF (page text AND any /Info metadata) plus metadata hex strings."""
+        texts = [re.sub(rb"\\([\\()])", rb"\1", m).decode("latin-1")
+                 for m in re.findall(rb"\(((?:\\.|[^\\)])*)\)", payload)]
+        for hexed in re.findall(rb"/(?:Title|Author|Subject|Keywords|Creator|Producer|Lang)\s*<([0-9A-Fa-f\s]*)>", payload):
+            texts.append(bytes.fromhex(re.sub(rb"\s", b"", hexed).decode("ascii")).decode("latin-1"))
+        return "\n".join(texts)
+
+    @staticmethod
+    def png_metadata(payload):
+        """Text of any tEXt/zTXt/iTXt chunk (the generator writes none)."""
+        pos, texts = 8, []
+        while pos < len(payload):
+            size = struct.unpack(">I", payload[pos:pos + 4])[0]
+            kind, data = payload[pos + 4:pos + 8], payload[pos + 8:pos + 8 + size]
+            if kind == b"tEXt":
+                texts.append(data.replace(b"\0", b" ").decode("latin-1"))
+            elif kind == b"zTXt":
+                key, _, rest = data.partition(b"\0")
+                texts.append(key.decode("latin-1") + " " + zlib.decompress(rest[1:]).decode("latin-1"))
+            elif kind == b"iTXt":
+                texts.append(data.replace(b"\0", b" ").decode("utf-8", "replace"))
+            pos += 12 + size
+        return "\n".join(texts)
+
+    def visible_pieces(self, message):
+        """(where, text) for the body, the subject, and each attachment's file name, content and metadata.
+        Sender and recipient display names are proper names and are not language evidence."""
+        body_part = message.get_body(preferencelist=("plain",))
+        pieces = [("body", body_part.get_content() if body_part else ""), ("subject", str(message["Subject"] or ""))]
+        for part in message.iter_attachments():
+            name, payload = part.get_filename(), part.get_payload(decode=True)
+            pieces.append((f"filename {name}", name))
+            if part.get_content_type() == "application/pdf":
+                pieces.append((f"pdf {name}", self.pdf_strings(payload)))
+            else:
+                pieces.append((f"png {name}", self.attachment_text(part) + "\n" + self.png_metadata(payload)))
+        return pieces
+
+    def check_language(self, row, message, where=""):
+        """The label must match the visible text: a single-language email has NO exclusive word of the
+        other language anywhere visible, and en-es needs exclusive words of both."""
+        per_piece = [(place, self.languages_of(text)) for place, text in self.visible_pieces(message)]
+        found = set().union(*(langs for _, langs in per_piece))
+        language = self.label_for(found)
+        self.assertEqual(row["language"], language, (where, row["id"], per_piece))
+        if language != "en-es":
+            for place, langs in per_piece:
+                self.assertLessEqual(langs, {language}, (where, row["id"], place))
+        tag = {"en": "english", "es": "spanish", "en-es": "code_switching"}[language]
+        self.assertEqual({"english", "spanish", "code_switching"} & set(row["mutation_tags"]), {tag}, (where, row["id"]))
+        return language
 
     PO_ID = re.compile(r"FIC-\d{6}-\d{4}(?:-\d)?")
 
@@ -494,18 +561,9 @@ class PoInboxTests(unittest.TestCase):
                 attachments = {part.get_filename(): part for part in message.iter_attachments()}
                 texts = {name: self.attachment_text(part) for name, part in attachments.items()}
                 is_order_doc = {name: "SCAN STAND-IN" in text or "SIMULACRO DE ESCANEO" in text for name, text in texts.items()}
-                # language: EVERY emitted text, the body and every PDF/scan attachment (order or reference).
-                # Subject lines and file names are excluded (README).
-                pieces = [body] + [text for text in texts.values() if text]
-                found = set().union(*(self.languages_of(piece) for piece in pieces))
-                self.assertTrue(found)
-                language = "en-es" if found == {"en", "es"} else found.pop()
-                self.assertEqual(row["language"], language)
-                if language != "en-es":  # a single-language label must hold for every document and body on its own
-                    for piece in pieces:
-                        self.assertLessEqual(self.languages_of(piece), {language}, piece)
+                # language: body, subject, every attachment's name, text and metadata (see check_language).
+                language = self.check_language(row, message)
                 language_tag = {"en": "english", "es": "spanish", "en-es": "code_switching"}[language]
-                self.assertEqual({"english", "spanish", "code_switching"} & set(row["mutation_tags"]), {language_tag})
                 body_has_po = bool(self.PO_ID.search(body))
                 order_names = sorted(n for n in attachments if is_order_doc[n])
                 if row["category"] == "order":
@@ -539,25 +597,94 @@ class PoInboxTests(unittest.TestCase):
                 self.assertEqual(row["sender_case"], self.sender_case_from_bytes(message))
         self.assertEqual(set(roles_seen), {"order", "packing_list", "logo_image"})
 
-    def test_language_labels_hold_for_other_seeds_and_no_foreign_text_in_single_language_emails(self):
-        """Same recomputation over three more seeds: body plus ALL attachments, case-insensitive."""
-        for seed in (17, -1, 0):
-            directory = self.root / f"lang-{seed}"
-            rows = generate.generate(seed, directory, "po-inbox")
+    # Round-3 review: wholly Spanish emails that an earlier text heuristic labelled en-es because
+    # "pdf" (recaps) or the Spanish preposition "a" (changes) counted as English.
+    ROUND3_SPANISH = {
+        20261012: (12, 27, 37, 84, 115, 138), 17: (58, 61, 65, 116, 118, 120),
+        -1: (18, 58, 82, 109, 129), 0: (3, 23, 40, 50, 88, 101, 108, 137),
+    }
+    # The four review seeds (588 emails) plus three more; seed 1 is skipped because Random(1) == Random(-1).
+    LANGUAGE_SEEDS = (SEED, 17, -1, 0, 2026, 42, 99)
+
+    def seed_set(self, seed):
+        if seed == SEED:
+            return self.expected, self.generated
+        directory = self.root / f"lang-{seed}"
+        if not directory.exists():
+            generate.generate(seed, directory, "po-inbox")
+        rows = [json.loads(line) for line in (directory / "expected.jsonl").read_text(encoding="utf-8").splitlines()]
+        return rows, directory
+
+    def test_language_vocabulary_is_disjoint_and_shared_tokens_are_neutral(self):
+        self.assertFalse(self.EN_ONLY & self.ES_ONLY)
+        self.assertFalse(self.SHARED & (self.EN_ONLY | self.ES_ONLY))
+        for token in ("PDF", "a", "No", "png", "FIC-INV-839950", "FICT-VOPRA", "logo-0004.png", "si en la de y e o",
+                      "color total mensaje solo favor auto revision"):
+            self.assertEqual(self.languages_of(token), set(), token)
+        # The two round-3 counterexamples, verbatim: wholly Spanish.
+        self.assertEqual(self.languages_of("OC FIC-839950-0012 segun el PDF adjunto: 14 unidades de FICT-VOPRA BANDEJA LUNA.\n"
+                                           "Favor confirmar recepcion."), {"es"})
+        self.assertEqual(self.languages_of("Cambiar pedido anterior FIC-217664-0061: reducir cantidad a 2. Reemplaza la "
+                                           "cantidad anterior; no crear otro pedido."), {"es"})
+        self.assertEqual(self.languages_of("PO FIC-1 as per the attached PDF"), {"en"})
+        with self.assertRaises(AssertionError):
+            self.languages_of("an unlisted wordzz")
+
+    def test_en_es_only_when_both_languages_exclusive_words_appear(self):
+        self.assertEqual(self.label_for(self.languages_of("Adjunto la orden de compra. PDF a no si")), "es")
+        self.assertEqual(self.label_for(self.languages_of("Please find the attached PDF. a no")), "en")
+        self.assertEqual(self.label_for(self.languages_of("Please find the attached PDF. / Adjunto la orden de compra.")), "en-es")
+        with self.assertRaises(AssertionError):
+            self.label_for(self.languages_of("PDF a no FIC-INV-1 logo.png"))  # shared tokens alone decide nothing
+        bilingual = 0
+        for seed in self.LANGUAGE_SEEDS:
+            rows, directory = self.seed_set(seed)
+            for row in rows:
+                message = BytesParser(policy=policy.default).parsebytes((directory / f"{row['id']}.eml").read_bytes())
+                found = set().union(*(self.languages_of(text) for _, text in self.visible_pieces(message)))
+                self.assertEqual(row["language"] == "en-es", found == {"en", "es"}, (seed, row["id"], found))
+                bilingual += row["language"] == "en-es"
+        self.assertGreater(bilingual, 100)
+
+    def test_language_labels_match_visible_text_over_seven_seeds(self):
+        """Every email of seven seeds: body, subject, file names, PDF text and metadata, scan pixels."""
+        checked = Counter()
+        for seed in self.LANGUAGE_SEEDS:
+            rows, directory = self.seed_set(seed)
             counts = Counter()
             for row in rows:
                 message = BytesParser(policy=policy.default).parsebytes((directory / f"{row['id']}.eml").read_bytes())
-                body_part = message.get_body(preferencelist=("plain",))
-                pieces = [body_part.get_content() if body_part else ""]
-                pieces += [self.attachment_text(part) for part in message.iter_attachments()]
-                found = set().union(*(self.languages_of(piece) for piece in pieces))
-                language = "en-es" if found == {"en", "es"} else found.pop()
-                self.assertEqual(row["language"], language, (seed, row["id"]))
-                if language != "en-es":
-                    for piece in pieces:
-                        self.assertLessEqual(self.languages_of(piece), {language}, (seed, row["id"], piece))
-                counts[language] += 1
+                counts[self.check_language(row, message, where=seed)] += 1
             self.assertEqual(set(counts), {"en", "es", "en-es"}, seed)
+            by_id = {row["id"]: row for row in rows}
+            for number in self.ROUND3_SPANISH.get(seed, ()):
+                row = by_id[f"poinbox-{number:04d}"]
+                self.assertEqual(row["language"], "es", (seed, number))
+                self.assertIn("spanish", row["mutation_tags"])
+                self.assertNotIn("code_switching", row["mutation_tags"])
+                checked["round3"] += 1
+            checked["emails"] += len(rows)
+        self.assertEqual(checked, Counter(emails=7 * 147, round3=25))
+
+    def test_language_check_fails_on_foreign_subject_file_name_or_pdf_metadata(self):
+        """The checker itself must catch a foreign word outside the body (guards against a blind test)."""
+        row = next(r for r in self.expected if r["language"] == "es" and "attachment_roles" in r)
+        raw = (self.generated / f"{row['id']}.eml").read_bytes()
+        self.check_language(row, BytesParser(policy=policy.default).parsebytes(raw))
+        message = BytesParser(policy=policy.default).parsebytes(raw)
+        message.replace_header("Subject", "Purchase order")
+        with self.assertRaises(AssertionError):
+            self.check_language(row, message)
+        message = BytesParser(policy=policy.default).parsebytes(raw)
+        message.add_attachment(generate.tiny_pdf("LISTA DE EMPAQUE FICTICIA"), maintype="application", subtype="pdf",
+                               filename="packing-list-FIC-1.pdf")
+        with self.assertRaises(AssertionError):
+            self.check_language(row, message)
+        message = BytesParser(policy=policy.default).parsebytes(raw)
+        info = generate.tiny_pdf("ORDEN DE COMPRA NUEVA").replace(b"trailer\n<< /Size 6", b"trailer\n<< /Info << /Title (Purchase order) >> /Size 6")
+        message.add_attachment(info, maintype="application", subtype="pdf", filename="FIC-1.pdf")
+        with self.assertRaises(AssertionError):
+            self.check_language(row, message)
 
     def test_image_sizes_match_their_role_under_the_tiny_image_rule(self):
         """Order scans must be runnable (>= 5 KB and >= 100x100 px, with margin); logos must be skippable."""
