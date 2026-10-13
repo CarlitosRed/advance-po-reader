@@ -24,3 +24,47 @@ MUTATIONS = (
     "spam", "spanish", "english", "code_switching", "long_signature",
     "html_only", "injection_order", "injection_non_order", "filename_injection",
 )
+
+# --- PO-inbox profile additions (optional; the default profile never uses them) ---
+# Extra mutation tags only the po-inbox profile emits. MUTATIONS stays frozen.
+PO_INBOX_MUTATIONS = (
+    "empty_body", "cover_note", "recap_in_body", "multi_attachment",
+    "packing_list_attachment", "logo_image_attachment", "text_only_order", "out_of_office",
+)
+# Optional expected-row field `lane_reason`: present exactly when the row's lane
+# differs from CATEGORY_LANE[category]. The only legal deviation is needs_a_look.
+LANE_REASONS = {
+    "text_only_order": "order",             # phase 1 does not read orders from email text
+    "unknown_sender": "order",              # real-looking order, sender not on the known list
+    "status_reply_needs_look": "status_question",  # status replies in the PO inbox go to Check
+}
+# (category, lane) pairs a classifier answer may use besides the canonical lane.
+ANSWER_LANE_EXCEPTIONS = (("order", "needs_a_look"), ("status_question", "needs_a_look"))
+# Optional expected-row field `sender_case`.
+SENDER_CASES = (
+    "known_address", "known_domain", "case_variant", "plus_address",
+    "unknown", "display_name_trick", "subdomain_trick", "typo_domain",
+)
+KNOWN_SENDER_CASES = SENDER_CASES[:4]
+ATTACHMENT_ROLES = ("order", "packing_list", "logo_image")
+
+
+def sender_is_known(address, entries):
+    """Reference rule for the known-sender hint (fictional test oracle).
+
+    `address` is the real address (addr-spec), never a display name. Case is
+    ignored, a `+tag` on the local part is ignored, an entry containing `@` must
+    equal the whole address, and an entry without `@` must equal the whole
+    domain exactly (a subdomain or a longer host name does not match).
+    """
+    local, _, domain = address.strip().lower().rpartition("@")
+    local = local.split("+", 1)[0]
+    for entry in entries:
+        entry = entry.strip().lower()
+        if "@" in entry:
+            entry_local, _, entry_domain = entry.rpartition("@")
+            if (entry_local.split("+", 1)[0], entry_domain) == (local, domain):
+                return True
+        elif entry and entry == domain:
+            return True
+    return False

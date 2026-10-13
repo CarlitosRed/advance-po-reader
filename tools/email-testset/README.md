@@ -1,6 +1,6 @@
 # Fictional email test set (slice A)
 
-This offline tool generates 200 fictional emails, frozen expected labels, and a
+This offline tool generates 200 fictional emails (plus a second 147-email `po-inbox` set, see below), frozen expected labels, and a
 scorer for later classifier experiments. It uses Python 3.12's standard library.
 It does not implement an intake parser, a classifier, a provider, a mailbox,
 attachment extraction, product approval, or the shadow week. No API call is made.
@@ -132,3 +132,104 @@ routes separately if that workflow is built. No digest or rescue is simulated.
 The tests construct perfect, lost-order, review-referral, false-positive and
 malformed answer files solely to verify this scorer. Perfect-answer test results
 are arithmetic checks, not measured classifier performance.
+
+## Second set: the `po-inbox` profile
+
+A second fictional set shaped like a dedicated PO address: about 86 percent
+orders, plus changes, cancellations, status questions, quote requests and some
+junk. The 200-email default profile above is unchanged (same bytes for the same
+seed) and remains the broad regression set. Run from the repository root:
+
+```powershell
+py -3.12 tools/email-testset/generate.py --seed 20261012 --out tools/email-testset/generated/po-inbox-20261012 --profile po-inbox
+py -3.12 tools/email-testset/score.py --expected tools/email-testset/generated/po-inbox-20261012/expected.jsonl --answers answers.jsonl
+py -3.12 -m unittest discover -s tests/email_testset -p "test_*.py" -v
+```
+
+The generator prints the coverage table below. Output: 147 `poinbox-NNNN.eml` files
+(shuffled into one working day, Monday 12 Oct 2026, three minutes apart),
+`expected.jsonl`, and `known-senders.txt`. Counts are fixed by design, so every
+seed keeps the same coverage; the seed changes PO numbers, quantities, products,
+languages, which known contact writes, and the order of the inbox.
+
+| Group | Item | Emails |
+| --- | --- | ---: |
+| category | order (136 new orders) | 126 |
+| category | change / cancellation / status_question / quote_request | 3 / 3 / 3 / 3 |
+| category | invoice / spam / unsure | 2 / 2 / 2 |
+| category | other_business (out-of-office auto replies) | 3 |
+| lane | order (Sure) / needs_a_look / not_an_order | 85 / 55 / 7 |
+| lane reason | text_only_order / unknown_sender / status_reply_needs_look | 14 / 27 / 3 |
+| order scenario | PDF only, empty body (`empty_body`) | 44 |
+| order scenario | PDF plus short cover note (`cover_note`) | 24 |
+| order scenario | PDF plus a recap of it in the body (`recap_in_body`) | 16 |
+| order scenario | PO PDF plus packing-list PDF plus small logo PNG (`multi_attachment`) | 16 |
+| order scenario | two or three PO PDFs in one email (`multiple_orders`) | 6 |
+| order scenario | PNG scan stand-in (`png_scan_standin`) | 6 |
+| order scenario | order only in the text (`text_only_order`) | 14 |
+| sender case, all emails | known_address / known_domain / case_variant / plus_address | 62 / 23 / 14 / 14 |
+| sender case, all emails | unknown / display_name_trick / subdomain_trick / typo_domain | 13 / 7 / 8 / 6 |
+| sender case, orders only | the same eight cases | 56 / 18 / 12 / 12 / 8 / 7 / 7 / 6 |
+
+`generate.coverage_table(rows)` prints the exact counts; tests assert them.
+
+### Expected lanes in this set
+
+The lane follows the PM decisions of 2026-10-09 and 2026-10-12. A true order
+keeps `category: "order"` and a positive `number_of_orders`, so the scorer still
+counts it as an order that must not be lost, but its lane can be `needs_a_look`:
+
+- `text_only_order`: the order is only in the email text (phase 1 does not read
+  orders from text), so it goes to Check.
+- `unknown_sender`: a real-looking order whose sender is not on the known list.
+- `status_reply_needs_look`: status questions in the PO inbox go to Check.
+- Changes, cancellations, quote requests and unclear mail go to Check (never
+  Sure); invoices, spam and out-of-office replies are `not_an_order`.
+- Everything else is a Sure order: a known sender with an attachment.
+
+### Known senders and the sender cases
+
+`known-senders.txt` is written next to the emails: one entry per line, a full
+address (contains `@`) or a bare domain, all `example.test`, plain ASCII with LF
+endings. The reference rule is `email_testset_contract.sender_is_known(address,
+entries)`: case is ignored, a `+tag` on the local part is ignored, an address
+entry must match the whole address, a domain entry must equal the whole domain
+(a subdomain or a longer host name does not match). It judges the real address,
+never the display name. A test recomputes `known_sender` from each parsed email.
+
+| `sender_case` | What the email shows | Known? |
+| --- | --- | --- |
+| `known_address` | an address on the list | yes |
+| `known_domain` | any person at a listed domain | yes |
+| `case_variant` | listed address with upper-case letters | yes |
+| `plus_address` | listed address with `+poNNNN` added | yes |
+| `unknown` | a stranger | no |
+| `display_name_trick` | display name is a listed address, real address is a stranger's | no |
+| `subdomain_trick` | `mail.<listed domain>` or `<listed host>.relay.example.test` | no |
+| `typo_domain` | a listed domain with one letter missing | no |
+
+### Optional expected fields (po-inbox rows only)
+
+The default profile's rows have none of these and validate exactly as before.
+
+| Field | Meaning / grammar |
+| --- | --- |
+| `sender` | The real From address as sent |
+| `sender_case` | One of the eight cases above |
+| `known_sender` | Boolean; must agree with `sender_case` |
+| `lane_reason` | Present exactly when `lane` differs from the category's canonical lane: `text_only_order`, `unknown_sender` (order, sender not known) or `status_reply_needs_look` (status question). The lane is then `needs_a_look` |
+| `attachment_roles` | a map from each attachment filename to `order`, `packing_list` or `logo_image`; the `order` files equal `where_order.attachments`. Per the 2026-10-09 decision nobody picks the attachment: the system runs every document-like file, so packing lists are runnable files that are not orders and tiny logos (under 5 KB, under 100 px) are skipped |
+
+Extra mutation tags (`PO_INBOX_MUTATIONS`): `empty_body`, `cover_note`,
+`recap_in_body`, `multi_attachment`, `packing_list_attachment`,
+`logo_image_attachment`, `text_only_order`, `out_of_office`. The default profile
+keeps using only `MUTATIONS`.
+
+### Scoring this set
+
+An answer may now also say `order` or `status_question` with lane `needs_a_look`
+(the only added category/lane pairs; every other pair stays invalid). The pass
+bar is unchanged: at least 100 true-order emails and zero lost orders. With
+perfect answers `order_or_needs_a_look_recall` is 1.0 and `order_recall` is the
+share of orders expected in Sure (85 of 126), because text-only orders and
+unknown-sender orders are expected in Check, not Sure.
