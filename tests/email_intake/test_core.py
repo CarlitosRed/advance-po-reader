@@ -340,20 +340,23 @@ class CoreTests(unittest.TestCase):
                 render(text)
 
     def test_body_order_prepares_derived_pdf_never_calls_reader(self):
-        raw = email()
+        # E2 makes text-only orders review-only. Preserve the renderer coverage
+        # on the still-supported body-plus-attachment route.
+        raw = email(attachment=("application/pdf", "fictional.pdf", b"%PDF-fictional"))
         (self.drop / "a.eml").write_bytes(raw)
         result = run(self.drop, self.out, FakeProvider({sha256(raw).hexdigest(): decision("order")}))[0]
-        self.assertEqual(result["reader_file_count"], 1)
+        self.assertEqual(result["reader_file_count"], 2)
         record = json.loads(next((self.out / "records").glob("*.json")).read_text())
-        self.assertTrue(record["reader_files"][0]["derived"])
-        self.assertTrue(record["reader_files"][0]["human_selection_required"])
+        self.assertTrue(record["reader_files"][1]["derived"])
+        self.assertTrue(record["reader_files"][1]["human_selection_required"])
 
     def test_unrenderable_body_stays_visible_without_a_lossy_pdf(self):
-        raw = email(body="Pedido ficticio: 2 sillas, ₡ 10")
+        raw = email(body="Pedido ficticio: 2 sillas, ₡ 10",
+                    attachment=("application/pdf", "fictional.pdf", b"%PDF-fictional"))
         (self.drop / "a.eml").write_bytes(raw)
         result = run(self.drop, self.out, FakeProvider({sha256(raw).hexdigest(): decision("order")}))[0]
         self.assertEqual(result["reason_code"], "PDF_LIMIT")
-        self.assertEqual(result["reader_file_count"], 0)
+        self.assertEqual(result["reader_file_count"], 1)
         record = json.loads(next((self.out / "records").glob("*.json")).read_text())
         self.assertIn("₡ 10", record["body"])
 
@@ -435,7 +438,8 @@ class CoreTests(unittest.TestCase):
         results = run(FIXTURES, self.out, FakeProvider(answers))
         self.assertEqual(len(results), 12)
         self.assertEqual([r["lane"] for r in results], [r["final_lane"] for r in expected])
-        self.assertEqual(sum(r["lane"] == "order" for r in results), 3)
+        self.assertEqual(sum(r["lane"] == "order" for r in results), 0)
+        self.assertEqual(sum(r["reason_code"] == "TEXT_ONLY_ORDER" for r in results), 3)
         self.assertEqual(len((self.out / "quiet-digest.jsonl").read_text().splitlines()), 1)
 
     def test_cli_offline_and_live_missing_ledger(self):

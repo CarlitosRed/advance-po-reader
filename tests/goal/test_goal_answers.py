@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from backend.models import CatalogProduct, CatalogNamespace, CatalogPool, CatalogPoolMember, ReviewEvent
-from conftest import ROOT, PRODUCTS, ok, process, product_row, review_body
+from tests.goal.conftest import ROOT, PRODUCTS, ok, process, product_row, review_body
 
 pytestmark = pytest.mark.goal
 
@@ -139,6 +139,7 @@ def test_goal_10_review_created_product_never_matches_another_tenant(desk):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("safety_net_finish_blocking", [False, True], indirect=True)
 def test_goal_6_uncertain_line_cannot_finish_with_acknowledgement_or_no_match(desk):
     row = product_row(1, code="MISSING-999", description="Unmapped synthetic fixture", quantity="1")
     result = process(desk, [row])
@@ -147,7 +148,8 @@ def test_goal_6_uncertain_line_cannot_finish_with_acknowledgement_or_no_match(de
     ok(desk.client.post(f"/runs/{result.run['id']}/reviews", json=review_body(row, "not_a_product")))
     summary = ok(desk.client.get(f"/runs/{result.run['id']}/summary"))
     assert summary["excluded_rows"][0]["decision"] == "not_a_product"
-    assert summary["can_finish_review"]
+    assert summary["can_finish_review"] is (not desk.settings.safety_net_finish_blocking)
+    assert ("independent_page_product_counts_required" in summary["blockers"]) is desk.settings.safety_net_finish_blocking
 
 
 def test_goal_6_review_product_preserves_pool_scope_and_visible_origin(desk, goal_engine):

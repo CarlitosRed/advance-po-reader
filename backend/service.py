@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
-from backend.api_models import RunRequest, ReviewRequest
+from backend.api_models import RunRequest, ReviewRequest, PageCountRequest
 from backend.catalog import CatalogScopeError, retrieve_candidates
 from backend.contracts import ExtractionPayload, validate_payload, parsed_payload
 from backend.errors import BackendError
@@ -197,6 +197,9 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                 advance(run, "failed")
                 run.outcome_code = "unsupported_document_type" if payload.document_type == "unsupported" else "needs_classification"
             else:
+                if settings.safety_net_finish_blocking:
+                    from backend.source_checks import source_grounding
+                    run.parses = {**run.parses, "source_grounding": source_grounding(payload, data, source)}
                 partial = payload.partial or not any(row.row_kind == "product" for row in payload.rows)
                 for row in payload.rows:
                     if row.row_kind != "product":
@@ -207,7 +210,8 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                             session, tenant, source.vendor_id,
                             [identifier.model_dump(mode="json") for identifier in row.identifiers],
                             row.description.raw_value, settings.candidate_limit,
-                            vendor_ids=scoped_vendors, pool_id=run.catalog_pool_id)
+                            vendor_ids=scoped_vendors, pool_id=run.catalog_pool_id,
+                            safety_net_finish_blocking=settings.safety_net_finish_blocking)
                     except (CatalogScopeError, ValueError) as error:
                         partial = True
                         reason = ("Catalog scope could not be verified for this run; human review required"
@@ -217,8 +221,9 @@ def process_run(session, tenant, run_id, settings, provider_override=None):
                                             "retrieval_version": "catalog-retrieval-v2", "evidence": [],
                                             "reason": reason}
                     session.add(Suggestion(tenant_id=tenant, run_id=run.id, row_id=row.row_id, **candidate_result))
-                advance(run, "partial" if partial else "completed")
-                run.outcome_code = "review_required" if partial else "ready_for_human_review"
+                advance(run, "partial" if partial or settings.safety_net_finish_blocking else "completed")
+                run.outcome_code = ("review_required" if partial else
+                    "independent_coverage_required" if settings.safety_net_finish_blocking else "ready_for_human_review")
     run.finished_at = now()
     session.commit()
     return run
@@ -236,13 +241,14 @@ def cancel_run(session, tenant, run_id):
     return run
 
 
-def review_run(session, tenant, run_id, request: ReviewRequest):
+def review_run(session, tenant, run_id, request: ReviewRequest, settings=None):
     run = run_for(session, tenant, run_id, lock=True)
     if run.state not in {"completed", "partial"} or run.result is None:
         raise BackendError("run_has_no_reviewable_purchase_order", 409)
     payload = ExtractionPayload.model_validate(run.result)
     events = session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant, ReviewEvent.run_id == run_id)
                              .order_by(*ReviewEvent.audit_order())).all()
+    evidence_reference = request.model_dump(mode="json")["evidence_reference"]
     request_hash = fingerprint(request.model_dump(mode="json"))
     if request.action == "new_product":
         prior = next((event for event in events if event.action == "new_product" and
@@ -258,48 +264,107 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
     new_value = None
     if request.action == "resolve":
         from backend.review_summary import resolution_blockers
-        blockers = resolution_blockers(payload, [serialize(event) for event in events], tier_by_row)
+        from backend.coverage import page_coverage
+        source = source_for(session, tenant, run.source_document_id)
+        if settings and settings.safety_net_finish_blocking:
+            read_source(settings.storage_directory, source.storage_reference, source.sha256)
+        checks = page_coverage(payload, [serialize(event) for event in events], source)
+        from backend.source_checks import grounding_projection
+        grounding = grounding_projection(run, [serialize(event) for event in events], source)
+        blockers = resolution_blockers(payload, [serialize(event) for event in events], tier_by_row, checks, grounding,
+            safety_net_finish_blocking=bool(settings and settings.safety_net_finish_blocking), source=source, run_id=run.id)
         if blockers:
             raise BackendError(blockers[0], 409)
         old_value, new_value = {"review_state": run.review_state}, {"review_state": "resolved"}
         run.review_state = "resolved"
-    elif request.action in {"acknowledge_page", "acknowledge_document"}:
+    elif request.action == "confirm_unavailable_page_text":
+        from backend.api_models import PageSourceEvidence
+        from backend.source_checks import grounding_projection
+        source = source_for(session, tenant, run.source_document_id)
         try:
-            references = [EvidenceReference.model_validate(reference) for reference in request.evidence_reference]
+            references = [PageSourceEvidence.model_validate(ref) for ref in evidence_reference]
         except Exception:
-            raise BackendError("invalid_review_evidence_reference", 422) from None
-        declared = {(page.page_number, region.region_reference) for page in payload.pages for region in page.regions}
-        if not references or not all((ref.page_number, ref.region_reference) in declared for ref in references):
-            raise BackendError("review_evidence_outside_document", 422)
-        if request.action == "acknowledge_page":
-            numbers = {ref.page_number for ref in references}
-            if len(numbers) != 1:
-                raise BackendError("acknowledge_one_page_per_event", 422)
-            page = next(page for page in payload.pages if page.page_number in numbers)
-            if page.state != "partial":
-                raise BackendError("only_partial_pages_can_be_acknowledged", 422)
-            old_value = {"page_state": page.state, "uncertainty": page.uncertainty}
-            new_value = {"human_acknowledged_uncertainty": True}
+            raise BackendError("invalid_page_source_evidence", 422) from None
+        if len(references) != 1:
+            raise BackendError("confirm_one_page_per_event", 422)
+        ref = references[0]
+        if ref.source_sha256 != source.sha256:
+            raise BackendError("review_source_hash_mismatch", 422)
+        if ref.page_number > source.page_count:
+            raise BackendError("page_outside_document", 422)
+        read_source(settings.storage_directory, source.storage_reference, source.sha256)
+        checks = grounding_projection(run, [serialize(e) for e in events], source)
+        if not any(o["page_number"] == ref.page_number and o["status"] == "unavailable"
+                   for c in checks for o in c["observations"]):
+            raise BackendError("page_text_is_not_unavailable", 422)
+        old_value = {"independent_text_status": "unavailable"}
+        new_value = {**ref.model_dump(), "independent_text_status": "unavailable", "human_confirmed_source": True}
+        run.review_state = "in_progress"
+    elif request.action in {"acknowledge_page", "acknowledge_document"}:
+        source = source_for(session, tenant, run.source_document_id)
+        from backend.api_models import PageSourceEvidence, DocumentSourceEvidence
+        ref = request.evidence_reference[0]
+        typed_class = PageSourceEvidence if request.action == "acknowledge_page" else DocumentSourceEvidence
+        if len(request.evidence_reference) != 1 or not isinstance(ref, typed_class):
+            if settings and settings.safety_net_finish_blocking:
+                raise BackendError("explicit_source_acknowledgement_required", 422)
+            # Existing tabs send region evidence; retain that contract while OFF.
+            try:
+                references = [EvidenceReference.model_validate(value) for value in evidence_reference]
+            except Exception:
+                raise BackendError("invalid_review_evidence_reference", 422) from None
+            declared = {(page.page_number, region.region_reference) for page in payload.pages for region in page.regions}
+            if not references or not all((ref.page_number, ref.region_reference) in declared for ref in references):
+                raise BackendError("review_evidence_outside_document", 422)
+            if request.action == "acknowledge_page":
+                numbers = {ref.page_number for ref in references}
+                if len(numbers) != 1:
+                    raise BackendError("acknowledge_one_page_per_event", 422)
+                page = next(page for page in payload.pages if page.page_number in numbers)
+                if page.state != "partial":
+                    raise BackendError("only_partial_pages_can_be_acknowledged", 422)
+                old_value = {"page_state": page.state, "uncertainty": page.uncertainty}
+                new_value = {"human_acknowledged_uncertainty": True}
+            else:
+                old_value = {"warnings": list(payload.warnings)}
+                new_value = {"human_acknowledged_warnings": True}
         else:
-            old_value = {"warnings": list(payload.warnings)}
-            new_value = {"human_acknowledged_warnings": True}
+            old_value, new_value = source_acknowledgement(payload, source, run, request, settings)
         run.review_state = "in_progress"
     else:
         row = next((row for row in payload.rows if row.row_id == request.row_id), None)
         if row is None:
             raise BackendError("row_not_found", 404)
         try:
-            references = [EvidenceReference.model_validate(reference) for reference in request.evidence_reference]
+            references = [EvidenceReference.model_validate({k: v for k, v in reference.items() if k != "scope"})
+                          for reference in evidence_reference]
         except Exception:
             raise BackendError("invalid_review_evidence_reference", 422) from None
         row_references = {(ref.page_number, ref.region_reference) for ref in row.evidence}
+        if request.action == "confirm_source_text":
+            row_references.update((ref.page_number, ref.region_reference)
+                                  for field in [row.description, *row.identifiers] for ref in field.evidence)
         if not references or not all((ref.page_number, ref.region_reference) in row_references for ref in references):
             raise BackendError("review_evidence_outside_row", 422)
         if row.row_role == "continuation" and request.action in {"approve", "no_match", "acknowledge", "propose_candidate"}:
             raise BackendError("continuation_is_grouped_source_evidence", 422)
         if payload.schema_version == "1.2" and row.row_role == "document_detail" and request.action in {"approve", "no_match", "acknowledge", "propose_candidate"}:
             raise BackendError("document_detail_does_not_require_product_review", 422)
-        if request.action in {"this_is_product", "new_product", *EXCLUSION_ACTIONS}:
+        if request.action == "confirm_source_text":
+            source = source_for(session, tenant, run.source_document_id)
+            read_source(settings.storage_directory, source.storage_reference, source.sha256)
+            check = next((c for c in (run.parses or {}).get("source_grounding", [])
+                          if c["row_id"] == row.row_id and c["status"] == "unsupported"), None)
+            if not check:
+                raise BackendError("row_has_no_unsupported_source_text", 422)
+            unsupported_refs = {(o["page_number"], o["region_reference"]) for o in check["observations"]
+                                if o["status"] == "unsupported"}
+            if not unsupported_refs.issubset({(r.page_number, r.region_reference) for r in references}):
+                raise BackendError("source_review_requires_all_flagged_regions", 422)
+            old_value = check
+            new_value = {"source_sha256": source.sha256, "human_reviewed_unsupported_text": True,
+                         "independent_text_status": "unsupported"}
+        elif request.action in {"this_is_product", "new_product", *EXCLUSION_ACTIONS}:
             new_value = explicit_answer(session, tenant, run, row, request)
             if request.action == "new_product":
                 new_value.update(decision_key=request.decision_key, request_hash=request_hash)
@@ -392,9 +457,78 @@ def review_run(session, tenant, run_id, request: ReviewRequest):
                 new_value["identifier_index"] = request.identifier_index
         run.review_state = "in_progress"
     event = ReviewEvent(tenant_id=tenant, run_id=run_id, row_id=request.row_id, action=request.action,
-                        reviewer=request.reviewer, reason=request.reason, evidence_reference=request.evidence_reference,
+                        reviewer=request.reviewer, reason=request.reason, evidence_reference=evidence_reference,
                         old_value=old_value, new_value=new_value, selected_candidate_id=request.selected_candidate_id,
                         created_at=now(), event_sequence=max((e.event_sequence or 0 for e in events), default=0) + 1)
     session.add(event)
     session.flush()
+    return event
+
+
+def source_acknowledgement(payload, source, run, request, settings):
+    """Typed acknowledgments bind one source scope to its unchanged bytes."""
+    ref = request.evidence_reference[0]
+    if ref.source_sha256 != source.sha256:
+        raise BackendError("review_source_hash_mismatch", 422)
+    read_source(settings.storage_directory, source.storage_reference, source.sha256)
+    if request.action == "acknowledge_page":
+        page = next((page for page in payload.pages if page.page_number == ref.page_number), None)
+        if ref.page_number > source.page_count or page is None:
+            raise BackendError("page_outside_document", 422)
+        if page.state != "partial":
+            raise BackendError("only_partial_pages_can_be_acknowledged", 422)
+        return ({"page_state": page.state, "uncertainty": page.uncertainty},
+                {**ref.model_dump(mode="json"), "human_acknowledged_uncertainty": True})
+    if ref.source_document_id != source.id or ref.run_id != run.id:
+        raise BackendError("review_evidence_outside_document", 422)
+    return ({"warnings": list(payload.warnings)},
+            {**ref.model_dump(mode="json"), "human_acknowledged_warnings": True})
+
+
+def record_page_count(session, tenant, run_id, request: PageCountRequest, settings):
+    from backend.coverage import COUNT_ACTION, COUNT_METHOD, page_coverage, synchronize_coverage_state
+    run = run_for(session, tenant, run_id, lock=True)
+    if run.state not in {"completed", "partial"} or not run.result:
+        raise BackendError("run_has_no_reviewable_purchase_order", 409)
+    if run.review_state == "resolved":
+        raise BackendError("resolved_review_is_immutable_create_new_run", 409)
+    payload = ExtractionPayload.model_validate(run.result)
+    if payload.document_type != "purchase_order":
+        raise BackendError("run_has_no_reviewable_purchase_order", 409)
+    source = source_for(session, tenant, run.source_document_id)
+    if request.source_sha256 != source.sha256:
+        raise BackendError("review_source_hash_mismatch", 422)
+    if request.page_number > source.page_count:
+        raise BackendError("page_outside_document", 422)
+    # A saved hash is insufficient if the actual immutable file has been damaged.
+    read_source(settings.storage_directory, source.storage_reference, source.sha256)
+    events = session.scalars(select(ReviewEvent).where(ReviewEvent.tenant_id == tenant,
+        ReviewEvent.run_id == run_id).order_by(*ReviewEvent.audit_order())).all()
+    history = [event for event in events if event.action == COUNT_ACTION
+               and event.new_value["page_number"] == request.page_number]
+    prior = history[-1] if history else None
+    if any(event.new_value["source_discrepancy"] for event in history):
+        raise BackendError("source_discrepancy_requires_new_run", 409)
+    if prior:
+        if request.corrects_event_id != prior.id:
+            raise BackendError("count_correction_must_reference_latest_event", 409)
+    elif request.corrects_event_id:
+        raise BackendError("count_correction_event_outside_page_or_run", 422)
+    evidence = {"scope": "page", "page_number": request.page_number, "source_sha256": source.sha256}
+    new_value = {**evidence, "method": COUNT_METHOD, "product_count": request.product_count,
+                 "source_discrepancy": request.source_discrepancy,
+                 "corrects_event_id": str(prior.id) if prior else None,
+                 "correction_kind": request.correction_kind}
+    provider_count = page_coverage(payload, [], source)[request.page_number - 1]["provider_product_count"]
+    new_value.update(provider_product_count=provider_count,
+                     status="mismatch" if request.source_discrepancy or provider_count != request.product_count else "matched")
+    event = ReviewEvent(tenant_id=tenant, run_id=run_id, row_id=None, action=COUNT_ACTION,
+        reviewer=request.reviewer, reason=request.reason, evidence_reference=[evidence],
+        old_value=prior.new_value if prior else None, new_value=new_value, created_at=now(),
+        event_sequence=max((event.event_sequence or 0 for event in events), default=0) + 1)
+    session.add(event)
+    session.flush()
+    if settings.safety_net_finish_blocking:
+        synchronize_coverage_state(run, page_coverage(payload, [serialize(e) for e in [*events, event]], source))
+    run.review_state = "in_progress"
     return event
