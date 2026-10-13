@@ -39,6 +39,11 @@ boolean. Thus offline-to-live and keyless-to-keyed reruns visibly report reuse;
 they make no new attempt and do not overwrite the original result. A deliberate new
 evaluation needs a separate output directory; a live ledger still prevents a second
 attempt for the same content identity, including after an unknown outcome.
+When every admitted email in a `--live` run was reused, stderr also prints an
+`ALL_REUSED` warning. Offline, mixed new/reused and empty runs do not print it.
+Non-`.eml` regular files are counted in one `skipped_non_eml_files` stderr line;
+their names/contents are not printed or opened. Directories and `.env*` entries
+are excluded. Uppercase `.EML` is admitted as before.
 
 Parser limits are 2 MiB per email, 32 KiB top-level headers, eight boundary
 declarations/depth, 64 parts, 24 attachments and 12,000 body UTF-8 bytes. Malformed
@@ -54,8 +59,26 @@ signature. This is an admission check, not full structural validation: the human
 and reader must still validate/select the source. Filenames are never storage paths.
 Inline images are included in the manifest and the quiet net. HTML is converted
 locally, scripts/styles are removed, and remote resources are never fetched.
+For body text without a declared charset, strict UTF-8 is tried first, then strict
+Windows-1252. Explicit charsets, undefined Windows-1252 bytes, malformed MIME and
+the original size bounds still refuse rather than substituting characters.
 
-For orders with body text, including those with supported attachments, the
+Empty-body messages and any unsupported-attachment message go to `needs_a_look`
+with `unclear` before classification, so they reserve/spend nothing. An empty-body
+message with only supported attachments retains selectable attachment candidates;
+its unseen contents still require a person. Empty text alone is not a `CONFLICT`.
+Unsupported mixtures retain every opaque attachment but prepare no reader files.
+Duplicate and changed-Message-ID rules take precedence over these local routes.
+
+When the classifier returns an order without attachments, the final outcome is
+`needs_a_look`/`TEXT_ONLY_ORDER`, with the plain note: "This order is in the email
+text only. Phase 1 reads attachments only; please check the email text."
+The original classifier answer and full source text remain in the local record.
+The note also appears in stdout, including on reuse. No derived PDF is prepared
+for a text-only order; other body-only classifier categories keep their routing.
+`TEXT_ONLY_ORDER` is a local note code, never an allowed model-output reason.
+
+For orders with body text and supported attachments, the
 standard-library renderer also prepares one derived PDF page
 with a hash of the original parsed text. English/Spanish WinAnsi text that fits
 57 lines at 90 columns is supported. Other Unicode (including the colón symbol),
@@ -71,7 +94,10 @@ fictional emails, an environment-provided key, and ONE shared phase-one ledger:
 python scripts/email-intake.py --drop PATH_TO_FICTIONAL_MAIL --out output/live-email-review --live --ledger output/phase-one-spend.sqlite3 --init-ledger
 ```
 
-Use `--init-ledger` only for deliberate first creation; omit it on subsequent runs.
+Use `--init-ledger` only for deliberate first creation or recovery of a zero-byte
+file left before schema creation; omit it on subsequent runs. A zero-byte file
+without that flag refuses. Non-empty/corrupt files and zero-byte files with
+non-empty SQLite recovery sidecars cannot be initialized as a fresh cap.
 A missing ledger without the flag exits 2 before key lookup or classification.
 The resolved absolute ledger path is printed to stderr; per-email JSONL stays on
 stdout. Reusing the flag never resets an existing ledger. Connections refuse a
@@ -104,8 +130,13 @@ The estimate is a conservative admission bound, not measured live token usage.
 Model access, actual usage/pricing and retention eligibility remain untested live.
 `store=false` does not promise zero provider retention.
 
-A stale `.intake-lock` after a crash blocks writes for human investigation. Storage
-corruption/path aliases/permission failures stop the run with a fixed reason rather
+A stale `.intake-lock` after a crash blocks writes with a `--break-lock` hint.
+That explicit flag can recover a bounded PID marker only when the owner is
+provably gone. Live/reused PIDs, permission failures and legacy empty/malformed
+markers refuse. A process-held OS lock on the permanent `.intake-guard` serializes
+all runs and marker recovery/removal; a hard kill releases that OS ownership.
+The guard file remains after normal runs and does not require recovery.
+Storage corruption/path aliases/permission failures stop the run with a fixed reason rather
 than attempting recovery or repeating requests. Symlink creation was unavailable
 in the local Windows test environment; that test is explicitly skipped there.
 

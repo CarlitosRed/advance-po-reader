@@ -39,7 +39,6 @@ class SpendLedger:
         self.path = safe_path(path).resolve()
         if not self.path.parent.is_dir():
             raise LedgerError("LEDGER")
-        created = False
         if not self.path.exists():
             if not initialize:
                 raise LedgerError("LEDGER")
@@ -47,14 +46,22 @@ class SpendLedger:
                 # Exclusive creation cannot overwrite an existing spend history.
                 with self.path.open("xb"):
                     pass
-                created = True
             except FileExistsError:
                 pass
         try:
+            # A zero-byte primary with recovery sidecars may contain prior spend.
+            # Do not let SQLite open/recover it as a fresh cap.
+            if self.path.stat().st_size == 0:
+                for suffix in ("-journal", "-wal", "-shm"):
+                    sidecar = safe_path(str(self.path) + suffix)
+                    if sidecar.exists() and sidecar.stat().st_size:
+                        raise LedgerError("LEDGER")
             with self.connect() as db:
                 db.execute("BEGIN IMMEDIATE")
                 expected = json.dumps([1, CAP_NANO, INPUT_BOUND, OUTPUT_BOUND, INPUT_RATE, OUTPUT_RATE])
-                if created:
+                # Recheck inside the transaction so concurrent initializers can
+                # only create once. Never reset a non-empty/corrupt database.
+                if initialize and self.path.stat().st_size == 0:
                     db.execute("CREATE TABLE policy (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL)")
                     db.execute("INSERT INTO policy VALUES (1, ?)", (expected,))
                     db.execute("""CREATE TABLE attempts (
