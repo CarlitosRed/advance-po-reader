@@ -408,8 +408,8 @@ class PoInboxTests(unittest.TestCase):
     cobro es cuando llega seguimiento hacer otro oficina traslado al edificio luna azul actualizar horario gane planeta
     brillantina promocion solicitada sin solicitud conversado puede tramitar aclaro cotizacion cambio respuesta automatica estoy
     fuera hasta lunes taburete bandeja estante estrella consultar crear imaginaria imaginario documentos para hola aqui donde esta
-    haber ganado""".split())
-    SHARED = frozenset("""pdf png jpg eml logo fic fict inv zunel vopra nemul a o e y no si en la de color total mensaje solo
+    haber ganado mensaje""".split())
+    SHARED = frozenset("""pdf png jpg eml logo fic fict inv zunel vopra nemul a o e y no si en la de color total solo
     favor auto revision has lo""".split())
 
     @classmethod
@@ -619,7 +619,7 @@ class PoInboxTests(unittest.TestCase):
         self.assertFalse(self.EN_ONLY & self.ES_ONLY)
         self.assertFalse(self.SHARED & (self.EN_ONLY | self.ES_ONLY))
         for token in ("PDF", "a", "No", "png", "FIC-INV-839950", "FICT-VOPRA", "logo-0004.png", "si en la de y e o",
-                      "color total mensaje solo favor auto revision"):
+                      "color total solo favor auto revision"):
             self.assertEqual(self.languages_of(token), set(), token)
         # The two round-3 counterexamples, verbatim: wholly Spanish.
         self.assertEqual(self.languages_of("OC FIC-839950-0012 segun el PDF adjunto: 14 unidades de FICT-VOPRA BANDEJA LUNA.\n"
@@ -627,6 +627,9 @@ class PoInboxTests(unittest.TestCase):
         self.assertEqual(self.languages_of("Cambiar pedido anterior FIC-217664-0061: reducir cantidad a 2. Reemplaza la "
                                            "cantidad anterior; no crear otro pedido."), {"es"})
         self.assertEqual(self.languages_of("PO FIC-1 as per the attached PDF"), {"en"})
+        # Round-4 counterexample: "mensaje" is Spanish-only, not shared; an otherwise-English email
+        # that contains it must be caught as containing Spanish, not pass as pure English.
+        self.assertEqual(self.languages_of("Please find the attached PDF. mensaje"), {"en", "es"})
         with self.assertRaises(AssertionError):
             self.languages_of("an unlisted wordzz")
 
