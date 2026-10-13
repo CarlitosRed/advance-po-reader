@@ -93,4 +93,4 @@ The run states and the single-attempt flow were built before the PRs listed in t
 - No measured figure applies.
 
 ## Status
-In version 1 (the states and flows come from the base code; the upload-page behavior is from PR #14), not in `main` as of this writing.
+In version 1 (the states and flows come from the base code; the upload-page behavior is from PR #14), now in `main`.

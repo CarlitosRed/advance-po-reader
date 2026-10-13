@@ -2,7 +2,7 @@
 
 [Back to the map](README.md) | Previous: [Gate 7](07-safety-net.md) | [Glossary](glossary.md)
 
-> Where this comes from: the working rules are in `ROLES.md` and `tools/gate/` on the `main` branch (added by PR #10, merged 2026-10-05, commit `427be1e`). They are **not** in the base this documentation was written against (`integration/ui-and-matching`), so the links below point at the text as it stands on `main`, and I read them there. Nothing in the version 1 stack has been merged into `main` yet as of this writing (checked 2026-10-07 against `origin/main`).
+> Where this comes from: the working rules are in `ROLES.md` and `tools/gate/` on the `main` branch (added by PR #10, merged 2026-10-05, commit `427be1e`). This page was first written against the integration branch `integration/ui-and-matching`, which did not have them, so the links below point at the text as it stood on `main` at the time, and I read them there. Version 1 has since landed on `main` (commit `3e23801`, tag `poc-v1`).
 
 ## In one minute
 Nobody changes the project directly. Every change is a **pull request**: a proposed change that other people (and other AIs) can read before it lands. The rules:
@@ -83,11 +83,11 @@ gitGraph
 ```
 | | Before | After (today) |
 | --- | --- | --- |
-| Where the v1 code is | Spread over six stacked pull requests (#13, #14, #15, #16, #18, #19), plus #21. Five of the six have their own approval by Codex; #14 has none of its own and merges as a stack with #15 (`decisions.md`, 2026-10-07). #21 was approved by Codex at `51e79cc` | Together on the branch `integration/ui-and-matching` (head `a76aa4a` when this page was updated; it contains #21 as `a9c6fe3`) |
-| In `main` | No | **Still no, and not part of version 1.** `main` is behind; the stack first has to land on `codex/worktree-standards`, and that branch has to reach `main` (task T-014, on hold per `tasks/merge-plan-2026-10-06.md`). That landing is a later, version 2 job |
-| Done for version 1 | | Carlos's choice (`decisions.md`, 2026-10-07): PR #21 was merged into `integration/ui-and-matching` as `a9c6fe3`, **without the merge gate** (the gate only merges pull requests aimed at `main`); the merge commit's message says "Merged into integration/ui-and-matching on Carlos's option A (no gate, not main)". |
-| Planned next (version 1) | | Tag `poc-v1` on the branch head. Not done yet: `git ls-remote --tags origin` listed no tag with that name when this page was updated |
-| Later (version 2) | | Landing on `main` (T-014) goes through the whole gate described below, with Carlos typing the Tier 3 approvals himself |
+| Where the v1 code is | Spread over six stacked pull requests (#13, #14, #15, #16, #18, #19), plus #21. Five of the six have their own approval by Codex; #14 has none of its own and merges as a stack with #15 (the private project notes, not in this repository, 2026-10-07). #21 was approved by Codex at `51e79cc` | Together on `main` (version 1 landed as commit `3e23801`, tag `poc-v1`). Before that, on the branch `integration/ui-and-matching` (head `a76aa4a`; it contains #21 as `a9c6fe3`), which still exists but is no longer the place to clone |
+| In `main` | No | **Yes.** Version 1 landed on `main` as commit `3e23801` and is tagged `poc-v1` |
+| Done for version 1 | | Carlos's choice (recorded 2026-10-07 in the private project notes, not in this repository): PR #21 was merged into `integration/ui-and-matching` as `a9c6fe3`, **without the merge gate** (the gate only merges pull requests aimed at `main`); the merge commit's message says "Merged into integration/ui-and-matching on Carlos's option A (no gate, not main)". |
+| Tag | | `poc-v1` marks the landing commit on `main` |
+| Landing on `main` | | Went through the pull request, review and merge gate described below, with Carlos typing the Tier 3 approvals himself |
 
 ## The three levels (tiers) of a change
 From `ROLES.md`. Every pull request carries exactly one label.
@@ -99,7 +99,7 @@ From `ROLES.md`. Every pull request carries exactly one label.
 | 3 | Money and trust: `AGENTS.md`, `ROLES.md`, `PROJECT_GOAL.md`, `.github`, the gate, `backend/providers.py` (the model prompt), `scripts`, database migrations and a few more (exact list: `protected_paths` in `tools/gate/gate.json`) | yes | one, from the other company | yes, he types it himself |
 | 4 | Billing, spend limits, credentials, production, deleting data | not a pull request | not a pull request | humans only |
 
-The gate raises a label that is too low and never lowers one. This documentation pull request touches only `docs/how-it-works/`, which is the Tier 1 area. This pull request is aimed at the integration branch, not at `main`, and the gate's state rule expects `main`, so how it will be merged is for Carlos and Claudio IT to decide (not verified).
+The gate raises a label that is too low and never lowers one. A documentation-only change that touches only `docs/` and `README.md` is in the Tier 1 area and goes into `main` through the normal merge gate.
 
 ## What the merge gate checks (`tools/gate/po_gate.py check <PR>`)
 State (open, not a draft, aimed at `main`); no active `hold` from anyone; a valid tier label; no forbidden files (PDFs, images, model files, keys, `.env*`, data folders) and fewer than 100 changed files; the required automatic checks passed on the exact head (`tests`, `gate-tests`, `scan`); for Tiers 2 and 3 a plan section, an evidence section and a cost section, a signed "go", and a signed "Approved at `<commit>`" matching the head from the other company; for Tier 3 Carlos's own approval of that commit. `merge` then squash-merges that exact commit and writes `Gate-Record: pass tier=N head=... reviewers=... owner=... by=...` into the history. The `Gate audit` workflow runs after every push to `main` and opens an issue if any new commit lacks that record.
@@ -111,7 +111,7 @@ State (open, not a draft, aimed at `main`); no active `hold` from anyone; a vali
 - A merge conflict can silently void an approval; PR #11 (T-012) is the open fix, and it is a version 2 item.
 
 ## What the automatic checks are
-In the base: `backend-goal-checks.yml` (job `backend-goal`: the whole backend test suite and the "goal" acceptance suite against a throwaway PostgreSQL database, with no browser installed), `gate-a-checks.yml` (job `gate-a`: the older foundation tests) and `python-checks.yml` (job `tests`: the oldest unit tests). Each runs on a push and on a pull request, which is why a "6 of 6 green" report means three jobs run twice. On `main` there are also `gate-tests` and `scan` (tests of the gate itself and a search for forbidden files and secrets) and the `Gate audit` workflow. A pre-push hook (`.githooks/pre-push`) scans before code leaves a computer.
+On `main`: `backend-goal-checks.yml` (job `backend-goal`: the whole backend test suite and the "goal" acceptance suite against a throwaway PostgreSQL database, with no browser installed), `gate-a-checks.yml` (job `gate-a`: the older foundation tests) and `python-checks.yml` (job `tests`: the oldest unit tests). Each runs on a push and on a pull request, which is why a "6 of 6 green" report means three jobs run twice. There are also `gate-tests` and `scan` (tests of the gate itself and a search for forbidden files and secrets) and the `Gate audit` workflow. A pre-push hook (`.githooks/pre-push`) scans before code leaves a computer.
 
 ## The people and chats (from `ROLES.md`)
 | Name | Role | Company |
@@ -124,9 +124,9 @@ In the base: `backend-goal-checks.yml` (job `backend-goal`: the whole backend te
 | Claude task chats, such as "Claude · poc ui" (names seen in this project's pull requests; not listed in `ROLES.md`) | Builders, one task each | Anthropic |
 
 ## Where it lives
-- Rules and phrases: [`ROLES.md`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/ROLES.md) (on `main`). Product rules: [`AGENTS.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/AGENTS.md) and [`PROJECT_GOAL.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/PROJECT_GOAL.md) (this base has both; the sections added by PR #10 are on `main`).
+- Rules and phrases: [`ROLES.md`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/ROLES.md) (on `main`). Product rules: [`AGENTS.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/AGENTS.md) and [`PROJECT_GOAL.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/PROJECT_GOAL.md) (both are on `main`; the links pin the earlier commit this page was written against).
 - Gate program, its settings and tests: [`tools/gate/po_gate.py`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/po_gate.py), [`tools/gate/gate.json`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/gate.json), [`tools/gate/test_po_gate.py`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/test_po_gate.py), [`tools/gate/README.md`](https://github.com/CarlitosRed/advance-po-reader/blob/427be1e2abe3e51759b30a623df66c014351db55/tools/gate/README.md) (on `main`).
-- CI: [`.github/workflows/`](https://github.com/CarlitosRed/advance-po-reader/tree/742666345a97dd00c1ed0d9e1ab725618bed3110/.github/workflows) (in the base; the `main` version adds the gate jobs).
+- CI: [`.github/workflows/`](https://github.com/CarlitosRed/advance-po-reader/tree/742666345a97dd00c1ed0d9e1ab725618bed3110/.github/workflows) (pinned to the earlier commit; `main` also has the gate jobs).
 - Folder rules for builders (one chat per folder, no shared data, backups): [`docs/worktree-standards.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/docs/worktree-standards.md).
 - Handoff note per task: [`docs/agent-handoff.md`](https://github.com/CarlitosRed/advance-po-reader/blob/742666345a97dd00c1ed0d9e1ab725618bed3110/docs/agent-handoff.md).
 
@@ -140,4 +140,4 @@ In the base: `backend-goal-checks.yml` (job `backend-goal`: the whole backend te
 - Not measured: review turnaround time or cost per pull request.
 
 ## Status
-In use (PR #10 is on `main`). The version 1 route is different from the general rules above: PR #21 went into the integration branch with no gate (merged as `a9c6fe3`); the `poc-v1` tag is still to come; the gated landing on `main` is a version 2 job.
+In use (PR #10 is on `main`). The version 1 route was different from the general rules above: PR #21 went into the integration branch with no gate (merged as `a9c6fe3`); the landing on `main` (commit `3e23801`, tag `poc-v1`) then went through the gate.

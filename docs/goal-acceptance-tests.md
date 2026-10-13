@@ -1,5 +1,3 @@
-> v1.1 backend integration, October 8: Safety Net defaults OFF. Inherited #9 backend tests explicitly enable it; original v1 grounding/completeness gaps remain strict expected failures under OFF. New Safety Net controls and their browser proof belong to the new UI track. See [mode ledger](integrate-safety-net-plan.md).
-
 # Goal acceptance tests (T-007)
 
 Owner: `Codex · goal tests`. Reviewer: Claudio. Assigned October 3, 2026.
@@ -128,6 +126,31 @@ No secrets or live provider connection are needed. Dotenv opens and real HTTP
 transports are blocked; the backend suite permits its generated synthetic
 provider and injected mock transports, while goal tests permit only fixed JSON.
 
+Three-tab page: `test_goal_9_empty_tabs_open_without_error_and_explain_themselves` opens the page in the same
+loopback bridge with no sure line, then opens the empty Sure and Not products tabs and checks no page error, the
+explanation, the "Go to Check" button and the filter. It uses the same `GOAL_NODE_BIN` / `GOAL_BROWSER_BIN` and is a
+visible skip in CI.
+
+CI deliberately does not install the optional Node/Playwright/browser tools.
+`test_goal_9_website_three_answers_and_explicit_approval` is therefore a visible
+skip, counted as blocked in the CI scorecard. It is run locally with the tools
+above. CI uploads both JUnit reports and its scorecard, including skip reasons.
+The scorecard reports browser coverage from the actual outcome.
+
+The other workflows retain their existing coverage: `Local Gate A checks`
+runs `pytest -c pytest.gate-a.ini`, and `Python checks` runs
+`python -m unittest discover -s tests -v`. A green status must identify these
+suites and state separately whether goal and browser checks ran. None of these
+checks measures model accuracy, a live provider, deployment, or customer PDFs.
+
+For a full local backend run with the same isolation:
+
+```powershell
+$env:GOAL_POSTGRES_BIN = '<PostgreSQL binary directory>'
+.\.venv-goal\Scripts\python.exe -m pytest -c pytest.backend.ini --isolated-backend --basetemp=tmp/backend-checks -q --tb=short
+```
+
+> v1.1 backend integration, October 8: Safety Net defaults OFF. Inherited #9 backend tests explicitly enable it; original v1 grounding/completeness gaps remain strict expected failures under OFF. New Safety Net controls and their browser proof belong to the new UI track. See [mode ledger](integrate-safety-net-plan.md).
 
 PR B item 3 expands `pytest.backend.ini` to collect `tests/backend` and
 `tests/goal` with importlib collection. Every new B acceptance case therefore
