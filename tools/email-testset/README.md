@@ -228,9 +228,11 @@ The default profile's rows have none of these and validate exactly as before.
 | `attachment_roles` | a map from each attachment filename to `order`, `packing_list` or `logo_image`; the `order` files equal `where_order.attachments`. Per the 2026-10-09 decision nobody picks the attachment: the system runs every document-like file, so packing lists are runnable files that are not orders and tiny logos (under 5 KB, under 100 px) are skipped |
 
 Labels are derived from the content actually emitted: `language` and the language
-tag come from the body (if any) plus the order document's own text, so an
-empty-body, English-PDF email is `en` even when the generator drew a bilingual
-request. A test recomputes language, tags, `where_order`, `number_of_orders`,
+tag come, case-insensitively and word by word, from the body (if any) plus the text of
+EVERY PDF and scan attachment (order, packing list, invoice), so no document carries
+wording of a language the label does not name. A Spanish document is Spanish
+throughout (heading, units, request, scan banner, product nouns); an `en-es` email shows both
+languages. Subject lines and file names are not counted. A test recomputes language, tags, `where_order`, `number_of_orders`,
 `attachment_roles` and `sender_case` from every email's bytes. Order PNG scans
 are noisy pages at least 100 px on each side and well over 5 KB, so the
 tiny-image skip rule (under 5 KB or under 100x100 px) never skips an order;

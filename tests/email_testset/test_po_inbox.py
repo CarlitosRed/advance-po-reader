@@ -390,11 +390,35 @@ class PoInboxTests(unittest.TestCase):
 
     # --- labels recomputed from the emitted bytes (class: label assigned before content edited) ---
 
-    SPANISH = re.compile(r"ORDEN DE COMPRA|UNIDADES|Por favor|Adjunto|Gracias|segun el PDF|Respuesta automatica|Cambiar pedido|"
-                         r"Cancelar el pedido|Favor cotizar|Factura FIC|Cuando llega|oficina ficticia|Gane un|Confirmar")
-    ENGLISH = re.compile(r"NEW PURCHASE ORDER|\bUNITS\b|Please|Thank you|as per the attached PDF|Automatic reply|Change earlier|"
-                         r"Cancel earlier|Price enquiry|When will|Our fictional office|Win an imaginary|Here is the thing|"
-                         r"Invoice FIC|Confirm this new order|Confirm receipt|Auto-reply only")
+    # Independent word lists (not imported from the generator). Matching is case-insensitive and
+    # URLs are ignored; a word in neither list fails the test, so new text cannot slip through.
+    EN = frozenset("""new purchase order please supply units goods fictional scan stand in packing list reference only confirm this
+    thank you find the attached as per pdf po receipt change earlier reduce quantity to replaces do not create a cancel entirely
+    ship it is being placed quote cloud stools stool price enquiry we have invoice for already supplied under payment notice
+    purchase when will arrive tracking question place another our office has moved imaginary blue moon building update hours win an
+    glitter planet unsolicited promotion request visit here thing discussed can handle i cannot say whether or revision automatic
+    reply am out of until monday auto tray star rack moon these""".split())
+    ES = frozenset("""orden compra nueva por favor suministrar unidades de estos bienes ficticio ficticia simulacro de escaneo empaque
+    lista referencia solo confirmar este pedido nuevo adjunto la gracias oc segun el recepcion cambiar anterior reducir cantidad
+    reemplaza cancelar completo enviar se solicita un cotizar bancos nube consulta precio hemos hecho factura ya o entregados del
+    cobro es una compra cuando llega seguimiento hacer otro oficina traslado al edificio luna azul actualizar horario gane planeta
+    brillantina promocion solicitada sin solicitud lo conversado puede tramitar aclaro si cotizacion cambio respuesta automatica
+    estoy fuera hasta lunes taburete bandeja estante estrella consultar crear imaginaria imaginario""".split())
+    NEUTRAL = frozenset("fic fict zunel vopra nemul inv no".split())
+
+    @classmethod
+    def languages_of(cls, text):
+        found = set()
+        for word in re.findall(r"[a-z]+", re.sub(r"https?://\S+", " ", text.lower())):
+            if word in cls.NEUTRAL:
+                continue
+            in_en, in_es = word in cls.EN, word in cls.ES
+            if not (in_en or in_es):
+                raise AssertionError(f"word in no language list: {word!r} in {text!r}")
+            if in_en != in_es:
+                found.add("en" if in_en else "es")
+        return found
+
     PO_ID = re.compile(r"FIC-\d{6}-\d{4}(?:-\d)?")
 
     @staticmethod
@@ -469,13 +493,17 @@ class PoInboxTests(unittest.TestCase):
                 body = body_part.get_content() if body_part else ""
                 attachments = {part.get_filename(): part for part in message.iter_attachments()}
                 texts = {name: self.attachment_text(part) for name, part in attachments.items()}
-                is_order_doc = {name: text.startswith("FICTIONAL SCAN STAND-IN") for name, text in texts.items()}
-                # language: body plus the order document's own text (reference attachments are English boilerplate)
-                language_text = body + "\n" + "\n".join(texts[n] for n in attachments if is_order_doc[n])
-                spanish, english = bool(self.SPANISH.search(language_text)), bool(self.ENGLISH.search(language_text))
-                self.assertTrue(spanish or english)
-                language = "en-es" if spanish and english else "es" if spanish else "en"
+                is_order_doc = {name: "SCAN STAND-IN" in text or "SIMULACRO DE ESCANEO" in text for name, text in texts.items()}
+                # language: EVERY emitted text, the body and every PDF/scan attachment (order or reference).
+                # Subject lines and file names are excluded (README).
+                pieces = [body] + [text for text in texts.values() if text]
+                found = set().union(*(self.languages_of(piece) for piece in pieces))
+                self.assertTrue(found)
+                language = "en-es" if found == {"en", "es"} else found.pop()
                 self.assertEqual(row["language"], language)
+                if language != "en-es":  # a single-language label must hold for every document and body on its own
+                    for piece in pieces:
+                        self.assertLessEqual(self.languages_of(piece), {language}, piece)
                 language_tag = {"en": "english", "es": "spanish", "en-es": "code_switching"}[language]
                 self.assertEqual({"english", "spanish", "code_switching"} & set(row["mutation_tags"]), {language_tag})
                 body_has_po = bool(self.PO_ID.search(body))
@@ -485,7 +513,7 @@ class PoInboxTests(unittest.TestCase):
                     self.assertEqual(sorted(row["where_order"]["attachments"]), order_names)
                     pos = set(self.PO_ID.findall(body)) | {p for n in order_names for p in self.PO_ID.findall(texts[n])}
                     self.assertEqual(row["number_of_orders"], len(pos))
-                    roles = {name: "order" if is_order_doc[name] else "packing_list" if "PACKING LIST" in texts[name] else "logo_image"
+                    roles = {name: "order" if is_order_doc[name] else "packing_list" if ("PACKING LIST" in texts[name] or "LISTA DE EMPAQUE" in texts[name]) else "logo_image"
                              for name in attachments}
                     self.assertEqual(row.get("attachment_roles", {}), roles)
                     roles_seen.update(roles.values())
@@ -506,10 +534,30 @@ class PoInboxTests(unittest.TestCase):
                     self.assertNotIn("attachment_roles", row)
                     category_tags = {row["category"]} & {"change", "cancellation", "quote_request", "invoice", "status_question", "spam"}
                     out_of_office = {"out_of_office"} if row["category"] == "other_business" and re.search(
-                        r"Automatic reply|Respuesta automatica", body) else set()
+                        r"(?i)Automatic reply|Respuesta automatica", body) else set()
                     self.assertEqual(set(row["mutation_tags"]), {language_tag} | category_tags | out_of_office)
                 self.assertEqual(row["sender_case"], self.sender_case_from_bytes(message))
         self.assertEqual(set(roles_seen), {"order", "packing_list", "logo_image"})
+
+    def test_language_labels_hold_for_other_seeds_and_no_foreign_text_in_single_language_emails(self):
+        """Same recomputation over three more seeds: body plus ALL attachments, case-insensitive."""
+        for seed in (17, -1, 0):
+            directory = self.root / f"lang-{seed}"
+            rows = generate.generate(seed, directory, "po-inbox")
+            counts = Counter()
+            for row in rows:
+                message = BytesParser(policy=policy.default).parsebytes((directory / f"{row['id']}.eml").read_bytes())
+                body_part = message.get_body(preferencelist=("plain",))
+                pieces = [body_part.get_content() if body_part else ""]
+                pieces += [self.attachment_text(part) for part in message.iter_attachments()]
+                found = set().union(*(self.languages_of(piece) for piece in pieces))
+                language = "en-es" if found == {"en", "es"} else found.pop()
+                self.assertEqual(row["language"], language, (seed, row["id"]))
+                if language != "en-es":
+                    for piece in pieces:
+                        self.assertLessEqual(self.languages_of(piece), {language}, (seed, row["id"], piece))
+                counts[language] += 1
+            self.assertEqual(set(counts), {"en", "es", "en-es"}, seed)
 
     def test_image_sizes_match_their_role_under_the_tiny_image_rule(self):
         """Order scans must be runnable (>= 5 KB and >= 100x100 px, with margin); logos must be skippable."""
