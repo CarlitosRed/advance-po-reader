@@ -250,7 +250,8 @@ class BypassTests(Base):
         by_id = {json.loads(line)["id"]: json.loads(line) for line in answers.read_text().splitlines()}
         for fixture_id in limited:
             self.assertEqual(by_id[fixture_id], {"id": fixture_id, "category": "unsure", "lane": "needs_a_look"})
-        self.assertEqual(score.main(["--expected", str(self.expected_path), "--answers", str(answers)]), 0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(score.main(["--expected", str(self.expected_path), "--answers", str(answers)]), 0)
 
     def test_naive_passthrough_is_rejected_by_the_scorer(self):
         # Why the converter exists: copying the runner's triple verbatim exits 2 in the scorer.
@@ -261,7 +262,7 @@ class BypassTests(Base):
             rows.append({k: record[k] for k in ("category", "lane", "reason_code")} | {"id": row["id"]})
         naive = self.root / "naive.jsonl"
         naive.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
-        with contextlib.redirect_stderr(io.StringIO()):
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(score.main(["--expected", str(self.expected_path), "--answers", str(naive)]), 2)
 
     def test_every_local_reason_maps_to_unsure_needs_a_look(self):
