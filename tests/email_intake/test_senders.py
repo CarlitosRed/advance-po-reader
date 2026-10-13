@@ -41,7 +41,9 @@ class SenderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.base = Path(self.temp.name)
+        # Windows runners can expose TEMP itself through an 8.3 alias.
+        # Compare/spy on the same resolved paths that list admission opens.
+        self.base = Path(self.temp.name).resolve(strict=True)
         self.drop, self.out = self.base / "drop", self.base / "out"
         self.drop.mkdir()
         self.allow = self.base / "known-senders.txt"
