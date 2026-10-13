@@ -357,7 +357,7 @@ class PoInboxTests(unittest.TestCase):
                 self.assertGreaterEqual(row["number_of_orders"], 2)
             if "png_scan_standin" in tags:
                 seen["png"] += 1
-        self.assertEqual(seen, Counter(text_only=14, empty_body=44, cover_note=24, recap=16, po_packing_logo=16, multi_po=6, png=6))
+        self.assertEqual(seen, Counter(text_only=14, empty_body=44, cover_note=52, recap=16, po_packing_logo=16, multi_po=6, png=6))
 
     def test_all_pdfs_have_valid_xref_and_pngs_have_valid_crcs(self):
         pdfs = pngs = 0
@@ -387,6 +387,150 @@ class PoInboxTests(unittest.TestCase):
         self.assertFalse(set(MUTATIONS) & set(PO_INBOX_MUTATIONS))
         for row in self.expected:
             self.assertTrue(set(row["mutation_tags"]) <= set(MUTATIONS) | set(PO_INBOX_MUTATIONS))
+
+    # --- labels recomputed from the emitted bytes (class: label assigned before content edited) ---
+
+    SPANISH = re.compile(r"ORDEN DE COMPRA|UNIDADES|Por favor|Adjunto|Gracias|segun el PDF|Respuesta automatica|Cambiar pedido|"
+                         r"Cancelar el pedido|Favor cotizar|Factura FIC|Cuando llega|oficina ficticia|Gane un|Confirmar")
+    ENGLISH = re.compile(r"NEW PURCHASE ORDER|\bUNITS\b|Please|Thank you|as per the attached PDF|Automatic reply|Change earlier|"
+                         r"Cancel earlier|Price enquiry|When will|Our fictional office|Win an imaginary|Here is the thing|"
+                         r"Invoice FIC|Confirm this new order|Confirm receipt|Auto-reply only")
+    PO_ID = re.compile(r"FIC-\d{6}-\d{4}(?:-\d)?")
+
+    @staticmethod
+    def png_info(payload):
+        return struct.unpack(">II", payload[16:24])
+
+    @classmethod
+    def png_text(cls, payload):
+        """Read the drawn 3x5 glyphs back out of a scan PNG (margin 20, scale 3, ink below 100)."""
+        pos, idat = 8, b""
+        while pos < len(payload):
+            size = struct.unpack(">I", payload[pos:pos + 4])[0]
+            if payload[pos + 4:pos + 8] == b"IDAT":
+                idat += payload[pos + 8:pos + 8 + size]
+            pos += 12 + size
+        width, height = cls.png_info(payload)
+        pixels = zlib.decompress(idat)
+        reverse = {tuple(value.split("/")): key for key, value in generate.FONT.items()}
+        lines = []
+        for line in range((height - 40) // 21):
+            letters = []
+            for col in range((width - 40) // 12):
+                glyph = tuple("".join("1" if pixels[(20 + line * 21 + y * 3) * (width + 1) + 1 + 20 + col * 12 + x * 3] < 100 else "0"
+                                      for x in range(3)) for y in range(5))
+                letters.append(reverse[glyph])
+            lines.append("".join(letters).rstrip())
+        return "\n".join(lines)
+
+    @staticmethod
+    def pdf_text(payload):
+        return "\n".join(re.sub(r"\\([\\()])", r"\1", m.decode("ascii")) for m in re.findall(rb"\((.*?)\) Tj", payload))
+
+    def attachment_text(self, attachment):
+        payload = attachment.get_payload(decode=True)
+        if attachment.get_content_type() == "application/pdf":
+            return self.pdf_text(payload)
+        width, height = self.png_info(payload)
+        return self.png_text(payload) if min(width, height) >= 100 else ""  # small PNGs are logos
+
+    def sender_case_from_bytes(self, message):
+        (sender,) = message["From"].addresses
+        address, name = sender.addr_spec, sender.display_name
+        lower = address.lower()
+        domains = [entry for entry in self.known if "@" not in entry]
+        address_domains = {entry.partition("@")[2] for entry in self.known if "@" in entry}
+        if "@" in name and sender_is_known(name, self.known) and not sender_is_known(address, self.known):
+            return "display_name_trick"
+        if address in self.known:
+            return "known_address"
+        local, _, domain = lower.partition("@")
+        if domain in domains:
+            return "known_domain"
+        if lower in self.known:
+            return "case_variant"
+        if "+" in local and sender_is_known(local.split("+")[0] + "@" + domain, self.known):
+            return "plus_tag"
+        for known in set(domains) | address_domains:
+            if domain.endswith("." + known) or domain.startswith(known + "."):
+                return "subdomain_trick"
+        for known in set(domains) | address_domains:
+            label, _, rest = known.partition(".")
+            if domain.endswith("." + rest) and any(label[:i] + label[i + 1:] == domain.partition(".")[0] for i in range(len(label))):
+                return "typo_domain"
+        return "unknown"
+
+    def test_labels_are_recomputed_from_emitted_bytes(self):
+        roles_seen = Counter()
+        for row in self.expected:
+            with self.subTest(fixture=row["id"]):
+                message = self.parse(row)
+                body_part = message.get_body(preferencelist=("plain",))
+                body = body_part.get_content() if body_part else ""
+                attachments = {part.get_filename(): part for part in message.iter_attachments()}
+                texts = {name: self.attachment_text(part) for name, part in attachments.items()}
+                is_order_doc = {name: text.startswith("FICTIONAL SCAN STAND-IN") for name, text in texts.items()}
+                # language: body plus the order document's own text (reference attachments are English boilerplate)
+                language_text = body + "\n" + "\n".join(texts[n] for n in attachments if is_order_doc[n])
+                spanish, english = bool(self.SPANISH.search(language_text)), bool(self.ENGLISH.search(language_text))
+                self.assertTrue(spanish or english)
+                language = "en-es" if spanish and english else "es" if spanish else "en"
+                self.assertEqual(row["language"], language)
+                language_tag = {"en": "english", "es": "spanish", "en-es": "code_switching"}[language]
+                self.assertEqual({"english", "spanish", "code_switching"} & set(row["mutation_tags"]), {language_tag})
+                body_has_po = bool(self.PO_ID.search(body))
+                order_names = sorted(n for n in attachments if is_order_doc[n])
+                if row["category"] == "order":
+                    self.assertEqual(row["where_order"]["body"], body_has_po)
+                    self.assertEqual(sorted(row["where_order"]["attachments"]), order_names)
+                    pos = set(self.PO_ID.findall(body)) | {p for n in order_names for p in self.PO_ID.findall(texts[n])}
+                    self.assertEqual(row["number_of_orders"], len(pos))
+                    roles = {name: "order" if is_order_doc[name] else "packing_list" if "PACKING LIST" in texts[name] else "logo_image"
+                             for name in attachments}
+                    self.assertEqual(row.get("attachment_roles", {}), roles)
+                    roles_seen.update(roles.values())
+                    want = {
+                        "empty_body": not body.strip(), "cover_note": bool(body.strip()) and not body_has_po,
+                        "recap_in_body": body_has_po and bool(order_names), "text_only_order": not attachments,
+                        "body_only_order": not attachments,
+                        "pdf_only_order": any(n.endswith(".pdf") for n in order_names) and not body_has_po,
+                        "png_scan_standin": any(n.endswith(".png") for n in order_names),
+                        "multi_attachment": len(attachments) >= 2, "multiple_orders": len(pos) > 1,
+                        "packing_list_attachment": "packing_list" in roles.values(),
+                        "logo_image_attachment": "logo_image" in roles.values(),
+                        "inline_image": any(p.get_content_disposition() == "inline" for p in attachments.values()),
+                    }
+                    self.assertEqual({t for t, flag in want.items() if flag} | {language_tag}, set(row["mutation_tags"]))
+                else:
+                    self.assertEqual((row["where_order"], row["number_of_orders"]), ({"body": False, "attachments": []}, 0))
+                    self.assertNotIn("attachment_roles", row)
+                    category_tags = {row["category"]} & {"change", "cancellation", "quote_request", "invoice", "status_question", "spam"}
+                    out_of_office = {"out_of_office"} if row["category"] == "other_business" and re.search(
+                        r"Automatic reply|Respuesta automatica", body) else set()
+                    self.assertEqual(set(row["mutation_tags"]), {language_tag} | category_tags | out_of_office)
+                self.assertEqual(row["sender_case"], self.sender_case_from_bytes(message))
+        self.assertEqual(set(roles_seen), {"order", "packing_list", "logo_image"})
+
+    def test_image_sizes_match_their_role_under_the_tiny_image_rule(self):
+        """Order scans must be runnable (>= 5 KB and >= 100x100 px, with margin); logos must be skippable."""
+        scans = logos = 0
+        for row in self.expected:
+            for part in self.parse(row).iter_attachments():
+                if part.get_content_type() != "image/png":
+                    continue
+                payload = part.get_payload(decode=True)
+                width, height = self.png_info(payload)
+                role = row["attachment_roles"][part.get_filename()]
+                if role == "order":
+                    self.assertGreaterEqual(len(payload), 2 * generate.TINY_BYTES, part.get_filename())
+                    self.assertGreaterEqual(min(width, height), 120, part.get_filename())
+                    scans += 1
+                else:
+                    self.assertEqual(role, "logo_image")
+                    self.assertLess(len(payload), generate.TINY_BYTES, part.get_filename())
+                    self.assertLess(max(width, height), generate.TINY_PX, part.get_filename())
+                    logos += 1
+        self.assertEqual((scans, logos), (6, 16))
 
 
 if __name__ == "__main__":

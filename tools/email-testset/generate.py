@@ -366,6 +366,38 @@ def logo_png(seed_value):
 KNOWN_BASED = ("known_address", "case_variant", "plus_tag", "subdomain_trick", "typo_domain", "display_name_trick")
 
 
+# Tiny-image skip rule (Carlos, 2026-10-12): an image is skipped when it is under
+# 5 KB or under 100x100 px. Order scans must clear BOTH with a margin; logos must not.
+TINY_BYTES, TINY_PX = 5 * 1024, 100
+
+
+def scan_png(text, noise_seed):
+    """Order scan stand-in: drawn text on a deterministic noisy page, far above the tiny-image limits."""
+    lines = text.upper().splitlines()
+    scale, margin = 3, 20
+    width = max(len(line) for line in lines) * 4 * scale + 2 * margin
+    height = len(lines) * 7 * scale + 2 * margin
+    noise = random.Random(f"scan:{noise_seed}")
+    pixels = [bytearray(noise.randrange(225, 246) for _ in range(width)) for _ in range(height)]
+    for row, line in enumerate(lines):
+        for col, char in enumerate(line):
+            for y, bits in enumerate(FONT[char].split("/")):
+                for x, bit in enumerate(bits):
+                    if bit == "1":
+                        for dy in range(scale):
+                            for dx in range(scale):
+                                pixels[margin + row * 7 * scale + y * scale + dy][
+                                    margin + col * 4 * scale + x * scale + dx
+                                ] = 25
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    raw = b"".join(b"\0" + bytes(row) for row in pixels)
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, level=9)) + chunk(b"IEND", b""))
+
+
 def pick_sender(case, rng, index):
     """Return (display name, real address) for a sender case. Trick cases are never known."""
     if case in KNOWN_BASED:
@@ -436,7 +468,7 @@ def make_po_inbox_fixture(seed, index, spec, rng):
     fixture_id = f"poinbox-{index:04d}"
     category, scenario = spec["category"], spec["scenario"]
     language = rng.choice(("en", "en", "es", "en-es"))
-    tags = {"english" if language == "en" else "spanish" if language == "es" else "code_switching"}
+    tags = set()  # language tags are added at the end, from the content actually emitted
     po = f"FIC-{rng.randrange(100000, 1000000)}-{index:04d}"
     quantity = rng.randrange(1, 20)
     product = rng.choice(("FICT-ZUNEL CLOUD STOOL", "FICT-VOPRA MOON TRAY", "FICT-NEMUL STAR RACK"))
@@ -451,7 +483,7 @@ def make_po_inbox_fixture(seed, index, spec, rng):
     def add_order(order_po, image=False):
         filename = f"{order_po}.{'png' if image else 'pdf'}"
         text = attachment_text(order_po, quantity, product, language)
-        attachments.append((filename, tiny_png(text) if image else tiny_pdf(text),
+        attachments.append((filename, scan_png(text, f"{index}:{filename}") if image else tiny_pdf(text),
                             "image" if image else "application", "png" if image else "pdf", False))
         sources["attachments"].append(filename)
         roles[filename] = "order"
@@ -464,13 +496,16 @@ def make_po_inbox_fixture(seed, index, spec, rng):
             subject_has_po = True
         else:
             body = cover_note(language)
+            tags.add("cover_note")  # every scenario below except empty_body and recap sends this note
             if scenario == "pdf_empty_body":
                 body = ""
+                tags.discard("cover_note")
                 tags.update(("pdf_only_order", "empty_body"))
             elif scenario == "pdf_cover_note":
-                tags.update(("pdf_only_order", "cover_note"))
+                tags.add("pdf_only_order")
             elif scenario == "pdf_with_recap":
                 body = recap_text(po, quantity, product, language)
+                tags.discard("cover_note")
                 sources["body"] = True
                 tags.add("recap_in_body")
             elif scenario == "pdf_packing_logo":
@@ -517,6 +552,16 @@ def make_po_inbox_fixture(seed, index, spec, rng):
         if category == "invoice":
             name = f"FIC-INV-{po[4:]}.pdf"
             attachments.append((name, tiny_pdf(f"FICTIONAL INVOICE\n{non_order_text('invoice', po, 'en')}"), "application", "pdf", False))
+
+    # Language label = languages of the text really emitted: the body (if any) plus the
+    # order document's own text (Spanish heading for "es", English otherwise). Reference
+    # attachments (packing list, invoice PDF) are always English boilerplate and not counted.
+    spoken = {"es": {"es"}, "en": {"en"}, "en-es": {"en", "es"}}
+    emitted = set(spoken[language]) if body.strip() else set()
+    if category == "order":
+        emitted |= {"es"} if language == "es" else {"en"}
+    language = "en-es" if emitted == {"en", "es"} else emitted.pop()
+    tags.add({"en": "english", "es": "spanish"}.get(language, "code_switching"))
 
     display, address = pick_sender(spec["sender_case"], rng, index)
     known = spec["sender_case"] in KNOWN_SENDER_CASES

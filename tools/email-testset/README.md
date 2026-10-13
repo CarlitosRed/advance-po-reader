@@ -150,19 +150,22 @@ The generator prints the coverage table below. Output: 147 `poinbox-NNNN.eml` fi
 (shuffled into one working day, Monday 12 Oct 2026, three minutes apart),
 `expected.jsonl`, and `known-senders.txt`. Category, scenario and sender-case counts are fixed by design, so every
 seed keeps the same coverage (the lane and lane-reason rows below are for seed
-20261012, because a text-only order from an unknown sender counts once); the seed changes PO numbers, quantities, products,
+20261012, because a text-only order from an unknown sender counts once). The
+number of **new orders** is also seed-specific: 126 order emails is fixed, but a
+multi-PO email carries two or three orders depending on its place in the inbox,
+so seed 20261012 gives 136 new orders, seed 17 gives 135 and seed -1 gives 134; the seed changes PO numbers, quantities, products,
 languages, which known contact writes, and the order of the inbox.
 
 | Group | Item | Emails |
 | --- | --- | ---: |
-| category | order (136 new orders) | 126 |
+| category | order (126 order emails is fixed; the 136 new orders figure is seed 20261012 only) | 126 |
 | category | change / cancellation / status_question / quote_request | 3 / 3 / 3 / 3 |
 | category | invoice / spam / unsure | 2 / 2 / 2 |
 | category | other_business (out-of-office auto replies) | 3 |
 | lane | order (Sure) / needs_a_look / not_an_order | 73 / 67 / 7 |
 | lane reason | text_only_order / unknown_sender / status_reply_needs_look | 14 / 39 / 3 |
 | order scenario | PDF only, empty body (`empty_body`) | 44 |
-| order scenario | PDF plus short cover note (`cover_note`) | 24 |
+| order scenario | PDF plus short cover note (scenario `pdf_cover_note`; the `cover_note` tag is on all 52 emails that send the note: this scenario, packing/logo, several POs, PNG) | 24 |
 | order scenario | PDF plus a recap of it in the body (`recap_in_body`) | 16 |
 | order scenario | PO PDF plus packing-list PDF plus small logo PNG (`multi_attachment`) | 16 |
 | order scenario | two or three PO PDFs in one email (`multiple_orders`) | 6 |
@@ -223,6 +226,15 @@ The default profile's rows have none of these and validate exactly as before.
 | `known_sender` | Boolean; must agree with `sender_case` |
 | `lane_reason` | Present exactly when `lane` differs from the category's canonical lane: `text_only_order`, `unknown_sender` (order, sender not known) or `status_reply_needs_look` (status question). The lane is then `needs_a_look` |
 | `attachment_roles` | a map from each attachment filename to `order`, `packing_list` or `logo_image`; the `order` files equal `where_order.attachments`. Per the 2026-10-09 decision nobody picks the attachment: the system runs every document-like file, so packing lists are runnable files that are not orders and tiny logos (under 5 KB, under 100 px) are skipped |
+
+Labels are derived from the content actually emitted: `language` and the language
+tag come from the body (if any) plus the order document's own text, so an
+empty-body, English-PDF email is `en` even when the generator drew a bilingual
+request. A test recomputes language, tags, `where_order`, `number_of_orders`,
+`attachment_roles` and `sender_case` from every email's bytes. Order PNG scans
+are noisy pages at least 100 px on each side and well over 5 KB, so the
+tiny-image skip rule (under 5 KB or under 100x100 px) never skips an order;
+logo PNGs stay 48x32 px and about 0.2 KB.
 
 Extra mutation tags (`PO_INBOX_MUTATIONS`): `empty_body`, `cover_note`,
 `recap_in_body`, `multi_attachment`, `packing_list_attachment`,
