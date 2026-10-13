@@ -3,7 +3,7 @@
     "fixture": "01-order.eml",
     "sha256": "d4b0b12143c0fc8d5aa4e7b82f13abad6f1c10fca416ce4d22ceb73bb7a5e1d6",
     "fake_category": "order",
-    "final_lane": "order"
+    "final_lane": "needs_a_look"
   },
   {
     "fixture": "02-change.eml",
@@ -57,13 +57,13 @@
     "fixture": "10-order.eml",
     "sha256": "24eaa75eccc300b14bcb893478f297d46d73e7538f52d32d8180fcf011ad2917",
     "fake_category": "order",
-    "final_lane": "order"
+    "final_lane": "needs_a_look"
   },
   {
     "fixture": "11-order.eml",
     "sha256": "29a3da450d4528bf99e97665c06b927abfcc1824ab40133bf41196949f2f9a89",
     "fake_category": "order",
-    "final_lane": "order"
+    "final_lane": "needs_a_look"
   },
   {
     "fixture": "12-order.eml",
