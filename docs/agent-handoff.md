@@ -194,3 +194,247 @@ OneDrive mockup reconciled, 21 files match main, OneDrive repo archived to `dev\
 ## T-010 operating model and merge gate (October 4, 2026)
 
 Desk `advance-po-reader.worktrees\t-010`, branch `claude/t-010-operating-model`, PR #10 (Tier 3). Added `ROLES.md`, the gate tool in `tools/gate/` (standard library only), the `gate-tests` and `scan` CI jobs, the `Gate audit` workflow, a content-scan block in `.githooks/pre-push`, the pull request template, and one appended section in `AGENTS.md`. The `tests` job and every earlier hook line are unchanged. Labels `tier-1` to `tier-4` and `hold` were created on GitHub. No product code changed. Implemented: the files above. Only documented, not built: the attack-team pilot (T-011) and the parked ideas. The gate is a procedure with a record, not a lock: every chat posts as one GitHub account, so it cannot prove who wrote a comment and cannot stop a manual merge. PRs #7, #8 and #9 finish under the old rule 3. `check 7` output after merge: to be added.
+
+## T-009 PR B plan refresh — October 5, 2026
+
+`Codex · goal gaps` refreshed the separate [PR B plan](goal-gaps-pr-b-plan.md)
+in the assigned `goal-tests` desk by merging `codex/worktree-standards` at
+`fe5c1f421c4293d0b993a5e2e4abecc69fba500c`, Carlos's manual PR #7 merge of
+approved head `54c979e457e9fa83e0ac22ada12cb2b3385e0a21`. The refresh preserves
+published history and inherits A's full backend/goal CI job. Both A and B
+handoff sections are retained after resolving their append-at-end conflict.
+
+The revised plan selects rerun-only for source-line count discrepancies, binds
+reviewer counts to each page/source hash, and treats zero with product rows as
+a mismatch. Unavailable text retains tiers and uses one attributed page-level
+confirmation that cannot clear count/row blockers. Case-folding and whitespace
+normalization, invented/correct text cases, and the deferred OpenAPI snapshot
+nit are explicit. Only this plan and handoff change relative to the merged
+base; no B code, tests or migrations are built and no new local runtime result
+is claimed. `git diff --check` is the documentation validation. Implementation
+waits for Claudio · PR review's confirmation of the revised plan at its new
+head; retain A's approval/scoping regressions and synthetic/disposable test
+boundaries afterward. No #9 merge without Carlos's instruction.
+
+## T-009 PR B item 3 — October 5, 2026
+
+`Codex · goal gaps 3` rebuilt the clean desk from the checkpoint, task card,
+branch plan and signed PR comments. Claudio confirmed the plan at `7438183`
+at 17:55:42 UTC and Carlos gave GO to code B. No prior uncommitted or unpushed
+implementation existed. This commit implements only item 3; items 4 and 6
+remain separately scoped work.
+
+Every PO run initially remains partial until each source page has an
+independent reviewer count. `/runs/{run_id}/page-counts` verifies the actual
+source hash and appends a named, reasoned page count in existing immutable
+`review_events`; no new table or migration is needed. Comparisons expose
+provider/independent counts and matched/mismatch/unavailable status. Product
+items are counted from original observations, without description
+continuations, document details or human exclusions. Zero with products is
+a mismatch; an empty source page requires its own zero check. Matching counts
+do not approve products or clear other blockers.
+
+A correction names the latest count event and attests `independent_count_error`,
+preserving its old value and sequence. A reviewer-confirmed source discrepancy
+keeps that old run blocked; the website can prepare a fresh run of the same
+source without starting processing or copying authorization/counts/approvals.
+Only a coverage-held outcome transitions partial -> completed after matching
+checks. A later mismatch can return completed -> partial before resolution;
+other extraction/retrieval partial outcomes remain partial. Resolved reviews
+reject further count changes.
+
+The first B contract-changing commit regenerates the local backend OpenAPI
+snapshot and adds comparison with `app.openapi()`. `pytest.backend.ini`
+collects backend and goal cases, so each new B case runs in both backend-goal
+commands. Goal 8's original assertion now passes and its marker is removed.
+Goal 7 remains strict xfail with a grounding-specific assertion, so a
+coverage-induced partial state cannot masquerade as a grounding fix.
+
+Verification uses fixed JSON and generated fictional source bytes on owned
+throwaway PostgreSQL clusters. The separate local goal run reports **76
+passed, 1 strict xfail in 34.01s**, no skips or failures; the actual browser
+check includes mismatch blocking, attributed count correction and explicit
+product approval. The final combined backend/goal command reports **344
+passed, 1 strict xfail in 121.13s**, no skips or failures; its 345 collected
+cases include every new B case and the actual local browser check. `pip check`
+and `git diff --check` pass. CI measurements are recorded separately in the
+delivery comment and external checkpoint after publication.
+CI deliberately lacks browser tooling and reports its browser skips separately.
+No `.env*`, real PO, paid/live provider, application DB migration or main push
+is involved. Code approval still requires `Approved at <current head>`; no
+merge is authorized in this chat.
+
+## T-009 PR B item 4 — Codex · goal gaps 4, 2026-10-05
+
+The separate plan-only commit `042f9d2` resolves item 3's two non-blocking
+notes: zero-product whole documents may Finish after matching per-page zero
+counts and other review requirements; `partial` also means awaiting counts.
+
+Item 4 independently decodes actual hash-checked PDF source text inside each
+description/identifier's declared region. Unicode case-folding, whitespace
+collapse and complete-phrase alphanumeric boundaries preserve punctuation,
+numbers and literal observations. Supported/unsupported/unavailable evidence,
+literal decoded text and separate normalized comparisons are saved once in
+the run's immutable deterministic parses. No new migration is required.
+
+Unsupported text blocks Finish until attributed `confirm_source_text` review
+of every flagged region. Corrections retain original observations and still
+invalidate product approval. Source review preserves the unsupported status
+and cannot approve products. Scanned/empty PDF text and photos retain all tiers
+and normal preselection. One attributed, exact-hash page action
+`confirm_unavailable_page_text` covers every unavailable row on that page;
+the unavailable status, row decisions and independent count blockers remain.
+Generic acknowledgments do not substitute. Every page/new run needs its own
+evidence; preserved legacy runs missing grounding require new processing.
+The website shows row flags and source evidence, with both confirmation
+controls tested through the real isolated API. OpenAPI is regenerated and
+compared with `app.openapi()`. Goal 7's original assertion now passes with its
+strict xfail removed. A zero-product whole-document test is also included.
+
+Final local tests: backend plus goal **367 passed in 100.36s**; separate goal
+**99 passed in 52.69s**. Neither command has skips, xfails or failures. Each
+runs the same 20 new grounding/empty-document cases and three browser modes
+(text PDF, photo/unavailable text and unsupported source text). Tests preserve
+the item 3 count and A's approval/scoping/evidence regressions. `pip check`
+and `git diff --check` pass. The measured scorecard is regenerated from the
+separate goal run. CI for the published item 4 head must be checked separately;
+the reported runner-acquisition outage is not a passing-suite result.
+
+Item 6 (F7/F8) is unstarted. Carlos requested a checkpoint and stop at about
+60% context; the continuation checkpoint is
+`C:\Users\carlo\dev\project-notes\audits\handoff-codex-goal-gaps-4-2026-10-05.md`.
+PR #9 stays draft; item 4 needs exact-head re-review, and no merge is authorized.
+No dotenv file, paid/live provider, real PO data, existing application database,
+deployment, cart/order write or main push is involved.
+
+
+## Codex · goal gaps 5 — T-009 PR B item 6, October 5, 2026
+
+Item 6 only follows parent `1ca8c035caa1fc974df4abeb43859ae9c6d5fea4`
+(item 4). F7 discovers explicitly labeled short/alphabetic/date-shaped literal
+codes, including A123/2026, with at most ten distinct forty-character tokens
+and a single tenant/vendor/pool-scoped exact SKU query bounded to limit + 1.
+Labels and codes are retrieval evidence, never new identifier observations or
+rewritten descriptions. Labeled hints take priority over existing conservative
+unlabeled hints. Unlabeled dates/quantities/currency remain conservative;
+A's labeled-conflict veto and explicit approval remain intact.
+
+F8 defines region/page/document review evidence. Row requests retain same-row
+validation and accept both explicit region scope and the existing unscoped
+region form. Page acknowledgments name a valid partial source page and exact
+hash, including partial pages without any regions. Document acknowledgments
+name source/hash/run. New generic acknowledgments reject the old region-only
+or null-region shapes; saved historical audit events remain readable. The
+response union retains unavailable-page confirmations/count evidence. The
+actual website buttons send these source-bound shapes. Generic acknowledgments
+cannot approve rows or clear independent grounding/count blockers. Count and
+grounding policies are unchanged; no migration is added. OpenAPI is regenerated.
+
+Measured local source validation: full backend plus goal **413 passed in
+104.53s**; separate goal **145 passed in 58.84s**, with zero xfails/skips/failures.
+JUnit case sets agree: **45 new F7/F8 cases** and **four real browser modes**
+passed in both commands. The new browser mode clicks page acknowledgment for
+a partial second page without regions and document-warning acknowledgment,
+checks their persisted request scopes, and proves row/grounding/count blockers
+survive before the separate decisions. Tests use the actual pg_trgm extension
+and transactional absence in the disposable harness database; rollback restores
+its indexes. Tenant/vendor/pool provenance, hint/candidate bounds, source/hash/
+page/run rejection, literal preservation, conflicts and unlabeled tokens pass.
+`pip check` passes. The scorecard is regenerated from the separate goal run.
+
+Parent item 4 CI has now been verified: backend **364 passed / 3 browser skips**;
+separate goal **96 passed / 3 browser skips**. Its JUnit artifact has identical
+sets of twenty passing grounding/empty-document cases in both suites. Claudio
+approved item 4 at the full parent SHA; his three non-blocking source-grounding
+notes (split-region phrases, raster regions on text-bearing pages, damaged-PDF
+PyMuPDF exceptions) remain deferred because this task is item 6 only.
+
+Item 6 still requires CI execution and exact-head review after publication.
+The signed PR delivery comment and external checkpoint record the published
+head and actual CI state; this local measurement is not a claim of CI execution.
+PR #9 remains draft and unmerged; no self-approval or merge is authorized.
+Only generated fictional bytes, fixed JSON and test-owned PostgreSQL are used.
+No dotenv file, paid/live provider, real PO data, existing application service/
+database change, deployment, cart/order write or main push is involved.
+The sole external checkpoint is
+`C:\Users\carlo\dev\project-notes\audits\handoff-codex-goal-gaps-5-2026-10-05.md`.
+
+
+## PR #20 v1.1 backend Safety Net — October 8, 2026
+
+Codex · integration merged landing prep `398210a` normally, then selectively
+merged #9 `100f1d8` backend/tests/contracts with both parents (`cbe4eb6`). UI
+files were never edited for the safety merge; current scripts are unchanged.
+Implemented `PO_BACKEND_SAFETY_NET_FINISH_BLOCKING`, default OFF, including the
+OFF/ON transition rules, typed ON acknowledgments, source integrity at enabled
+Finish, and inherited count/source-check APIs. OFF preserves v1 processing,
+retrieval and Finish; ON exposes independent-count and source blockers.
+
+Only documented/deferred: new Safety Net UI controls and their browser proof.
+Stored counts-only snapshots confirm the historical 150 products and 33/33
+count matches; the supplied batch scorer cannot safely perform the requested
+fresh re-score under this task's limits. It reads PDFs and can make paid calls.
+The current plan, class/claim/state ledgers and local scorecard distinguish that
+limitation. Full evidence and checkpoint: external audit
+`project-notes/audits/codex-v11-safety-net-2026-10-08.md`. Independent review and
+Carlos's exact-head Tier 3 approval remain required. No PR approval or merge.
+
+## PR #20 P2 corrections — Codex · integration, October 8, 2026
+
+Addressed only P2-1 and P2-2 from Claudio's review of
+`eaa442e5b7aa96deac05d3513922041bcbe07c37`. Empty and detail-only orders retain
+`unresolved_rows_remain` in both modes, even after a matching independent zero
+count. This supersedes the historical PR #9 note above allowing zero-product
+documents to Finish; the current claim ledger and inherited goal test are corrected.
+Each product row contributes once to coverage, on its earliest evidence page,
+regardless of evidence array order or repeated references. No other policy changed.
+
+Class sweep across `backend/`: only `review_run` sets review state to resolved;
+it and `reviewed_summary` share `resolution_blockers`. Count-event responses,
+summary coverage, enabled processing-state synchronization and resolve share
+`page_coverage`. Evaluation counts use row-ID sets; source grounding inspects
+evidence without counting products. No additional instance of either defect found.
+
+Before production edits, the zero-order unit cases gave **4 failed / 4 passed**
+(ON fails, OFF passes); the zero-order and spanning-row HTTP regressions gave
+**5 failed**. On the fixes the targeted slice gave **13 passed**. Full offline
+backend+goal, including current browser checks: **554 passed, 2 expected OFF
+xfails, 0 skipped, 0 failures/errors**, 165.03s. Both schemas, empty/detail-only
+orders, reversed/repeated spanning evidence, count responses, summary and actual
+Finish are covered. JUnit evidence is in ignored `tmp/p2-*-results.xml` and
+`tmp/p2-red-unit.xml`, `tmp/p2-red-routes.xml`, `tmp/p2-green.xml`.
+
+PR #27 was still OPEN at the publication precheck. Carlos requires its merge
+before re-merging `origin/claude/landing-prep`; that dependency remains pending.
+P3 findings and deferred UI/batch evidence remain outside this correction.
+Cost $0; no paid calls, dotenv opens, private data, existing-service changes,
+approval or PR merge. Only disposable test-owned PostgreSQL clusters were used.
+
+## PR #20 refreshed onto main — Codex · integration, October 9, 2026
+
+Normally merged main `7338ad1c26efa461cda2d55ac4cf889db52e61be` into the
+approved PR #20 head `e3354ec0d5ed6a02102c7e3cce7e73ff7223ae3b`.
+Main's squash landing required resolving ancestry-only conflicts using the shared
+pre-landing source `9d1195a`; the four content conflicts retain typed Safety Net
+evidence, main's NUL rejection and fail-closed catalog handling, and the measured
+goal scorecard. Regenerated the OpenAPI snapshot from the merged application.
+Nested typed evidence is included in request NUL validation, and the fictional
+goal provider reports its fixture's schema version so main's receipt guard holds.
+
+The Safety Net setting still defaults OFF. Main's web, scripts, gate and shared
+test-database guard are preserved exactly; new Safety Net UI remains deferred.
+Local suite counts, unchanged-main-test OFF compatibility proof and owned-runtime
+cleanup are recorded in `project-notes/audits/codex-v11-main-merge-2026-10-09.md`.
+PR #20 remains Tier 3 and draft for independent review of the new head.
+
+## PR #20 documentation restoration - Codex · integration, October 12, 2026
+
+Normally merged main `f07820a` and restored its documentation verbatim,
+retaining the PR's additions below main's original text. Swept every
+changed file for main lines removed; remaining code/test replacements
+are the existing v1.1 work. This repair changes documentation only.
+Backend/goal and original-main default-OFF evidence, the per-file
+deletion inventory and exact new head are recorded in the signed PR
+comment and `project-notes/audits/codex-v11-main-merge-2026-10-09.md`.
+New Safety Net UI remains deferred. PR #20 stays draft for independent
+re-review; no paid call or real PO data was used.

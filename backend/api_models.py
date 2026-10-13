@@ -1,8 +1,9 @@
 """Strict request boundaries, separate from immutable model observations."""
 from typing import Annotated, Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, StrictInt, StrictBool, field_validator, model_validator
 from backend.catalog import ProductInput
+from gate_a.contracts import EvidenceReference
 from backend.text_guard import reject_nul
 
 
@@ -12,8 +13,48 @@ class RequestModel(BaseModel):
     @model_validator(mode="after")
     def no_nul_text(self):
         # Every persisted client string (and nested JSON string) is checked once, here.
-        for name in type(self).model_fields:
-            reject_nul(getattr(self, name))
+        reject_nul(self.model_dump(mode="python"))
+        return self
+
+
+class PageSourceEvidence(RequestModel):
+    scope: Literal["page"]
+    page_number: StrictInt = Field(ge=1)
+    source_sha256: StrictStr = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
+
+
+class RegionReviewEvidence(EvidenceReference):
+    scope: Literal["region"]
+
+
+class DocumentSourceEvidence(RequestModel):
+    scope: Literal["document"]
+    source_document_id: UUID
+    run_id: UUID
+    source_sha256: StrictStr = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
+
+
+# Unscoped region references remain valid for existing row clients/history.
+ReviewEvidence = EvidenceReference | RegionReviewEvidence | PageSourceEvidence | DocumentSourceEvidence
+
+
+class PageCountRequest(PageSourceEvidence):
+    scope: Literal["page"] = "page"
+    product_count: StrictInt = Field(ge=0, le=100000)
+    reviewer: StrictStr = Field(min_length=1, max_length=120)
+    reason: StrictStr = Field(min_length=1, max_length=500)
+    source_discrepancy: StrictBool
+    corrects_event_id: UUID | None = None
+    correction_kind: Literal["independent_count_error"] | None = None
+
+    @model_validator(mode="after")
+    def attributed_count(self):
+        if not self.reviewer.strip() or not self.reason.strip():
+            raise ValueError("reviewer and reason required")
+        if (self.corrects_event_id is None) != (self.correction_kind is None):
+            raise ValueError("a count correction must identify the prior event and attest an independent count error")
+        if self.corrects_event_id and self.source_discrepancy:
+            raise ValueError("a source discrepancy requires a new run, not a count correction")
         return self
 
 
@@ -61,12 +102,12 @@ class RunRequest(RequestModel):
 
 
 class ReviewRequest(RequestModel):
-    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "propose_candidate", "this_is_product", "new_product", "not_a_product"] | Annotated[Literal["not_product"], Field(json_schema_extra={"deprecated": True})] = Field(
+    action: Literal["approve", "no_match", "acknowledge", "correct", "resolve", "acknowledge_page", "acknowledge_document", "confirm_source_text", "confirm_unavailable_page_text", "propose_candidate", "this_is_product", "new_product", "not_a_product"] | Annotated[Literal["not_product"], Field(json_schema_extra={"deprecated": True})] = Field(
         description="Use not_a_product for exclusion. not_product is a deprecated legacy alias retained for existing clients and audit events.")
     row_id: StrictStr | None = Field(default=None, max_length=120)
     reviewer: StrictStr = Field(min_length=1, max_length=120)
     reason: StrictStr = Field(min_length=1, max_length=500)
-    evidence_reference: list[dict] = Field(default_factory=list, max_length=50)
+    evidence_reference: list[ReviewEvidence] = Field(default_factory=list, max_length=50)
     selected_candidate_id: UUID | None = None
     candidate_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=5)
     field_name: Literal["description", "quantity", "unit", "unit_price", "line_total",
@@ -85,11 +126,18 @@ class ReviewRequest(RequestModel):
         if self.action == "resolve":
             if self.row_id or self.selected_candidate_id or self.field_name or self.evidence_reference:
                 raise ValueError("resolve applies to the complete run")
-        elif self.action in {"acknowledge_page", "acknowledge_document"}:
+        elif self.action in {"acknowledge_page", "acknowledge_document", "confirm_unavailable_page_text"}:
             if self.row_id is not None or not self.evidence_reference:
                 raise ValueError("page/document acknowledgment requires source evidence and no row")
         elif not self.row_id or not self.evidence_reference:
             raise ValueError("row and source evidence required")
+        if self.action == "confirm_unavailable_page_text":
+            if len(self.evidence_reference) != 1 or not isinstance(self.evidence_reference[0], PageSourceEvidence):
+                raise ValueError("one explicit page source reference required")
+        elif self.action in {"acknowledge_page", "acknowledge_document"}:
+            pass  # The service selects typed ON or legacy OFF acknowledgment validation.
+        elif self.action != "resolve" and any(not isinstance(ref, EvidenceReference) for ref in self.evidence_reference):
+            raise ValueError("row actions require region evidence")
         if self.action == "approve":
             if self.selected_candidate_id is None:
                 raise ValueError("approve requires an in-set candidate")

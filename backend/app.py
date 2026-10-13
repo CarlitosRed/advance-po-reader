@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from backend.api_models import NameRequest, RequestModel, RunRequest, ReviewRequest
+from backend.api_models import NameRequest, RequestModel, RunRequest, ReviewRequest, PageCountRequest
 from backend.catalog import ProductInput, import_products, CatalogConflictError, CatalogScopeError
 from backend.config import Settings
 from backend.contracts import ExtractionPayload, strict_schema
@@ -23,7 +23,7 @@ from backend.errors import BackendError
 from backend.models import Vendor, CatalogProduct, CatalogAlias, SourceDocument, UploadReceipt, ProcessingRun, ProviderAttempt, Suggestion, ReviewEvent
 from backend.pools import default_pool, pool_members
 from backend.service import (serialize, lock_key, fingerprint, source_for, run_for, create_run,
-                             process_run, cancel_run, review_run)
+                             process_run, cancel_run, review_run, record_page_count)
 from backend.uploads import digest, validate_file, write_source
 from backend.responses import (ErrorResponse, TenantResponse, VendorResponse, SourceResponse,
                                RunResponse, RunsResponse, ResultResponse, SuggestionsResponse,
@@ -378,7 +378,9 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
                 .order_by(*ReviewEvent.audit_order())).all()
             from backend.tiers import review_suggestions
             tiers = {value["row_id"]: value["tier"] for value in review_suggestions(session, tenant, run)}
-            return reviewed_summary(run, [serialize(event) for event in events], tiers)
+            source = source_for(session, tenant, run.source_document_id)
+            return reviewed_summary(run, [serialize(event) for event in events], tiers, source,
+                                    safety_net_finish_blocking=configuration.safety_net_finish_blocking)
 
     @app.post("/runs/{run_id}/cancel", response_model=RunResponse)
     def cancel(run_id: UUID, request: Request):
@@ -407,7 +409,14 @@ def create_app(settings: Settings | None = None, engine=None, provider=None):
     @app.post("/runs/{run_id}/reviews", status_code=201, response_model=ReviewResponse)
     def review(run_id: UUID, body: ReviewRequest, request: Request):
         with Session(app.state.engine, expire_on_commit=False) as session:
-            event = review_run(session, tenant_for(request, session), run_id, body)
+            event = review_run(session, tenant_for(request, session), run_id, body, configuration)
+            session.commit()
+            return serialize(event)
+
+    @app.post("/runs/{run_id}/page-counts", status_code=201, response_model=ReviewResponse)
+    def page_count(run_id: UUID, body: PageCountRequest, request: Request):
+        with Session(app.state.engine, expire_on_commit=False) as session:
+            event = record_page_count(session, tenant_for(request, session), run_id, body, configuration)
             session.commit()
             return serialize(event)
 
