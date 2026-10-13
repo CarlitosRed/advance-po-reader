@@ -44,8 +44,10 @@ def from_address(header, raw_value):
     # Accept a bare mailbox or one angle mailbox with a display name, followed
     # by simple comments. More elaborate syntax conservatively requires review.
     literal = re.escape(value)
-    display = r'(?:"(?:[^"\\]|\\.)*"|[^<>"]*)'
-    form = rf'\s*(?:{literal}|{display}\s*<\s*{literal}\s*>)\s*(?:\([^()]*\)\s*)*'
+    # Possessive runs cannot backtrack across overlapping whitespace/display
+    # text. The unquoted display includes its trailing whitespace already.
+    display = r'(?:"(?:[^"\\]|\\.)*+"\s*+|[^<>"]*+)'
+    form = rf'\s*+(?:{literal}|{display}<\s*+{literal}\s*+>)\s*+(?:\([^()]*+\)\s*+)*+'
     return value if re.fullmatch(form, raw_value.lower()) else None
 
 
@@ -68,7 +70,15 @@ def load(path):
     """Read one bounded UTF-8 list; reject the whole file on any bad entry."""
     try:
         path = safe_path(path)
-        # Avoid .env files in any path component, including Windows stream names.
+        # Check lexical and resolved components: Windows 8.3 names can hide
+        # a .env-prefixed file or parent. Refuse junctions before resolving;
+        # safe_path supplies symlink checks. These are pre-open checks, not
+        # protection against concurrent path replacement or hard links.
+        if any(part.lower().startswith(".env") or ":" in part for part in path.parts[1:]):
+            raise SenderListError()
+        if any(getattr(item, "is_junction", lambda: False)() for item in (path, *path.parents)):
+            raise SenderListError()
+        path = safe_path(path.resolve(strict=True))
         if any(part.lower().startswith(".env") or ":" in part for part in path.parts[1:]):
             raise SenderListError()
         with path.open("rb") as stream:

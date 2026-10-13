@@ -7,6 +7,8 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -14,6 +16,7 @@ from unittest.mock import patch
 from email_intake.contract import decision, PAIRS, SCHEMA
 from email_intake.providers import FakeProvider
 from email_intake.runner import run
+from email_intake.senders import SenderListError, load
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -147,7 +150,7 @@ class SenderTests(unittest.TestCase):
         with patch.object(self.cli, "FakeProvider", side_effect=AssertionError("provider constructed")):
             code, stdout, _ = self.invoke(raw=mail(), list_path=self.base / "missing.txt")
         self.assertEqual(code, 2)
-        self.assertEqual(json.loads(stdout)["reason_code"], "UNKNOWN_SENDER")
+        self.assertEqual(json.loads(stdout)["reason_code"], "SENDER_LIST_ERROR")
         self.assertFalse(self.out.exists())
 
     def test_empty_and_whitespace_list_refuse(self):
@@ -169,7 +172,7 @@ class SenderTests(unittest.TestCase):
                 self.allow.write_text("buyer@customer.example.test\n" + entry + "\n", encoding="utf-8")
                 code, stdout, _ = self.invoke(raw=mail())
                 self.assertEqual(code, 2)
-                self.assertEqual(json.loads(stdout)["reason_code"], "UNKNOWN_SENDER")
+                self.assertEqual(json.loads(stdout)["reason_code"], "SENDER_LIST_ERROR")
                 self.assertFalse(self.out.exists())
 
     def test_invalid_encoding_directory_and_unreadable_list_refuse(self):
@@ -190,7 +193,7 @@ class SenderTests(unittest.TestCase):
         with patch.object(Path, "open", side_effect=AssertionError("must not open")):
             code, stdout, _ = self.invoke(list_path=self.base / ".env.fake")
         self.assertEqual(code, 2)
-        self.assertEqual(json.loads(stdout)["reason_code"], "UNKNOWN_SENDER")
+        self.assertEqual(json.loads(stdout)["reason_code"], "SENDER_LIST_ERROR")
 
     def test_bad_list_does_not_initialize_live_ledger_or_lookup_key(self):
         get_env = self.cli.os.environ.get
@@ -308,7 +311,9 @@ class SenderTests(unittest.TestCase):
         self.assertEqual(self.record()["lane"], "order")
 
     def test_env_parent_and_stream_list_never_opened(self):
-        for path in [self.base / ".env.private" / "list.txt", self.base / "list.txt:stream"]:
+        for path in [self.base / ".env.private" / "list.txt", self.base / ".ENVdir" / "list.txt",
+                     self.base / ".ENVfictional. ", self.base / "list.txt:stream",
+                     self.base / "list.txt::$DATA"]:
             with self.subTest(path=path.name):
                 with patch.object(Path, "open", side_effect=AssertionError("must not open")):
                     self.assertEqual(self.invoke(list_path=path)[0], 2)
@@ -341,6 +346,94 @@ class SenderTests(unittest.TestCase):
     def test_quoted_local_part_with_comment_cannot_inherit_trust(self):
         self.rejected(['"buyer"@customer.example.test (comment <trick>)',
                        '"buyer"(note)@customer.example.test'])
+
+    def test_long_raw_from_matching_is_time_bounded(self):
+        # A subprocess deadline keeps a future backtracking regression from
+        # hanging the suite. Time only E3 matching, not stdlib header parsing.
+        probe = '''
+import time
+from email import policy
+from email.parser import Parser
+from email_intake.senders import from_address
+header = Parser(policy=policy.default).parsestr("From: a@trusted.example.test\\n\\n")["From"]
+cases = ["(" + " " * 32000 + ") a@trusted.example.test",
+         " " * 32000 + "<a@trusted.example.test",
+         '"' + " " * 32000,
+         "a@trusted.example.test (" + " " * 32000,
+         " " * 32000 + "<a@trusted.example.test>"]
+start = time.perf_counter()
+for raw in cases:
+    for _ in range(5):
+        expected = "a@trusted.example.test" if raw == cases[-1] else None
+        assert from_address(header, raw) == expected
+print(time.perf_counter() - start)
+'''
+        result = subprocess.run([sys.executable, "-c", probe], cwd=ROOT,
+                                capture_output=True, text=True, timeout=2, check=True)
+        self.assertLess(float(result.stdout), 0.5)
+
+    def test_resolved_short_name_env_components_never_opened(self):
+        # Synthetic long names only; no .env file/directory is created or read.
+        for resolved in [self.base / ".envfictional", self.base / ".envdir" / "list.txt"]:
+            with self.subTest(resolved=resolved.name), \
+                 patch.object(Path, "resolve", return_value=resolved), \
+                 patch.object(Path, "open", side_effect=AssertionError("must not open")):
+                with self.assertRaises(SenderListError):
+                    load(self.allow)
+
+    def test_symlink_components_never_opened(self):
+        # Also covers machines where creating real symlinks needs a privilege.
+        for component in [self.allow, self.base]:
+            original = Path.is_symlink
+            with self.subTest(component=component.name), \
+                 patch.object(Path, "is_symlink", lambda path: path == component or original(path)), \
+                 patch.object(Path, "open", side_effect=AssertionError("must not open")):
+                with self.assertRaises(SenderListError):
+                    load(self.allow)
+
+    @unittest.skipUnless(hasattr(Path, "is_junction"), "Python lacks junction detection")
+    def test_junction_components_never_opened(self):
+        for component in [self.allow, self.base]:
+            original = Path.is_junction
+            with self.subTest(component=component.name), \
+                 patch.object(Path, "is_junction", lambda path: path == component or original(path)), \
+                 patch.object(Path, "open", side_effect=AssertionError("must not open")):
+                with self.assertRaises(SenderListError):
+                    load(self.allow)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction probe")
+    def test_real_junction_list_never_opened(self):
+        import _winapi
+        junction = self.base / "junction"
+        _winapi.CreateJunction(str(self.base), str(junction))
+        self.addCleanup(junction.rmdir)
+        self.assertTrue(junction.is_junction())
+        with patch.object(Path, "open", side_effect=AssertionError("must not open")):
+            with self.assertRaises(SenderListError):
+                load(junction / self.allow.name)
+
+    @unittest.skipUnless(os.name == "nt", "Windows short-name probe")
+    def test_real_short_name_resolves_to_long_name(self):
+        import ctypes
+        from ctypes import wintypes
+        get_short = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+        get_short.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        get_short.restype = wintypes.DWORD
+        buffer = ctypes.create_unicode_buffer(32768)
+        count = get_short(str(self.allow), buffer, len(buffer))
+        self.assertTrue(0 < count < len(buffer))
+        short = Path(buffer.value)
+        if str(short).lower() == str(self.allow).lower():
+            self.skipTest("8.3 names unavailable on this volume")
+        self.assertEqual(short.resolve(strict=True), self.allow)
+        self.assertEqual(load(short), load(self.allow))
+
+    def test_shared_domains_admit_any_supported_mailbox(self):
+        self.allow.write_text("gmail.com\nco.uk\n", encoding="utf-8")
+        known = load(self.allow)
+        self.assertTrue(known.matches("anyone@gmail.com"))
+        self.assertTrue(known.matches("anyone@co.uk"))
+        self.assertFalse(known.matches("anyone@sub.co.uk"))
 
 
 if __name__ == "__main__":

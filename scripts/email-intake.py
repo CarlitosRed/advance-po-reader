@@ -53,7 +53,7 @@ def main(argv=None):
             print(json.dumps({"warning": "ALL_REUSED", "hint": "All emails reused stored outcomes; no new classification was attempted."}), file=sys.stderr)
         return 0
     except SenderListError:
-        print(json.dumps({"reason_code": "UNKNOWN_SENDER", "hint": "Use a non-empty UTF-8 list of exact addresses or domains."}))
+        print(json.dumps({"reason_code": "SENDER_LIST_ERROR", "hint": "Use a readable non-empty UTF-8 list of exact addresses or domains; omit comment lines. See the known-sender path rules in email_intake/README.md."}))
         return 2
     except LockError:
         print(json.dumps({"reason_code": "CONFLICT", "hint": "Intake is locked. --break-lock recovers only a dead owner; active or unknown owners refuse."}))
