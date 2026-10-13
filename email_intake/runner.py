@@ -44,7 +44,7 @@ def summary(record, *, reused=False):
         {"note": record["note"]} if "note" in record else {})
 
 
-def run(drop, out, provider=None, *, break_lock=False, report=None):
+def run(drop, out, provider=None, *, break_lock=False, report=None, known_senders=None):
     drop, out = safe_path(drop), safe_path(out)
     if not drop.is_dir() or out == drop or out in drop.parents or drop in out.parents:
         raise ValueError("CONFLICT")
@@ -52,6 +52,16 @@ def run(drop, out, provider=None, *, break_lock=False, report=None):
     provider = provider or FakeProvider()
     records, results = [], []
     with exclusive(out, break_lock=break_lock):
+        # Outcomes are immutable. A changed policy must use a new output folder;
+        # otherwise an old Sure could bypass the enabled hint on replay.
+        policy_path = safe_path(out / "sender-policy.json")
+        if known_senders is not None:
+            policy = {"version": 1, "sha256": known_senders.fingerprint}
+            if not policy_path.exists() and any((out / "records").glob("*.json")):
+                raise ValueError("CONFLICT")
+            save_json(policy_path, policy)
+        elif policy_path.exists():
+            raise ValueError("CONFLICT")
         record_dir = safe_path(out / "records")
         record_dir.mkdir(exist_ok=True)
         for path in sorted(record_dir.glob("*.json")):
@@ -98,7 +108,7 @@ def run(drop, out, provider=None, *, break_lock=False, report=None):
             try:
                 if oversized:
                     raise ParseError("LIMIT")
-                parsed = parse(raw)
+                parsed = parse(raw, sender_hint=known_senders is not None)
                 record.update(parsed.record())
                 for a in parsed.attachments:
                     # Retain every attachment, including archives/macros, as opaque
@@ -116,7 +126,12 @@ def run(drop, out, provider=None, *, break_lock=False, report=None):
                 record["related_intakes"] = sorted(set(related))
                 empty_body = not parsed.body.strip()
                 unsupported = any(not a["supported"] for a in parsed.attachments)
-                if exact:
+                unknown_sender = known_senders is not None and not known_senders.matches(parsed.sender_address)
+                if unknown_sender:
+                    result, audit = pending("UNKNOWN_SENDER"), None
+                    if exact:
+                        record["duplicate_of"] = exact["record_id"]
+                elif exact:
                     record["duplicate_of"] = exact["record_id"]
                     result, audit = pending("DUPLICATE"), None
                 elif message_id_conflict:
@@ -138,7 +153,8 @@ def run(drop, out, provider=None, *, break_lock=False, report=None):
                 # A blank body is normal for a document-only message. Keep its
                 # supported files selectable, while its unseen contents still
                 # require review. Duplicates/conflicts/unsupported mixtures do not.
-                attachment_only = empty_body and not unsupported and not exact and not message_id_conflict
+                attachment_only = (empty_body and not unsupported and not exact
+                                   and not message_id_conflict and not unknown_sender)
                 if result["lane"] == "order" or attachment_only:
                     if parsed.attachments:
                         for a in parsed.attachments:
