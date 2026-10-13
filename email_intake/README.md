@@ -85,6 +85,79 @@ with a hash of the original parsed text. English/Spanish WinAnsi text that fits
 control characters or overflow require a look with `PDF_LIMIT`; the full text and
 original remain available. No replacement characters or truncated PDF is emitted.
 
+## Optional known-sender hint
+
+Add --known-senders PATH_TO_LIST to either offline or separately authorized live
+intake. The UTF-8 list contains one exact address or exact domain per line, for
+example buyer@customer.example.test or trusted.example.test. Blank lines,
+surrounding spaces/tabs, a UTF-8 BOM, duplicates and uppercase ASCII are accepted.
+Matching lowercases ASCII only. The file is bounded to 64 KiB and must have at
+least one valid entry; one invalid entry refuses the entire run with exit 2 and
+`SENDER_LIST_ERROR` before provider construction, key lookup or ledger initialization.
+This run-level list error is separate from the per-email `UNKNOWN_SENDER` code.
+Missing, unreadable and directory list paths stop the run. Before opening the
+list, its lexical and resolved path components are checked: symlinks, Windows
+junctions, Windows stream syntax (`:` outside the drive anchor), `.env*` names
+and parent `.env*` directories stop the run. Windows 8.3 short names are resolved
+to long names and rechecked; benign short names are accepted. These checks do not
+detect hard links or protect against concurrent path replacement. Junction/8.3
+hardening here applies only to the sender list; shared drop/out/ledger path
+hardening is tracked separately.
+
+This is a conservative list format: dotted ASCII DNS domains and unquoted
+ASCII local parts without plus-tags or wildcard characters. Display names,
+comments, groups, IP literals, trailing domain dots, internationalized or punycode
+domains and wildcard patterns are not list entries. A listed domain matches
+exactly; it grants no trust to subdomains or suffix/prefix look-alikes. A plus-tag
+never inherits an address/domain's trust and cannot be listed.
+There is no public-suffix or shared-domain check: listing `gmail.com` or `co.uk`
+admits every supported mailbox on that exact domain. Prefer individual addresses
+when a domain is shared. `#` comment lines, inline comments and other invalid
+entries are refused and stop the entire run; they are not ignored.
+
+Only the single top-level parsed From mailbox supplies identity. Display names,
+Reply-To, Sender, Return-Path, subjects and bodies cannot supply a match. Missing,
+multiple or defective From headers keep their existing PARSE_FAILED review
+route; ambiguous groups/mailbox lists and unsupported identities cannot match.
+An otherwise parsed unknown sender goes to needs_a_look / UNKNOWN_SENDER before
+classification, with zero classifier calls/reservations and no prepared reader
+files. Its original and opaque attachment evidence remain available for a person.
+UNKNOWN_SENDER is local; it is not part of the classifier output schema.
+
+A known sender merely continues through existing classification and review
+rules; text-only, empty-body, unsupported, duplicate, conflict and provider-error
+outcomes cannot be promoted by this hint. The From header is a claim, not
+authenticated sender proof: a forged exact From can match. This feature does
+not verify mailbox ownership or authorize automatic product approval.
+
+Hint-enabled output folders retain a canonical policy hash in sender-policy.json.
+The same normalized list can replay immutable outcomes. Enabling a list over
+existing outcomes, changing the list, or disabling it on that output folder
+refuses with CONFLICT: use a separate empty output folder for a new policy.
+This prevents an old order outcome bypassing the hint on replay. Output folders
+that have never enabled the option retain the existing behavior and file format.
+
+### Sender-list path claims and probes
+
+These checks run before the list is opened, on Python 3.12 or later. The test
+names below are in `tests/email_intake/test_senders.py`.
+
+| Class | Covered behavior and evidence boundary | Probe |
+| --- | --- | --- |
+| Symlink file/parent | Refused by inherited `safe_path`; simulated components are tested; real symlink creation was unavailable here | `test_symlink_components_never_opened` |
+| Junction file/parent | Refused by the sender-list check; simulated components and a real owned Windows junction are tested | `test_junction_components_never_opened`, `test_real_junction_list_never_opened` |
+| 8.3 short name | Resolve and recheck long-name components; a real benign short-name list passes; resolved `.env*` file/parent refusals are simulated without creating or opening `.env*` files | `test_real_short_name_resolves_to_long_name`, `test_resolved_short_name_env_components_never_opened` |
+| Windows stream | `:stream` and `::$DATA` syntax refused before open | `test_env_parent_and_stream_list_never_opened` |
+| Literal `.env*` file | Refused before open, including uppercase and trailing dot/space forms | `test_env_named_list_never_opened`, `test_env_parent_and_stream_list_never_opened` |
+| Literal parent `.env*` directory | Refused before open, including uppercase | `test_env_parent_and_stream_list_never_opened` |
+| Hard links/concurrent replacement | No protection claimed; not probed | Separate hardening work |
+
+The review-round repair implements only sender-list path admission, bounded raw
+From matching and the distinct list-error code. It documents shared-domain and
+comment-line behavior and the path limits above. Shared `safe_path` is unchanged.
+The existing parser `AttributeError` on `From: :;[[Name]` can stop a whole run;
+it also exists on main and remains a separate issue, outside this E3 repair.
+
 ## Deferred live path
 
 The builder has made no paid calls. Carlos can later run the following only with
@@ -136,8 +209,10 @@ provably gone. Live/reused PIDs, permission failures and legacy empty/malformed
 markers refuse. A process-held OS lock on the permanent `.intake-guard` serializes
 all runs and marker recovery/removal; a hard kill releases that OS ownership.
 The guard file remains after normal runs and does not require recovery.
-Storage corruption/path aliases/permission failures stop the run with a fixed reason rather
-than attempting recovery or repeating requests. Symlink creation was unavailable
+Storage corruption and permission failures stop the run with a fixed reason rather
+than attempting recovery or repeating requests. Shared drop/out/ledger paths use
+the inherited symlink checks; their Windows junction/8.3 gaps are tracked in a
+separate hardening PR. Sender-list checks are described above. Symlink creation was unavailable
 in the local Windows test environment; that test is explicitly skipped there.
 
 ## Evidence boundaries
