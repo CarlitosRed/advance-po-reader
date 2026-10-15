@@ -24,7 +24,19 @@ jobs:
           echo "repo=$repo" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Fetch the pinned framework (shallow, at the pinned tag only)
-        run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" "${{ steps.pin.outputs.repo }}" .framework-pin
+        env:
+          FRAMEWORK_PIN_TOKEN: ${{ secrets.FRAMEWORK_PIN_TOKEN }}
+        run: |
+          if [ -z "$FRAMEWORK_PIN_TOKEN" ]; then
+            echo "::error::FRAMEWORK_PIN_TOKEN secret is not set. The framework repo is private, so a plain" \
+                 "clone fails here with a cryptic git error - see agent-orchestration/adapters/README.md," \
+                 "'Private framework repo access'." >&2
+            exit 1
+          fi
+          repo_no_scheme="${{ steps.pin.outputs.repo }}"
+          repo_no_scheme="${repo_no_scheme#https://}"
+          git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" \
+            "https://x-access-token:${FRAMEWORK_PIN_TOKEN}@${repo_no_scheme}" .framework-pin
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
