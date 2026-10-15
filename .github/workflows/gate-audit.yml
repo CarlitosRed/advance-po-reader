@@ -33,6 +33,10 @@ jobs:
                  "'Private framework repo access'." >&2
             exit 1
           fi
+          # Strip any stray whitespace/CRLF a copy-paste into the secret may have carried -- a PAT
+          # never legitimately contains whitespace, and an embedded CR/space breaks the URL below
+          # with curl's "Malformed input to a URL function" rather than an auth error.
+          FRAMEWORK_PIN_TOKEN="$(printf '%s' "$FRAMEWORK_PIN_TOKEN" | tr -d '[:space:]')"
           repo_no_scheme="${{ steps.pin.outputs.repo }}"
           repo_no_scheme="${repo_no_scheme#https://}"
           git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" \
