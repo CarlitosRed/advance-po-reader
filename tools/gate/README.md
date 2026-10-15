@@ -1,6 +1,8 @@
-# The merge gate
+# The merge gate (retired 2026-10-15)
 
-`po_gate.py` is the merge gate for this repository. It exists because the repository is private on GitHub's free plan, and that plan cannot enforce branch protection or required checks. The gate makes the rules in `ROLES.md` checkable and leaves a record on every merge.
+**This tool no longer enforces anything.** CI, the pre-push hook, and `ROLES.md`'s merge step now all use the framework's shared, pinned `tools/gate/gate.py` instead (`.orchestration/framework.pin` + `.orchestration/gate.json`; see that framework repo's own `tools/gate/README.md` at the pinned tag for the current tool's own docs). This file and `po_gate.py` stay in the repo for now, per the framework's migration note ("keep the old gate file until the next PR removes it") -- they are not deleted yet, but nothing reads them for real enforcement. The rest of this file describes the retired tool as it was.
+
+`po_gate.py` was the merge gate for this repository. It existed because the repository is private on GitHub's free plan, and that plan cannot enforce branch protection or required checks. The gate made the rules in `ROLES.md` checkable and left a record on every merge.
 
 It is plain Python (standard library only) and uses two programs you already have: `git` and the GitHub CLI `gh`, signed in as the project's GitHub account. No package install, no network call except through `gh`, no key.
 

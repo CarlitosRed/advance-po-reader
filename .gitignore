@@ -1,6 +1,7 @@
 .venv/
 .venv-backend/
 .venv-agent/
+.framework-pin/
 __pycache__/
 data/
 output/

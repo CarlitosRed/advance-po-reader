@@ -3,7 +3,18 @@
 legacy=93a1b5c7fa1dd769db9bc60ec51205749c6faf5b
 zeros=0000000000000000000000000000000000000000
 root=$(git rev-parse --show-toplevel)
-gate="$root/tools/gate/po_gate.py"
+# Cut over 2026-10-15: prefer the pinned shared gate if this desk has it cloned locally
+# (.framework-pin/, gitignored, set up once per desk: see .orchestration/commands.md).
+# A push should not block on a network clone, so this does NOT clone on demand -- it falls
+# back to the old local tool with a warning instead. po_gate.py is kept for exactly this.
+if [ -f "$root/.framework-pin/tools/gate/gate.py" ]; then
+    gate="$root/.framework-pin/tools/gate/gate.py"
+    gate_args="--config $root/.orchestration/gate.json"
+else
+    gate="$root/tools/gate/po_gate.py"
+    gate_args=""
+    echo "Note: .framework-pin not found locally; content scan ran on the retired tools/gate/po_gate.py. Set up .framework-pin once (.orchestration/commands.md) to use the current pinned gate here too. CI always uses the pinned gate regardless." >&2
+fi
 py=""
 for c in python3 python py; do
     if command -v "$c" >/dev/null 2>&1 && "$c" -c "" >/dev/null 2>&1; then py=$c; break; fi
@@ -21,9 +32,9 @@ while read local_ref local_sha remote_ref remote_sha; do
     # --- content scan (T-010): forbidden files and secrets, by content as well as by name ---
     if [ -f "$gate" ] && [ -n "$py" ]; then
         if [ "$remote_sha" = "$zeros" ]; then
-            "$py" "$gate" scan --outgoing "$local_sha"
+            "$py" "$gate" $gate_args scan --outgoing "$local_sha"
         else
-            "$py" "$gate" scan --range "$remote_sha..$local_sha"
+            "$py" "$gate" $gate_args scan --range "$remote_sha..$local_sha"
         fi
         if [ $? -ne 0 ]; then
             echo "Push refused: the content scan found a problem (see above)." >&2

@@ -11,18 +11,37 @@ jobs:
       - run: python -m pip install -r requirements.lock.txt
       - run: python -m unittest discover -s tests -v
   gate-tests:
+    # Tests the pinned shared gate (.orchestration/framework.pin), cut over 2026-10-15.
+    # tools/gate/test_po_gate.py still exists and still passes locally (the old tool isn't deleted
+    # yet, per the framework's migration note) but is no longer the required check here.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Read this project's framework pin
+        id: pin
+        run: |
+          repo=$(grep '^repo:' .orchestration/framework.pin | sed 's/^repo: *//')
+          tag=$(grep '^tag:' .orchestration/framework.pin | sed 's/^tag: *//')
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" "${{ steps.pin.outputs.repo }}" .framework-pin
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest discover -s tools/gate -p "test_po_gate.py" -v
+      - run: python -m unittest discover -s .framework-pin/tools/gate -p "test_gate.py" -v
   scan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Read this project's framework pin
+        id: pin
+        run: |
+          repo=$(grep '^repo:' .orchestration/framework.pin | sed 's/^repo: *//')
+          tag=$(grep '^tag:' .orchestration/framework.pin | sed 's/^tag: *//')
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - run: git clone --depth 1 --branch "${{ steps.pin.outputs.tag }}" "${{ steps.pin.outputs.repo }}" .framework-pin
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python tools/gate/po_gate.py scan --rev HEAD
+      - run: python .framework-pin/tools/gate/gate.py --config .orchestration/gate.json scan --rev HEAD

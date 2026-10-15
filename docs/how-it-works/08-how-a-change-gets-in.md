@@ -3,6 +3,8 @@
 [Back to the map](README.md) | Previous: [Gate 7](07-safety-net.md) | [Glossary](glossary.md)
 
 > Where this comes from: the working rules are in `ROLES.md` and `tools/gate/` on the `main` branch (added by PR #10, merged 2026-10-05, commit `427be1e`). This page was first written against the integration branch `integration/ui-and-matching`, which did not have them, so the links below point at the text as it stood on `main` at the time, and I read them there. Version 1 has since landed on `main` (commit `3e23801`, tag `poc-v1`).
+>
+> **Update 2026-10-15:** the gate program itself cut over to a shared, framework-pinned tool (`tools/gate/gate.py` at `.orchestration/framework.pin`'s tag, reading `.orchestration/gate.json`). The mechanism described below (one gate program, checked against the current head, writing a record) is unchanged; only which file implements it changed. `tools/gate/po_gate.py`, the file this page's links below point at, is this project's own retired predecessor -- kept in the repo, no longer invoked by CI, the hook, or `ROLES.md`'s merge step.
 
 ## In one minute
 Nobody changes the project directly. Every change is a **pull request**: a proposed change that other people (and other AIs) can read before it lands. The rules:

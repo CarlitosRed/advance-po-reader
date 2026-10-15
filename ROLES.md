@@ -29,7 +29,7 @@ Every pull request carries exactly one label: `tier-1`, `tier-2`, `tier-3` or `t
 | 3 | Money and trust (below) | yes | one, from the other vendor | yes, he types it |
 | 4 | Billing, spend limits, credentials, production, deleting data | not a pull request | not a pull request | humans only |
 
-Tier 3 paths (any change to these is Tier 3, whatever the label says): `AGENTS.md`, `CLAUDE.md`, `ROLES.md`, `PROJECT_GOAL.md`, `CODEOWNERS`, `.github\`, `.githooks\`, `.claude\`, `tools\gate\`, `backend\providers.py`, `po_reader\model_provider.py`, `reader.py`, `benchmark_vision.py`, `scripts\`, and database migrations (`alembic\`). The exact list is `protected_paths` in `tools\gate\gate.json`.
+Tier 3 paths (any change to these is Tier 3, whatever the label says): `AGENTS.md`, `CLAUDE.md`, `ROLES.md`, `PROJECT_GOAL.md`, `CODEOWNERS`, `.github\`, `.githooks\`, `.claude\`, `tools\gate\`, `backend\providers.py`, `po_reader\model_provider.py`, `reader.py`, `benchmark_vision.py`, `scripts\`, and database migrations (`alembic\`). The exact list is `protected_paths` in `.orchestration\gate.json` (cut over 2026-10-15 from `tools\gate\gate.json`, which is retired but still present).
 
 ## How a change moves
 
@@ -40,7 +40,7 @@ Tier 3 paths (any change to these is Tier 3, whatever the label says): `AGENTS.m
 5. **Evidence.** The author fills `## Evidence` (what was run, what it printed, what is only documented, not built) and `## Cost` (API money spent, or `$0`), then marks the pull request ready.
 6. **Approval.** When checks pass, the reviewer comments `Approved at <commit>`. The gate reads the first seven or more characters and compares them with the current head. Any later push voids the approval.
 7. **Carlos (Tier 3 only).** Carlos types `**Carlos:** Approved at <commit>` himself on github.com. No agent ever writes that.
-8. **Merge.** The author's vendor merges through the gate: `python tools\gate\po_gate.py merge <PR> --as "<chat name>"`. Never the green button, never `gh pr merge`, never a push to `main`.
+8. **Merge.** The author's vendor merges through the gate (cut over 2026-10-15 to the shared, framework-pinned tool; `.framework-pin\` is a one-time local clone at the tag named in `.orchestration\framework.pin`, see `.orchestration\commands.md`): `python .framework-pin\tools\gate\gate.py --config .orchestration\gate.json merge <PR> --as "<chat name>"`. The owner (Carlos) may also run this himself on any PR, not only the author's vendor. Never the green button, never `gh pr merge`, never a push to `main`.
 9. **Close.** The author adds a short note to `docs\agent-handoff.md`. Claudio · PM updates `OFFICE-STATE.md` and `decisions.md`.
 
 ## Exact phrases
@@ -69,9 +69,9 @@ Do not start any other comment with the word `hold`, `go` or `approved`.
 
 ## What the gate can and cannot do
 
-`tools\gate\po_gate.py` checks the rules above against the pull request's current head commit, merges only that commit, and writes a `Gate-Record` line into the merge commit. A workflow checks every new commit on `main` for that line and opens an issue when one is missing.
+The framework's `tools\gate\gate.py`, run at this project's pinned tag with `.orchestration\gate.json`, checks the rules above against the pull request's current head commit, merges only that commit, and writes a `Gate-Record` line into the merge commit. A workflow checks every new commit on `main` for that line and opens an issue when one is missing. (`tools\gate\po_gate.py` was this project's own gate before the 2026-10-15 cutover; it still exists and its own tests still pass, but nothing reads it for real enforcement any more.)
 
-It cannot stop someone who holds the account's credentials from merging by hand, and it cannot prove who wrote a comment, because every chat posts as the same account. Carlos's `hold`, the audit and the record are the backstop. If Carlos or his company pays for a GitHub plan later, switch on branch protection and keep the gate as a second check. Details: `tools\gate\README.md`.
+It cannot stop someone who holds the account's credentials from merging by hand, and it cannot prove who wrote a comment, because every chat posts as the same account. Carlos's `hold`, the audit and the record are the backstop. If Carlos or his company pays for a GitHub plan later, switch on branch protection and keep the gate as a second check. Details: `tools\gate\README.md` (this project's retired tool) and the framework's own `tools\gate\README.md` at the pinned tag (the current one).
 
 ## Where things live
 
@@ -79,7 +79,9 @@ It cannot stop someone who holds the account's credentials from merging by hand,
 | --- | --- | --- |
 | Product rules | `AGENTS.md`, `PROJECT_GOAL.md` | Tier 3 pull request |
 | Working rules (this file) | `ROLES.md` | Tier 3 pull request |
-| Gate tool, tests, settings | `tools\gate\` | Claudio · IT, Tier 3 pull request |
+| Gate config (this project's adapter) | `.orchestration\gate.json` | Claudio · IT, Tier 3 pull request |
+| Gate tool and tests (shared, pinned) | the framework repo named in `.orchestration\framework.pin`, at that tag | the Framework Orchestrator, not this project |
+| Retired gate tool, tests, settings | `tools\gate\` (kept for now, not deleted) | Claudio · IT, Tier 3 pull request |
 | Task cards, brief, decisions, roster | `project-notes\tasks\`, `project-notes\advance-po-reader\`, `project-notes\OFFICE-STATE.md` | Claudio · PM only |
 | Review and audit reports | `project-notes\audits\` | the chat that wrote them |
 | Drafts | `project-notes\drafts\` | the chat that wrote them |
