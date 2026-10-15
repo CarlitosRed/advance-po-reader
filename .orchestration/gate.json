@@ -1,0 +1,124 @@
+{
+  "_about": "Retrofit translation (skills/retrofit-project, 2026-10-15) of tools/gate/gate.json into the framework's generic schema (tools/gate/gate.schema.md at the pinned tag). DOCUMENTATION ONLY -- this file is NOT wired to anything yet. The actually-enforcing gate stays tools/gate/po_gate.py reading tools/gate/gate.json, untouched. Moving enforcement onto tools/gate/gate.py is a separate, later decision (framework-map.md calls it a later, separate step after F2).",
+  "_fields_needing_a_decision_before_this_could_go_live": [
+    "vendors.*.names is empty on purpose: this project's signatures are 100% legacy format ('<Name> . <job>:', e.g. 'Codex . PR review:'), never the new format ('<Role> . <Vendor>:') this field is for. Recognition is carried entirely by legacy_signers below. If PO Reader ever adopts new-format signatures, names needs real values and legacy_signers can shrink.",
+    "magic and secrets were left at schema default (not copied from anywhere, because tools/gate/po_gate.py's own built-in defaults were never compared line-by-line against the generic gate.py's defaults). Before this file could ever go live, diff the two default lists; a silent mismatch here would change what the scan step catches.",
+    "verdict_sha_min_length is set to 7, not the schema's own default of 40, per the Framework Orchestrator's own F2 note (agent-orchestration docs/framework-map.md row 55: 'PO Reader needs 7, not the new default 40') -- carried forward here, not re-derived by me."
+  ],
+  "schema_version": 1,
+  "repo": "",
+  "base": "main",
+  "owner_signers": ["Carlos"],
+  "vendors": {
+    "anthropic": { "names": [], "branch_prefixes": ["claude/"] },
+    "openai": { "names": [], "branch_prefixes": ["codex/", "chat/"] }
+  },
+  "legacy_signers": {
+    "Claudio": "anthropic",
+    "Claude": "anthropic",
+    "Codex": "openai",
+    "Chat": "openai"
+  },
+  "protected_paths": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "ROLES.md",
+    "PROJECT_GOAL.md",
+    "CODEOWNERS",
+    ".github/*",
+    ".githooks/*",
+    ".claude/*",
+    "tools/gate/*",
+    "backend/providers.py",
+    "po_reader/model_provider.py",
+    "reader.py",
+    "benchmark_vision.py",
+    "scripts/*",
+    "alembic/*",
+    "*/alembic/*",
+    "*/migrations/*"
+  ],
+  "protected_tier": 3,
+  "required_checks": ["tests", "gate-tests", "scan"],
+  "body_headings": ["Plan", "Evidence", "Cost"],
+  "verdict_sha_min_length": 7,
+  "forbidden_globs": [
+    "*.pdf", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.tif", "*.tiff",
+    "*.gguf", "*.safetensors", "*.pt", "*.pth", "*.onnx", "*.sqlite3",
+    "*.pem", "*.key", ".env", ".env.*",
+    "data/*", "output/*", "tmp/*", ".venv/*"
+  ],
+  "scan_allow": [
+    ".env.example", ".env.*.example",
+    "docs/mockup-v2/screenshots/after-approval-phone.png",
+    "docs/mockup-v2/screenshots/after-desktop.png",
+    "docs/mockup-v2/screenshots/after-phone.png",
+    "docs/mockup-v2/screenshots/after-uncertain-phone.png",
+    "docs/mockup-v2/screenshots/before-desktop.png",
+    "docs/mockup-v2/screenshots/before-phone.png",
+    "web/po-reader-mockup/dist/assets/line-1.png",
+    "web/po-reader-mockup/dist/assets/line-2.png",
+    "web/po-reader-mockup/dist/assets/line-3.png",
+    "web/po-reader-mockup/dist/assets/line-4.png",
+    "web/po-reader-mockup/dist/assets/line-5.png",
+    "web/po-reader-mockup/dist/assets/line-6.png",
+    "web/po-reader-mockup/dist/assets/line-7.png",
+    "web/po-reader-mockup/dist/assets/sample-page.png",
+    "web/po-reader-mockup/dist/assets/sample-purchase-order.pdf",
+    "web/po-reader-mockup/dist/assets/smartercommerce.png",
+    "web/po-reader-mockup/dist/assets/werner.jpg"
+  ],
+  "max_file_mb": 5,
+  "shared_account": true,
+  "audit_exempt": [],
+  "tiers": [
+    {
+      "label": "tier-1",
+      "level": 1,
+      "name": "Docs and README only",
+      "approvals": 0,
+      "plan_go": false,
+      "owner_approval": false,
+      "cross_vendor": true,
+      "body_headings": false,
+      "allowed_paths": ["docs/*", "README.md"],
+      "mergeable": true
+    },
+    {
+      "label": "tier-2",
+      "level": 2,
+      "name": "Code, tests, configuration",
+      "approvals": 1,
+      "plan_go": true,
+      "owner_approval": false,
+      "cross_vendor": true,
+      "body_headings": true,
+      "allowed_paths": null,
+      "mergeable": true
+    },
+    {
+      "label": "tier-3",
+      "level": 3,
+      "name": "Money and trust (protected paths)",
+      "approvals": 1,
+      "plan_go": true,
+      "owner_approval": true,
+      "cross_vendor": true,
+      "body_headings": true,
+      "allowed_paths": null,
+      "mergeable": true
+    },
+    {
+      "label": "tier-4",
+      "level": 4,
+      "name": "Billing, spend limits, credentials, production, deletion",
+      "approvals": 0,
+      "plan_go": false,
+      "owner_approval": false,
+      "cross_vendor": true,
+      "body_headings": false,
+      "allowed_paths": null,
+      "mergeable": false
+    }
+  ]
+}
