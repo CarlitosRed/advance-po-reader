@@ -1,8 +1,8 @@
 {
   "_about": "Retrofit translation (skills/retrofit-project, 2026-10-15) of tools/gate/gate.json into the framework's generic schema (tools/gate/gate.schema.md at the pinned tag). DOCUMENTATION ONLY -- this file is NOT wired to anything yet. The actually-enforcing gate stays tools/gate/po_gate.py reading tools/gate/gate.json, untouched. Moving enforcement onto tools/gate/gate.py is a separate, later decision (framework-map.md calls it a later, separate step after F2).",
   "_fields_needing_a_decision_before_this_could_go_live": [
-    "vendors.*.names is empty on purpose: this project's signatures are 100% legacy format ('<Name> . <job>:', e.g. 'Codex . PR review:'), never the new format ('<Role> . <Vendor>:') this field is for. Recognition is carried entirely by legacy_signers below. If PO Reader ever adopts new-format signatures, names needs real values and legacy_signers can shrink.",
-    "magic and secrets were left at schema default (not copied from anywhere, because tools/gate/po_gate.py's own built-in defaults were never compared line-by-line against the generic gate.py's defaults). Before this file could ever go live, diff the two default lists; a silent mismatch here would change what the scan step catches.",
+    "vendors.*.names: the generic gate.py's config loader HARD-REQUIRES this to be non-empty (confirmed 2026-10-15 by actually running it: 'ERROR: config vendors[\"anthropic\"].names must not be empty' -- it will not even load otherwise). This project's signatures are 100% legacy format and these names are never actually used in a real comment; the two placeholder values below exist ONLY to satisfy the loader. Real recognition is carried entirely by legacy_signers. Flagged as friction (agent-orchestration#15): a project that is 100% legacy-format cannot produce a config the loader accepts without inventing unused placeholder names -- gate.schema.md doesn't document this as a hard requirement.",
+    "magic and secrets: diffed 2026-10-15 against tools/gate/po_gate.py's own built-in MAGIC/SECRETS lists, byte-for-byte and pattern-for-pattern. IDENTICAL, all 8 magic signatures and all 4 secret patterns. No longer a guess -- confirmed safe to leave at schema default.",
     "verdict_sha_min_length is set to 7, not the schema's own default of 40, per the Framework Orchestrator's own F2 note (agent-orchestration docs/framework-map.md row 55: 'PO Reader needs 7, not the new default 40') -- carried forward here, not re-derived by me."
   ],
   "schema_version": 1,
@@ -10,8 +10,8 @@
   "base": "main",
   "owner_signers": ["Carlos"],
   "vendors": {
-    "anthropic": { "names": [], "branch_prefixes": ["claude/"] },
-    "openai": { "names": [], "branch_prefixes": ["codex/", "chat/"] }
+    "anthropic": { "names": ["Anthropic (placeholder, unused -- see note above)"], "branch_prefixes": ["claude/"] },
+    "openai": { "names": ["OpenAI (placeholder, unused -- see note above)"], "branch_prefixes": ["codex/", "chat/"] }
   },
   "legacy_signers": {
     "Claudio": "anthropic",
