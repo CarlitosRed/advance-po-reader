@@ -160,7 +160,7 @@ it also exists on main and remains a separate issue, outside this E3 repair.
 
 ## Deferred live path
 
-The builder has made no paid calls. Carlos can later run the following only with
+The builder has made no paid calls. The Program Owner can later run the following only with
 fictional emails, an environment-provided key, and ONE shared phase-one ledger:
 
 ```powershell

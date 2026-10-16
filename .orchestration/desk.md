@@ -13,7 +13,7 @@ This is a structural gap in the adapter spec worth flagging to the Framework
 Orchestrator: `adapters/README.md` assumes a project's `.orchestration/` folder
 and its ops log live in the same repo. This project's ops log (decisions,
 leaks, desk facts, task queue, audits, drafts) has lived in a separate private
-repo since before the framework existed, by Carlos's own design (see
+repo since before the framework existed, by the Program Owner's own design (see
 `project-notes\CONTEXT-RULES.md` and `agent-orchestration\docs\framework-map.md`
 row 1, "Existing private project-notes repo stays as the PM's operations
 log"). Retrofitting doesn't change that design decision; it just means this
