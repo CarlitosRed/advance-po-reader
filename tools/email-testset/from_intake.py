@@ -15,15 +15,26 @@ runner did not classify never becomes an order or a not_an_order answer, and
 text-only, reply or attachment policies belong to the runner, not to this glue.
 
 Every record is checked against the exact shape the runner writes (types, nested
-entries, stored paths, identifiers), against the parser's output domain and bounds,
-against the runner's routing (the classification it could have recorded, the final
-outcome, and the complete reader-file list it prepares), against the other records
-of the folder (duplicates, related emails, message-id conflicts) and against the
-expected file before any answer is produced. A record the expected data cannot
-identify (an oversized source keeps only a bounded-prefix hash) is rejected, never
-substituted. Values that depend only on the source bytes (sender, subject, body
-text, file names, sizes, digests) are checked against the parser's domain, not
-re-derived: the runner folder does not prove them.
+entries, stored paths, identifiers) and against the expected file. A record the
+expected data cannot identify (an oversized source keeps only a bounded-prefix
+hash) is rejected, never substituted. Then every value is re-derived from the
+producer's own inputs instead of being checked against a domain:
+- source values: the runner keeps each email as sources/<intake_id>/original.eml.
+  Its SHA-256 must equal the expected hash; the real parser then re-parses those
+  bytes, and the record's parsed fields, attachment manifest, size and pre-parse
+  refusal reason must equal what the parser derives;
+- sender hold: a folder with sender-policy.json is a --known-senders run. Its marker
+  holds only a fingerprint, so the same list must be passed (--known-senders, the
+  fingerprint must match) and UNKNOWN_SENDER is re-derived for every record from
+  the parser's sender address and that list;
+- folder history: duplicate_of and related_intakes are replayed against the
+  runner's lookup order (earlier runs' records in record-file order, then this
+  run's records in drop-folder order). Some sequence of runs must reproduce every
+  record's duplicate_of and related_intakes exactly;
+- routing: the classification the runner could have recorded, the final outcome,
+  and the complete reader-file list it prepares.
+Only the classifier's own result is not re-derivable; it is checked against what
+that provider's code can return.
 
 The answers file is written to a fresh, uniquely named temporary file and then
 hard-linked into place, which refuses an existing file. Where hard links are not
@@ -49,9 +60,9 @@ from email_intake import VERSION as RUNNER_VERSION  # noqa: E402
 from email_intake.body_pdf import render  # noqa: E402
 from email_intake.contract import LOCAL_REASONS, PAIRS  # noqa: E402
 from email_intake.ledger import INPUT_BOUND  # noqa: E402
-from email_intake.parser import (MAX_ATTACHMENTS, MAX_BODY, MAX_EMAIL, SAFE_EXTENSIONS,  # noqa: E402
-                                 SUPPORTED, Parsed)
+from email_intake.parser import MAX_EMAIL, SUPPORTED, ParseError, Parsed, parse  # noqa: E402
 from email_intake.providers import request_for  # noqa: E402
+from email_intake.senders import load as load_senders  # noqa: E402
 from email_testset_contract import CATEGORY_LANE, CATEGORY_REASON, LANES  # noqa: E402
 
 ACCEPTED_VERSIONS = frozenset({RUNNER_VERSION})
@@ -74,12 +85,16 @@ LIVE_BEFORE_SIZE = frozenset({"LIVE_DISABLED", "MISSING_KEY", "LEDGER", "LIMIT"}
 QUIET = "quiet_attachment_review"
 MAX_RECORD_BYTES = 1024 * 1024
 EXTENSIONS = {media: value[0] for media, value in SUPPORTED.items()}
+ORIGINAL = "original.eml"  # email_intake.runner keeps every in-limit email under sources/<intake_id>/
 SENDER_POLICY = "sender-policy.json"  # email_intake.runner, written by a --known-senders run
 ROOT_ENTRIES = frozenset({"records", "sources", "calls.jsonl", "quiet-digest.jsonl", ".intake-guard", SENDER_POLICY})
 LOCK_NAME = ".intake-lock"
 # The runner's own hold for a sender outside the --known-senders list (only in a folder with SENDER_POLICY).
 UNKNOWN_SENDER = "UNKNOWN_SENDER"
 MAX_POLICY_BYTES = 4096
+# Search steps allowed when replaying one group of interacting records (same email, shared message id or
+# attachment digest) over every possible sequence of runs. Beyond it the folder is refused, never guessed.
+HISTORY_BUDGET = 200_000
 
 BASE = frozenset({
     "version", "parser_version", "record_id", "intake_id", "source_size", "source_name",
@@ -94,7 +109,6 @@ TEXT_ONLY_NOTE = ("This order is in the email text only. Phase 1 reads attachmen
 ATTACHMENT_KEYS = frozenset({"attachment_id", "filename", "media_type", "byte_length", "sha256",
                              "disposition", "supported", "retained_file"})
 HEX64 = re.compile(r"[0-9a-f]{64}")
-MESSAGE_ID = re.compile(r"<[^\s<>@]+@[^\s<>@]+>")
 DEVICE = re.compile(r"(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?", re.IGNORECASE)
 BAD_COMPONENT_CHARS = re.compile(r'[<>:"|?*\x00-\x1f]')
 
@@ -143,52 +157,53 @@ def is_alias(path):
     return False
 
 
-def body_segments(body):
-    """The runner's quoted/newest split of a body (email_intake.parser), for an exact match."""
-    segments = []
-    for line in body.splitlines(keepends=True):
-        kind = "quoted" if line.lstrip().startswith(">") else "newest"
-        if segments and segments[-1]["kind"] == kind:
-            segments[-1]["text"] += line
-        else:
-            segments.append({"kind": kind, "text": line})
-    return segments
-
-
-def media_type_ok(value):
-    """email.message.Message.get_content_type(): the lower-cased text before ';' with exactly one '/'.
-
-    The parser refuses message/* parts, so they never reach a manifest."""
-    return (type(value) is str and value == value.strip().lower() and ";" not in value
-            and value.count("/") == 1 and not value.startswith("message/"))
-
-
-def disposition_ok(value):
-    """parser: part.get_content_disposition() or "attachment": any lower-cased token before ';', never empty."""
-    return type(value) is str and value != "" and value == value.strip().lower() and ";" not in value
-
-
-def extension_of(name):
-    """The parser's extension of an (untrusted) attachment file name."""
-    return "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+def same(a, b):
+    """Deep equality that also requires equal JSON types (True is not 1, 1 is not 1.0)."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
+    if isinstance(a, list):
+        return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+    return a == b
 
 
 def check_attachment(item, index, iid, where):
+    """Shape and stored path only; every source-derived value is compared with the parser in check_source."""
     need(type(item) is dict and set(item) == ATTACHMENT_KEYS, f"{where}: invalid attachment manifest entry")
     need(item["attachment_id"] == f"a{index + 1:03}", f"{where}: attachment ids are not sequential")
-    need(type(item["filename"]) is str and item["filename"] != "", f"{where}: invalid attachment name")
-    need(media_type_ok(item["media_type"]), f"{where}: invalid attachment media type")
     need(type(item["byte_length"]) is int and item["byte_length"] >= 0, f"{where}: invalid attachment size")
     need(hex64(item["sha256"]), f"{where}: invalid attachment hash")
-    need(disposition_ok(item["disposition"]), f"{where}: invalid attachment disposition")
     need(type(item["supported"]) is bool, f"{where}: invalid attachment supported flag")
-    if item["supported"]:
-        # parser: supported needs a known media type, its magic bytes and a safe file extension.
-        need(item["media_type"] in SUPPORTED and extension_of(item["filename"]) in SAFE_EXTENSIONS
-             and item["byte_length"] >= len(SUPPORTED[item["media_type"]][1]),
-             f"{where}: attachment marked supported that the parser would not support")
+    need(type(item["media_type"]) is str, f"{where}: invalid attachment media type")
     need(stored_path_is(item["retained_file"], f"sources/{iid}/{item['attachment_id']}.bin"),
          f"{where}: invalid retained_file path")
+
+
+def check_source(record, raw, known_senders):
+    """Re-derive every source value of a record from the email the runner kept, with the real parser.
+
+    raw: the bytes of sources/<intake_id>/original.eml (the runner writes them before parsing).
+    known_senders: the --known-senders list of the run (None for a run without one).
+    Returns True when the runner holds this email as UNKNOWN_SENDER (a sender outside the list)."""
+    where = record["source_name"]
+    need(raw is not None, f"{where}: sources/{record['intake_id']}/{ORIGINAL} is missing (the runner keeps every email)")
+    need(sha256(raw).hexdigest() == record["intake_id"], f"{where}: retained {ORIGINAL} is not this record's email")
+    need(record["source_size"] == len(raw), f"{where}: source_size is not the size of the retained email")
+    try:
+        parsed = parse(raw, sender_hint=known_senders is not None)
+    except ParseError as exc:
+        need("body" not in record and record["reason_code"] == str(exc),
+             f"{where}: the parser refuses this email with {exc}; the record is not that refusal")
+        return False
+    need("body" in record, f"{where}: the parser reads this email; a pre-parse refusal is not its record")
+    want = parsed.record()
+    for key in ("sender", "subject", "message_id", "body", "body_segments"):
+        need(same(record[key], want[key]), f"{where}: {key} is not what the parser derives from the email")
+    manifest = [{k: v for k, v in item.items() if k != "retained_file"} for item in record["attachment_manifest"]]
+    need(same(manifest, want["attachment_manifest"]),
+         f"{where}: attachment_manifest is not what the parser derives from the email")
+    return known_senders is not None and not known_senders.matches(parsed.sender_address)
 
 
 def check_classification(value, where):
@@ -216,15 +231,14 @@ def request_too_large(record):
     return len(json.dumps(request_for(parsed, record["intake_id"]), ensure_ascii=True).encode()) > INPUT_BOUND
 
 
-def check_outcome(record, message_id_conflict, sender_policy=False):
+def check_outcome(record, message_id_conflict, unknown_sender):
     """Replay the runner's routing of a parsed record (email_intake/runner.py run()) and require equality.
 
+    unknown_sender: re-derived by check_source from the parser's sender address and the run's list.
     Producer invariants, in the runner's order:
-    1. classification: UNKNOWN_SENDER for a sender outside the known-senders list (only in a folder the
-       runner marked with sender-policy.json; the list itself is not in the folder, so which senders are
-       unknown is not re-derived); DUPLICATE for a duplicate; CONFLICT for a message-id conflict;
-       unsure/unclear for an empty body or any unsupported attachment (no provider call); otherwise a
-       provider result.
+    1. classification: UNKNOWN_SENDER for a sender outside the known-senders list; DUPLICATE for a
+       duplicate; CONFLICT for a message-id conflict; unsure/unclear for an empty body or any unsupported
+       attachment (no provider call); otherwise a provider result (never UNKNOWN_SENDER).
     2. final outcome: TEXT_ONLY_ORDER (with its note) for an order without attachments; else the classification.
     3. reader files, only for an order or an attachment-only email (empty body, all supported, no duplicate,
        conflict or unknown sender): every attachment in manifest order, then the derived body PDF for a
@@ -236,9 +250,11 @@ def check_outcome(record, message_id_conflict, sender_policy=False):
     unsupported = any(not a["supported"] for a in attachments)
     duplicate = record["duplicate_of"] is not None
     classified = check_classification(record["classification"], where)
-    unknown_sender = classified == held(UNKNOWN_SENDER)
     if unknown_sender:
-        need(sender_policy, f"{where}: {UNKNOWN_SENDER} in a folder without {SENDER_POLICY} (no known-senders run)")
+        need(classified == held(UNKNOWN_SENDER), f"{where}: sender outside the known-senders list, not held as {UNKNOWN_SENDER}")
+    elif classified == held(UNKNOWN_SENDER):
+        raise ConvertError(f"{where}: {UNKNOWN_SENDER} for a sender the run's known-senders list contains "
+                           "(or a run without a list)")
     elif duplicate:
         need(classified == held("DUPLICATE"), f"{where}: duplicate whose classification is not DUPLICATE")
     elif message_id_conflict:
@@ -331,23 +347,13 @@ def check_shape(record, path):
                       or record["duplicate_of"] or NOTE_KEY in record),
              f"{where}: record without parsed fields is not a pre-parse refusal")
         return
-    for field in ("sender", "subject"):
-        need(type(record[field]) is str and record[field] != "", f"{where}: {field} must be a non-empty string")
-    body = record["body"]
-    need(type(body) is str, f"{where}: body must be a string")
-    # parser: the body is stripped and refused (LIMIT, no parsed fields) above MAX_BODY UTF-8 bytes.
-    need(body == body.strip(), f"{where}: body is not the parser's stripped text")
-    need(len(body.encode("utf-8")) <= MAX_BODY, f"{where}: body over the parser limit of {MAX_BODY} bytes")
-    need(record["message_id"] is None or (type(record["message_id"]) is str and MESSAGE_ID.fullmatch(record["message_id"])),
-         f"{where}: message_id must be an angle-bracket id or null")
-    need(record["body_segments"] == body_segments(body), f"{where}: body_segments do not match the body")
-    need(len(record["attachment_manifest"]) <= MAX_ATTACHMENTS,
-         f"{where}: more attachments than the parser limit of {MAX_ATTACHMENTS}")
+    # Types only: the values themselves must equal the parser's output for the retained email (check_source).
+    for field in ("sender", "subject", "body"):
+        need(type(record[field]) is str, f"{where}: {field} must be a string")
+    need(record["message_id"] is None or type(record["message_id"]) is str, f"{where}: message_id must be a string or null")
+    need(type(record["body_segments"]) is list, f"{where}: body_segments must be a list")
     for index, item in enumerate(record["attachment_manifest"]):
         check_attachment(item, index, iid, where)
-    # Decoded attachment bytes never exceed the source bytes they were decoded from.
-    need(sum(a["byte_length"] for a in record["attachment_manifest"]) <= record["source_size"],
-         f"{where}: attachments larger than the source email")
     check_classification(record["classification"], where)
     stored = [record["original"]] + [a["retained_file"] for a in record["attachment_manifest"]] + [
         entry.get("file") for entry in record["reader_files"] if type(entry) is dict]
@@ -410,14 +416,6 @@ def check_consistency(record):
         need(record["reason_code"] in ("DUPLICATE", UNKNOWN_SENDER), f"{where}: duplicate_of and the DUPLICATE reason disagree")
 
 
-def content_of(record):
-    """What the parser derives from the source bytes; equal bytes (equal intake_id) parse equally."""
-    if "body" not in record:
-        return None
-    manifest = [dict(a, retained_file=a["retained_file"].replace("\\", "/")) for a in record["attachment_manifest"]]
-    return ([record[k] for k in ("sender", "subject", "message_id", "body")], manifest, record["source_size"])
-
-
 def related(a, b):
     """The runner's relation: the same non-null message id, or a shared attachment digest."""
     mid = a.get("message_id")
@@ -425,67 +423,101 @@ def related(a, b):
         {x["sha256"] for x in a["attachment_manifest"]} & {x["sha256"] for x in b["attachment_manifest"]})
 
 
-def check_run(records):
-    """Cross-record producer invariants; returns {record_id: message-id conflict} for check_outcome.
+def drop_order_key(record):
+    """Where the runner's sorted(drop.iterdir()) puts this email within one run, and on which platform.
 
-    The runner processes records one at a time against every earlier record of the folder:
-    - the first record of an intake_id is never a duplicate; every later one points at an EARLIER record of
-      the same intake_id (in one run that is the first record; a later run into the same folder can point
-      at an earlier duplicate, because it looks records up in file-name order), so following duplicate_of
-      from any copy reaches the first record without a cycle;
-    - related_intakes lists every earlier related intake and nothing else, so of two related first records
-      exactly one lists the other, and the "lists" relation among first records has no cycle;
-    - a later copy sees at least what the copy it points at saw;
-    - the sender hold (UNKNOWN_SENDER) depends only on the email bytes: all copies agree;
-    - a message-id conflict is a non-null message id shared with a listed intake.
-    """
+    The stored paths show the platform (str(Path): backslashes on Windows). Windows paths compare
+    case-insensitively (str.lower()), POSIX paths exactly; one run happens on one platform."""
+    windows = "\\" in record["original"]
+    return windows, (record["source_name"].lower() if windows else record["source_name"])
+
+
+def history_view(record, seen):
+    """What the runner writes for duplicate_of and related_intakes when `seen` is its record list, in order."""
+    iid = record["intake_id"]
+    exact = next((other for other in seen if other["intake_id"] == iid), None)
+    return (exact["record_id"] if exact else None,
+            sorted({other["intake_id"] for other in seen if other["intake_id"] != iid and related(record, other)}))
+
+
+def replayable(group):
+    """True when some sequence of runner calls writes exactly these duplicate_of and related_intakes values.
+
+    Runner (email_intake/runner.py run()): a call first loads the folder's records in record-file order
+    (sorted record_id), then processes its drop folder in sorted name order, appending each new record.
+    A new record's duplicate_of is the FIRST record of that list with the same intake_id; related_intakes
+    are every listed intake related to it. Depth-first search over (records processed, records of the
+    current call); a failed state is never revisited."""
+    count = len(group)
+    keys = [drop_order_key(r) for r in group]
+    failed, steps = set(), [0]
+
+    def search(done, current):
+        if len(done) == count:
+            return True
+        state = (done, frozenset(current))
+        if state in failed:
+            return False
+        steps[0] += 1
+        need(steps[0] <= HISTORY_BUDGET, f"{group[0]['source_name']}: too many interacting records to replay "
+                                          f"their history within {HISTORY_BUDGET} steps (refused, not guessed)")
+        earlier = sorted((group[i] for i in done - set(current)), key=lambda r: r["record_id"])
+        for index in sorted(set(range(count)) - done, key=lambda i: keys[i]):
+            options = []
+            if not current or (keys[index][0] == keys[current[-1]][0] and keys[index][1] > keys[current[-1]][1]):
+                options.append((earlier + [group[i] for i in current], current + (index,)))  # same call
+            if current:  # a new runner call: everything processed so far is now loaded in record-file order
+                options.append((sorted((group[i] for i in done), key=lambda r: r["record_id"]), (index,)))
+            record = group[index]
+            for seen, following in options:
+                duplicate_of, listed = history_view(record, seen)
+                if duplicate_of == record["duplicate_of"] and listed == record["related_intakes"]:
+                    if search(done | {index}, following):
+                        return True
+        failed.add(state)
+        return False
+
+    return search(frozenset(), ())
+
+
+def check_history(records):
+    """Cross-record producer state; returns {record_id: message-id conflict} for check_outcome.
+
+    Records that stopped before parsing never relate to anything and are never duplicates (check_shape).
+    The parsed records split into groups that can influence each other (same email, shared message id,
+    shared attachment digest); each group must be replayable on its own, because records outside a group
+    change neither its duplicate_of nor its related_intakes, and runs of separate groups interleave freely."""
+    parsed = [r for r in records if "body" in r]
+    by_id = {r["record_id"]: r for r in parsed}
     by_intake = defaultdict(list)
-    for record in records:
+    for record in parsed:
         by_intake[record["intake_id"]].append(record)
-    firsts = {}
-    for iid, group in by_intake.items():
-        contents = [content_of(r) for r in group]
-        need(all(c == contents[0] for c in contents), f"{group[0]['source_name']}: records of the same email bytes disagree")
-        if contents[0] is None:
-            continue  # stopped before parsing: never a duplicate, never related
-        need(len({r["classification"]["reason_code"] == UNKNOWN_SENDER for r in group}) == 1,
-             f"{group[0]['source_name']}: copies of the same email disagree about the sender hold")
-        originals = [r for r in group if r["duplicate_of"] is None]
-        need(len(originals) == 1, f"{group[0]['source_name']}: duplicate_of is not a record of this run "
-                                  f"(the same email needs exactly one original, found {len(originals)})")
-        firsts[iid] = original = originals[0]
-        by_id = {r["record_id"]: r for r in group}
-        for record in group:
-            if record is original:
-                continue
-            target = by_id.get(record["duplicate_of"])
-            need(target is not None and target is not record,
-                 f"{record['source_name']}: duplicate_of is not a record of this run with the same email")
-            need(set(target["related_intakes"]) <= set(record["related_intakes"]),
-                 f"{record['source_name']}: duplicate lists fewer related_intakes than the copy it points at")
-            seen, step = {record["record_id"]}, target
-            while step is not original:
-                need(step["record_id"] not in seen, f"{record['source_name']}: duplicate_of records point at each other")
-                seen.add(step["record_id"])
-                step = by_id.get(step["duplicate_of"])
-                need(step is not None, f"{record['source_name']}: duplicate_of is not a record of this run with the same email")
-    for record in records:
+    for record in parsed:
+        target = by_id.get(record["duplicate_of"]) if record["duplicate_of"] is not None else None
+        need(record["duplicate_of"] is None or (target is not None and target is not record
+                                                and target["intake_id"] == record["intake_id"]),
+             f"{record['source_name']}: duplicate_of is not a record of this run with the same email")
         for other in record["related_intakes"]:
             need(other in by_intake and related(record, by_intake[other][0]),
                  f"{record['source_name']}: related_intakes name an email that is not related")
-    listed = {iid: set(first["related_intakes"]) for iid, first in firsts.items()}
-    ordered = sorted(firsts)
-    for index, a in enumerate(ordered):
-        for b in ordered[index + 1:]:
-            if related(firsts[a], firsts[b]):
-                need((b in listed[a]) != (a in listed[b]),
-                     f"{firsts[a]['source_name']}: related_intakes of two related emails are not one-directional")
-    remaining = dict(listed)  # a first record lists only earlier first records: the relation must be acyclic
-    while remaining:
-        ready = [iid for iid, before in remaining.items() if not (before & set(remaining))]
-        need(ready, "related_intakes form a cycle that no processing order produces")
-        for iid in ready:
-            del remaining[iid]
+    parent = list(range(len(parsed)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for a in range(len(parsed)):
+        for b in range(a + 1, len(parsed)):
+            if parsed[a]["intake_id"] == parsed[b]["intake_id"] or related(parsed[a], parsed[b]):
+                parent[root(a)] = root(b)
+    groups = defaultdict(list)
+    for index, record in enumerate(parsed):
+        groups[root(index)].append(record)
+    for group in groups.values():
+        need(replayable(group), f"{group[0]['source_name']}: duplicate_of / related_intakes of "
+                                f"{sorted(r['source_name'] for r in group)} match no order in which the runner "
+                                f"could have processed these emails")
     conflict = {}
     for record in records:
         mid = record.get("message_id")
@@ -494,7 +526,8 @@ def check_run(records):
     return conflict
 
 
-def convert(out, expected):
+def convert(out, expected, known_senders=None):
+    """known_senders: the email_intake.senders list the run used (required exactly for a --known-senders run)."""
     out = Path(out)
     need(out.is_dir() and not is_alias(out), "--out must be an existing runner output folder (not a symlink or junction)")
     need(not (out / LOCK_NAME).exists(), "run in progress or interrupted (.intake-lock exists)")
@@ -502,15 +535,37 @@ def convert(out, expected):
     need(not stray, f"unexpected entries in the runner folder: {stray[:10]}")
     record_dir = out / "records"
     need(record_dir.is_dir() and not is_alias(record_dir), "records folder missing")
-    sender_policy = (out / SENDER_POLICY).exists() or (out / SENDER_POLICY).is_symlink()
-    if sender_policy:
-        load_sender_policy(out / SENDER_POLICY)
-    return convert_records([load_record(path) for path in sorted(record_dir.iterdir())], expected,
-                           sender_policy=sender_policy)
+    marker = out / SENDER_POLICY
+    if marker.exists() or marker.is_symlink():
+        fingerprint = load_sender_policy(marker)
+        # The marker holds only the list's fingerprint: membership needs the list itself.
+        need(known_senders is not None, f"{SENDER_POLICY}: this folder is a --known-senders run; pass the same "
+                                        "list with --known-senders so every UNKNOWN_SENDER hold can be re-derived")
+        need(known_senders.fingerprint == fingerprint, f"--known-senders is not the list this run used "
+                                                       f"(its fingerprint differs from {SENDER_POLICY})")
+    else:
+        need(known_senders is None, f"--known-senders was given, but the folder has no {SENDER_POLICY} "
+                                    "(the run did not use a known-senders list)")
+    loaded = [load_record(path) for path in sorted(record_dir.iterdir())]
+    sources = {}
+    for record in loaded:
+        if record["source_hash_kind"] == "sha256" and record["intake_id"] not in sources:
+            sources[record["intake_id"]] = read_source(out, record["intake_id"])
+    return convert_records(loaded, expected, sources, known_senders)
+
+
+def read_source(out, iid):
+    """The bytes of sources/<intake_id>/original.eml, or None when the runner's copy is missing."""
+    path = out / "sources" / iid / ORIGINAL
+    if not (path.exists() or path.is_symlink()):
+        return None
+    need(path.is_file() and not is_alias(path), f"sources/{iid}/{ORIGINAL}: not a regular file")
+    with path.open("rb") as stream:
+        return stream.read(MAX_EMAIL + 1)  # more than the limit cannot match a sha256 intake_id
 
 
 def load_sender_policy(path):
-    """The runner's marker of a --known-senders run: exactly {"version": 1, "sha256": <64 hex>}."""
+    """The runner's marker of a --known-senders run: exactly {"version": 1, "sha256": <64 hex>}; returns the hash."""
     need(path.is_file() and not is_alias(path), f"{SENDER_POLICY}: not a regular file")
     need(path.stat().st_size <= MAX_POLICY_BYTES, f"{SENDER_POLICY}: too large")
     try:
@@ -522,12 +577,15 @@ def load_sender_policy(path):
         raise ConvertError(f"{SENDER_POLICY}: not valid strict JSON ({exc})") from exc
     need(type(value) is dict and set(value) == {"version", "sha256"} and type(value["version"]) is int
          and value["version"] == 1 and hex64(value["sha256"]), f"{SENDER_POLICY}: not the runner's sender policy")
+    return value["sha256"]
 
 
-def convert_records(loaded, expected, *, sender_policy=False):
-    """Every cross-record and expected-file check on records that passed load_record, then the answers.
+def convert_records(loaded, expected, sources, known_senders=None):
+    """Every source, cross-record and expected-file check on records that passed load_record, then the answers.
 
-    sender_policy: the folder holds the runner's sender-policy.json (a --known-senders run)."""
+    sources: {intake_id: bytes of sources/<intake_id>/original.eml}.
+    known_senders: the run's --known-senders list, for a folder holding sender-policy.json (whose fingerprint
+    convert() has matched); None for a run without one."""
     by_name = {}
     for record in loaded:
         need(record["source_name"] not in by_name, f"two records for {record['source_name']}")
@@ -545,13 +603,19 @@ def convert_records(loaded, expected, *, sender_policy=False):
              f"{fixture_id}.eml: oversized-source record cannot be bound to the expected email (only a bounded-prefix hash is kept)")
         need(record["intake_id"] == truth["sha256"], f"{fixture_id}: record does not match the expected email bytes")
     records = [by_name[f"{fixture_id}.eml"] for fixture_id in expected]
+    unknown_sender = {}
+    for record in records:
+        try:
+            unknown_sender[record["record_id"]] = check_source(record, sources.get(record["intake_id"]), known_senders)
+        except (TypeError, KeyError, AttributeError, IndexError, UnicodeError) as exc:  # fail closed
+            raise ConvertError(f"{record['source_name']}: malformed record ({exc.__class__.__name__})") from exc
     for record in records:
         triple_kind(record)
         check_consistency(record)
-    conflict = check_run(records)
+    conflict = check_history(records)
     for record in records:
         if "body" in record:
-            check_outcome(record, conflict[record["record_id"]], sender_policy)
+            check_outcome(record, conflict[record["record_id"]], unknown_sender[record["record_id"]])
     rows, lanes = [], Counter()
     local, kinds = Counter(), Counter()
     quiet = 0
@@ -572,7 +636,7 @@ def convert_records(loaded, expected, *, sender_policy=False):
                "answers_by_lane": {lane: lanes.get(lane, 0) for lane in LANES},
                "classified_records": kinds["classified"], "pending_records": kinds["pending"],
                "local_reason_codes_omitted": dict(sorted(local.items())),
-               "quiet_attachment_review_not_in_scored_lane": quiet, "sender_policy": sender_policy}
+               "quiet_attachment_review_not_in_scored_lane": quiet, "sender_policy": known_senders is not None}
     return rows, summary
 
 
@@ -613,6 +677,8 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, required=True, help="runner --out folder")
     parser.add_argument("--expected", type=Path, required=True, help="expected.jsonl of the generated set")
     parser.add_argument("--answers", type=Path, required=True, help="new answers.jsonl to write")
+    parser.add_argument("--known-senders", type=Path,
+                        help="the --known-senders list the runner used (required for a folder with sender-policy.json)")
     args = parser.parse_args(argv)
     try:
         need(cli_path_ok(args.out), "--out is not a plain folder path (stream, device or drive-relative form)")
@@ -620,7 +686,13 @@ def main(argv=None):
              "--answers is not a plain file path (stream, device, drive-relative form or aliased folder)")
         need(not args.answers.exists(), "answers file already exists; choose a new path")
         expected = score.read_rows(args.expected, expected=True)
-        rows, summary = convert(args.out, expected)
+        known_senders = None
+        if args.known_senders is not None:
+            try:
+                known_senders = load_senders(args.known_senders)  # the runner's own loader and rules
+            except ValueError as exc:
+                raise ConvertError("--known-senders is not a readable known-senders list") from exc
+        rows, summary = convert(args.out, expected, known_senders)
         text = "".join(json.dumps(row, sort_keys=True, ensure_ascii=True, allow_nan=False) + "\n" for row in rows)
         publish(args.answers, text)
     except RecursionError:

@@ -35,6 +35,7 @@ from email_intake import contract as intake_contract  # noqa: E402
 from email_intake import parser as intake_parser  # noqa: E402
 from email_intake import locking as intake_locking  # noqa: E402
 from email_intake import runner as intake_runner  # noqa: E402
+from email_intake import senders as intake_senders  # noqa: E402
 from email_intake.body_pdf import render  # noqa: E402
 from email_intake.ledger import LedgerError  # noqa: E402
 from email_intake.providers import FakeProvider, LiveProvider  # noqa: E402
@@ -68,6 +69,23 @@ def record_id_for(record):
     return sha256((record["intake_id"] + record["source_name"]).encode()).hexdigest()
 
 
+def copy_original(source_out, target_out, intake_id):
+    """Copy the email the runner kept for one intake id (sources/<intake_id>/original.eml)."""
+    folder = target_out / "sources" / intake_id
+    folder.mkdir(parents=True, exist_ok=True)
+    original = source_out / "sources" / intake_id / "original.eml"
+    if original.exists():
+        shutil.copy(original, folder / "original.eml")
+
+
+def write_originals(out, data):
+    """Write the runner's kept copy of every email (bytes) into a test folder."""
+    for raw in data:
+        folder = out / "sources" / sha256(raw).hexdigest()
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "original.eml").write_bytes(raw)
+
+
 class Base(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -93,8 +111,11 @@ class Base(unittest.TestCase):
         cls.temp.cleanup()
 
     def fresh_out(self):
+        """A copy of the scripted run: records plus the emails the runner keeps (sources/<intake_id>/original.eml)."""
         target = self.root / f"out-{next(COUNTER)}"
         shutil.copytree(self.scripted / "records", target / "records")
+        for fixture_id, record in self.base.items():
+            copy_original(self.scripted, target, record["intake_id"])
         return target
 
     def solo(self, fixture_id):
@@ -103,9 +124,38 @@ class Base(unittest.TestCase):
         target = self.root / f"solo-{number}"
         (target / "records").mkdir(parents=True)
         shutil.copy(self.scripted / "records" / self.names[fixture_id], target / "records" / self.names[fixture_id])
+        copy_original(self.scripted, target, self.base[fixture_id]["intake_id"])
         expected = self.root / f"solo-expected-{number}.jsonl"
         expected.write_text(self.lines[fixture_id] + "\n", encoding="utf-8")
         return target, expected
+
+    def mini(self, files, mapping=None):
+        """A real runner run over these (name -> bytes) emails; every parseable one is scripted order."""
+        number = next(COUNTER)
+        drop = self.root / f"mini-drop-{number}"
+        drop.mkdir()
+        template = json.loads(self.lines["fictional-0001"])
+        lines, script = [], {}
+        for name, data in files.items():
+            (drop / name).write_bytes(data)
+            digest = sha256(data).hexdigest()
+            lines.append(json.dumps(dict(template, id=name[:-4], sha256=digest)))
+            script[digest] = (mapping or {}).get(name, {"category": "order", "lane": "order", "reason_code": "new_order"})
+        expected = self.root / f"mini-expected-{number}.jsonl"
+        expected.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        out = self.root / f"mini-out-{number}"
+        intake_run(drop, out, FakeProvider(script))
+        return out, expected
+
+    def mini_records(self, out):
+        return {json.loads(p.read_text())["source_name"]: json.loads(p.read_text()) for p in (out / "records").glob("*.json")}
+
+    def edit_named(self, out, name, change):
+        """Edit the record of source file `name` in place (its file name and record id unchanged)."""
+        path = next(p for p in (out / "records").glob("*.json") if json.loads(p.read_text())["source_name"] == name)
+        record = json.loads(path.read_text())
+        change(record)
+        path.write_text(json.dumps(record), encoding="utf-8")
 
     def record_path(self, out, fixture_id):
         return out / "records" / self.names[fixture_id]
@@ -290,6 +340,21 @@ class BypassTests(Base):
                 self.edit(out, "fictional-0007", lambda r, o=original: r.update(original=o))
                 code, err, _, _ = self.convert(out)
                 self.assertEqual(code, 0, err)
+
+    def test_kept_email_is_required_and_must_be_the_expected_bytes(self):
+        # Source values are re-derived from sources/<intake_id>/original.eml, which the runner always writes.
+        fixture_id = self.order_with_document()
+        original = Path("sources") / self.base[fixture_id]["intake_id"] / "original.eml"
+        out, expected = self.solo(fixture_id)
+        (out / original).unlink()
+        self.assert_fails_closed(out, "original.eml is missing", expected)
+        out, expected = self.solo(fixture_id)
+        (out / original).write_bytes((out / original).read_bytes() + b"\r\n")
+        self.assert_fails_closed(out, "not this record's email", expected)
+        out, expected = self.solo(fixture_id)
+        (out / original).unlink()
+        (out / original).mkdir()
+        self.assert_fails_closed(out, "not a regular file", expected)
 
     def test_out_is_a_file_or_missing_or_has_no_records(self):
         for make in ("file", "missing", "empty"):
@@ -500,25 +565,31 @@ class RawRunnerTests(Base):
         self.assertNotIn("orders_downgraded_to_needs_a_look", json.loads(summary))
 
     def test_a_reply_subject_does_not_change_the_runner_lane(self):
-        fixture_id = self.order_with_document()
+        # Genuine emails with reply subjects, through the real runner: the order lane is kept as the runner wrote it.
         for subject in ("RE: purchase order", "  re : orden", "Re:x"):
             with self.subTest(subject=subject):
-                out, expected = self.solo(fixture_id)
-                self.edit(out, fixture_id, lambda r, s=subject: r.update(subject=s))
+                out, expected = self.mini({"fictional-0001.eml": eml("r01", subject=subject, parts=[pdf_part("r01")])})
                 code, err, answers, _ = self.convert(out, expected)
                 self.assertEqual(code, 0, err)
-                row = self.answer_rows(answers)[fixture_id]
+                row = self.answer_rows(answers)["fictional-0001"]
                 self.assertEqual((row["category"], row["lane"]), ("order", "order"))
+        # A subject edited in the record no longer matches the email the runner kept: refused.
+        fixture_id = self.order_with_document()
+        out, expected = self.solo(fixture_id)
+        self.edit(out, fixture_id, lambda r: r.update(subject="RE: purchase order"))
+        self.assert_fails_closed(out, "subject is not what the parser derives", expected)
 
     def test_attachment_disposition_does_not_change_the_runner_lane(self):
-        fixture_id = self.order_with_document()
         for disposition in ("inline", "attachment"):
             with self.subTest(disposition=disposition):
-                out, expected = self.solo(fixture_id)
-                self.edit(out, fixture_id, lambda r, d=disposition: [a.update(disposition=d) for a in r["attachment_manifest"]])
+                raw = eml("r02", parts=[pdf_part("r02", f'{disposition}; filename="po.pdf"')])
+                out, expected = self.mini({"fictional-0001.eml": raw})
                 code, err, answers, _ = self.convert(out, expected)
                 self.assertEqual(code, 0, err)
-                self.assertEqual(self.answer_rows(answers)[fixture_id]["lane"], "order")
+                self.assertEqual(self.answer_rows(answers)["fictional-0001"]["lane"], "order")
+                flipped = "attachment" if disposition == "inline" else "inline"
+                self.edit_named(out, "fictional-0001.eml", lambda r: [a.update(disposition=flipped) for a in r["attachment_manifest"]])
+                self.assert_fails_closed(out, "attachment_manifest is not what the parser derives", expected)
 
     def test_runner_false_positive_is_not_erased(self):
         # A non-order email (invoice with a supported attachment) wrongly classified order by the classifier.
@@ -549,7 +620,6 @@ class RawRunnerTests(Base):
 
 
 POOL = [None, True, False, 0, 1, 12, -1, 1.5, "", "x", "spam", "A" * 64, [], {}, [{}], ["x"], [[]], {"a": 1}]
-BENIGN_STRING = {("sender",), ("subject",)}
 
 
 def leaf_paths(value, prefix=()):
@@ -567,26 +637,6 @@ def get_at(root, path):
     for step in path:
         root = root[step]
     return root
-
-
-def is_benign(path, value):
-    """Replacement values that are legitimately valid, so the sweep expects exit 0 for them."""
-    if path in BENIGN_STRING:
-        return type(value) is str and value != ""
-    if path == ("message_id",):
-        return value is None
-    if path == ("source_size",):
-        return type(value) is int and 0 <= value <= MAX_EMAIL
-    if len(path) == 3 and path[0] == "attachment_manifest" and path[2] == "filename":
-        return type(value) is str and value != ""
-    if len(path) == 3 and path[0] == "attachment_manifest" and path[2] == "byte_length":
-        return type(value) is int and value >= 0
-    if len(path) == 3 and path[0] == "attachment_manifest" and path[2] == "supported":
-        return value is False  # the magic-byte verdict cannot be re-derived from the manifest; false only narrows
-    if len(path) == 3 and path[0] == "attachment_manifest" and path[2] == "disposition":
-        # The parser keeps any non-empty lower-cased disposition token (round 2, item 1: custom, form-data, ...).
-        return type(value) is str and value != "" and value == value.strip().lower() and ";" not in value
-    return False
 
 
 class MalformedValueTests(Base):
@@ -625,8 +675,9 @@ class MalformedValueTests(Base):
                 else:
                     self.assertEqual(code, 2, (path, kind, value, err))
                     self.assertFalse(answers.exists())
-        unexpected = [a for a in accepted if not (a[1] == "set" and is_benign(a[0], a[2]))]
-        self.assertEqual(unexpected, [], f"{fixture_id}: malformed values accepted")
+        # Every value is re-derived from the kept email or the runner's routing, so no single change is valid
+        # (source values such as sender, subject, file names, sizes and dispositions included).
+        self.assertEqual(accepted, [], f"{fixture_id}: changed values accepted")
 
     def test_sweep_order_with_document(self):
         self.sweep(self.order_with_document())
@@ -664,18 +715,23 @@ class MalformedValueTests(Base):
 
     def test_pre_parse_refusal_is_accepted_but_not_when_it_carries_parsed_data(self):
         # A genuine record that stopped before parsing has no parsed fields; that absence is legitimate.
-        fixture_id = self.first(category="invoice")
-        out, expected = self.solo(fixture_id)
-
-        self.edit(out, fixture_id, pre_parse_refusal)
-
+        out, expected = self.mini({"fictional-0001.eml": b"not an email at all"})
         code, err, answers, summary = self.convert(out, expected)
         self.assertEqual(code, 0, err)
         self.assertEqual(json.loads(summary)["local_reason_codes_omitted"], {"PARSE_FAILED": 1})
-        self.edit(out, fixture_id, lambda r: r.update(reason_code="CONFLICT", needs_a_look=["CONFLICT"]))
-        self.assert_fails_closed(out, expected_path=expected)
-        self.edit(out, fixture_id, lambda r: r.update(reason_code="PARSE_FAILED", needs_a_look=["PARSE_FAILED"], subject="x"))
-        self.assert_fails_closed(out, expected_path=expected)
+        cases = {"other local reason": lambda r: r.update(reason_code="CONFLICT", needs_a_look=["CONFLICT"]),
+                 "LIMIT instead of the parser's PARSE_FAILED": lambda r: r.update(reason_code="LIMIT", needs_a_look=["LIMIT"]),
+                 "a parsed field": lambda r: r.update(subject="x")}
+        for label, change in cases.items():
+            with self.subTest(case=label):
+                out, expected = self.mini({"fictional-0001.eml": b"not an email at all"})
+                self.edit_named(out, "fictional-0001.eml", change)
+                self.assert_fails_closed(out, expected_path=expected)
+        # A pre-parse refusal written for an email the parser reads is not the runner's record either.
+        fixture_id = self.first(category="invoice")
+        out, expected = self.solo(fixture_id)
+        self.edit(out, fixture_id, pre_parse_refusal)
+        self.assert_fails_closed(out, "the parser reads this email", expected)
 
 
 class WindowsPathTests(Base):
@@ -953,25 +1009,7 @@ class AtomicWriteTests(Base):
 class RealRunnerPendingTests(Base):
     """Genuine pending outcomes from the real runner on a small drop: kept as unsure/needs_a_look, never invented."""
 
-    def mini(self, files):
-        number = next(COUNTER)
-        drop = self.root / f"mini-drop-{number}"
-        drop.mkdir()
-        template = json.loads(self.lines["fictional-0001"])
-        lines, mapping = [], {}
-        for name, data in files.items():
-            (drop / name).write_bytes(data)
-            digest = sha256(data).hexdigest()
-            lines.append(json.dumps(dict(template, id=name[:-4], sha256=digest)))
-            mapping[digest] = {"category": "order", "lane": "order", "reason_code": "new_order"}
-        expected = self.root / f"mini-expected-{number}.jsonl"
-        expected.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        out = self.root / f"mini-out-{number}"
-        intake_run(drop, out, FakeProvider(mapping))
-        return out, expected
-
-    def records(self, out):
-        return {json.loads(p.read_text())["source_name"]: json.loads(p.read_text()) for p in (out / "records").glob("*.json")}
+    records = Base.mini_records
 
     def test_duplicate_conflict_and_parse_failure_map_to_pending(self):
         base = (self.set / "fictional-0001.eml").read_bytes()
@@ -1174,7 +1212,7 @@ def live_provider(target, *, known=True):
     kwargs = dict(enabled=True, api_key="fictional-offline-placeholder", ledger=StubLedger(known=known),
                   send=offline_send(500, {}))
     reason = target.get("reason_code") if isinstance(target, dict) else None
-    if isinstance(target, dict) and reason not in intake_contract.LOCAL_REASONS:
+    if isinstance(target, dict) and (type(reason) is not str or reason not in intake_contract.LOCAL_REASONS):
         kwargs["send"] = offline_send(200, completed(json.dumps(target)))
     elif reason == "LIVE_DISABLED":
         kwargs["enabled"] = False
@@ -1327,66 +1365,6 @@ def source_literals(pattern, *files):
 PARSE_ERRORS = frozenset(source_literals(r'ParseError\("([A-Z_]+)"\)', "parser.py", "runner.py"))
 
 
-def parser_view(record):
-    """What parse() could have returned for this record, per the parser's code; None when outside its domain.
-
-    Re-derives what the parser derives (segments, attachment ids); keeps what only the source bytes decide
-    (header texts, body text, file names, media types, dispositions, sizes, digests, magic-byte verdict)
-    after checking it lies in the parser's output domain."""
-    keys = ("sender", "subject", "message_id", "body", "body_segments")
-    present = [key in record for key in keys]
-    if not any(present):
-        reason = record.get("reason_code")
-        return ("refused", reason) if type(reason) is str and reason in PARSE_ERRORS else None
-    if not all(present):
-        return None
-    sender, subject, mid, body = (record[k] for k in keys[:4])
-    if not (type(sender) is str and sender and type(subject) is str and subject):
-        return None
-    if not (mid is None or (type(mid) is str and re.fullmatch(r"<[^\s<>@]+@[^\s<>@]+>", mid))):
-        return None
-    if type(body) is not str or body != body.strip():
-        return None
-    try:
-        if len(body.encode("utf-8")) > intake_parser.MAX_BODY:
-            return None
-    except UnicodeError:
-        return None
-    manifest = record.get("attachment_manifest")
-    if type(manifest) is not list or len(manifest) > intake_parser.MAX_ATTACHMENTS:
-        return None
-    attachments = []
-    for index, item in enumerate(manifest):
-        fields = ("filename", "media_type", "byte_length", "sha256", "disposition", "supported")
-        if type(item) is not dict or not all(f in item for f in fields):
-            return None
-        name, media, size, digest, disposition, supported = (item[f] for f in fields)
-        # Message.get_content_type(): lower-cased text before ';' with one '/'; message/* is refused.
-        if not (type(media) is str and media == media.strip().lower() and ";" not in media and media.count("/") == 1
-                and not media.startswith("message/")):
-            return None
-        # get_content_disposition() or "attachment": lower-cased text before ';', never empty.
-        if not (type(disposition) is str and disposition and disposition == disposition.strip().lower() and ";" not in disposition):
-            return None
-        if not (type(name) is str and name and type(size) is int and size >= 0 and type(digest) is str
-                and re.fullmatch(r"[0-9a-f]{64}", digest) and type(supported) is bool):
-            return None
-        extension = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
-        if supported and not (media in intake_parser.SUPPORTED and extension in intake_parser.SAFE_EXTENSIONS
-                              and size >= len(intake_parser.SUPPORTED[media][1])):
-            return None
-        attachments.append({"attachment_id": f"a{index + 1:03}", "filename": name, "media_type": media,
-                            "byte_length": size, "sha256": digest, "disposition": disposition, "supported": supported})
-    segments = []
-    for line in body.splitlines(keepends=True):
-        kind = "quoted" if line.lstrip().startswith(">") else "newest"
-        if segments and segments[-1]["kind"] == kind:
-            segments[-1]["text"] += line
-        else:
-            segments.append({"kind": kind, "text": line})
-    return ("parsed", (sender, subject, mid, body, segments, attachments))
-
-
 def fake_script(target):
     if same(target, held("INVALID")):
         return "garbage"
@@ -1395,88 +1373,101 @@ def fake_script(target):
     return copy.deepcopy(target)
 
 
+def run_sequences(stems):
+    """Every sequence of runner calls that processes each email exactly once (ordered set partitions)."""
+    if not stems:
+        yield []
+        return
+    for size in range(1, len(stems) + 1):
+        for first in itertools.combinations(stems, size):
+            rest = [s for s in stems if s not in first]
+            for tail in run_sequences(rest):
+                yield [list(first)] + tail
+
+
 class Replay:
-    """Oracle: re-run the real runner over the same email files with parse() and the classifier pinned to the
-    records' content, and report whether the runner writes exactly these records."""
+    """Oracle: re-run the real runner over the same email files and report whether it writes exactly these
+    records. Everything is the producer's own code on the real bytes (parser, sender list, routing, files);
+    only the classifier is pinned, to the result its code returns when scripted with the original record's
+    classification, because a provider's answer is the one value a folder cannot re-derive.
 
-    def __init__(self, root, stems, data, policy=False):
-        """policy: replay a --known-senders run (the folder holds sender-policy.json)."""
+    schedules: the runner calls to try, each a list of stems processed by one call. Default: one call with
+    every email. A record set is reachable when ANY schedule writes it."""
+
+    def __init__(self, root, stems, data, policy=False, schedules=None):
+        """policy: replay --known-senders runs with the KNOWN list (the folder holds sender-policy.json)."""
         self.root, self.stems, self.data, self.cache, self.runs = root, stems, data, {}, 0
-        self.policy = policy
+        self.policy, self.parsed = policy, {}
+        self.schedules = schedules or [[list(stems)]]
 
-    def produce(self, records):
+    def results(self, records):
+        """{intake_id: (result, audit)} the pinned classifier returns, or None for a folder no runner writes."""
         kinds = {json.dumps(r.get("provider")) for r in records}
         if len(kinds) != 1 or not kinds <= {'"fake"', '"live"'}:
             return None  # one provider per folder (converter policy); unknown providers do not exist
         live = kinds == {'"live"'}
-        views, sizes, targets = {}, {}, {}
-        for stem, record in zip(self.stems, records):
+        results = {}
+        for stem in self.stems:
             raw = self.data[stem]
-            if raw in views:
-                continue  # same bytes: the runner parses them exactly like the first record
-            view = parser_view(record)
-            size = record.get("source_size")
-            if view is None or type(size) is not int or not 0 <= size <= MAX_EMAIL:
-                return None
-            if view[0] == "parsed" and sum(a["byte_length"] for a in view[1][5]) > size:
-                return None
-            views[raw], sizes[raw] = view, size
-            targets[sha256(raw).hexdigest()] = record.get("classification")
-        key = json.dumps([live, [[views[self.data[s]], sizes[self.data[s]]] for s in dict.fromkeys(self.stems)],
-                          sorted(targets.items(), key=lambda kv: kv[0])], sort_keys=True, default=str)
-        if key not in self.cache:
-            self.cache[key] = self.run(views, sizes, targets, live)
-        return self.cache[key]
+            iid = sha256(raw).hexdigest()
+            if iid in results:
+                continue
+            copies = [r for s, r in zip(self.stems, records) if self.data[s] == raw]
+            # The runner calls the provider at most once per email: for its first record (duplicate_of null).
+            originals = [r for r in copies if r.get("duplicate_of") is None]
+            target = (originals or copies)[0].get("classification")
+            if raw not in self.parsed:  # the real parser, once per email (it is deterministic)
+                try:
+                    self.parsed[raw] = intake_parser.parse(raw, sender_hint=self.policy)
+                except intake_parser.ParseError:
+                    self.parsed[raw] = None
+            parsed = self.parsed[raw]
+            if parsed is None:
+                results[iid] = None
+                continue
+            provider = live_provider(target) if live else FakeProvider({iid: fake_script(target)})
+            results[iid] = provider.classify(parsed, iid)
+        return live, results
 
-    def run(self, views, sizes, targets, live):
+    def run(self, schedule, live, results):
         self.runs += 1
         number = next(COUNTER)
         drop, out = self.root / f"replay-drop-{number}", self.root / f"replay-out-{number}"
-        drop.mkdir(parents=True)
-        for stem in self.stems:
-            (drop / f"{stem}.eml").write_bytes(self.data[stem])
-
-        def parse(raw, *, sender_hint=False):
-            kind, value = views[raw]
-            if kind == "refused":
-                raise intake_parser.ParseError(value)
-            sender, subject, mid, body, segments, attachments = copy.deepcopy(value)
-            # The sender hold is pinned like the classifier: a record held as UNKNOWN_SENDER has a sender
-            # outside the list; any other parsed record of a policy run has a listed one.
-            unknown = same(targets.get(sha256(raw).hexdigest()), held("UNKNOWN_SENDER"))
-            address = None if unknown or not sender_hint else next(iter(KNOWN.addresses))
-            return intake_parser.Parsed(sender, subject, mid, body, segments, attachments,
-                                        {a["attachment_id"]: b"fictional payload" for a in attachments}, address)
 
         class Pinned:
             def __init__(self):
                 self.live = live
 
             def classify(self, parsed, intake_id):
-                target = targets[intake_id]
-                if live:
-                    return live_provider(target).classify(parsed, intake_id)
-                return FakeProvider({intake_id: fake_script(target)}).classify(parsed, intake_id)
+                return copy.deepcopy(results[intake_id])
         plain = lambda path: Path(path).absolute()  # noqa: E731 (alias defence: not part of record content)
-        try:
-            with mock.patch.object(intake_runner, "parse", parse), mock.patch.object(os, "fsync", lambda fd: None), \
-                    mock.patch.object(intake_runner, "safe_path", plain), mock.patch.object(intake_locking, "safe_path", plain):
+        with mock.patch.object(os, "fsync", lambda fd: None), mock.patch.object(intake_runner, "safe_path", plain), \
+                mock.patch.object(intake_locking, "safe_path", plain):
+            for call in schedule:
+                if drop.exists():
+                    shutil.rmtree(drop)
+                drop.mkdir(parents=True)
+                for stem in call:
+                    (drop / f"{stem}.eml").write_bytes(self.data[stem])
                 intake_run(drop, out, Pinned(), known_senders=KNOWN if self.policy else None)
-        except Exception:  # the runner cannot write a record for these inputs
-            return None
         produced = read_records(out)
-        result = []
-        for stem in self.stems:
-            record = produced[stem]
-            record["source_size"] = sizes[self.data[stem]]  # decided by the source bytes, not the runner
-            result.append(record)
         shutil.rmtree(drop)
         shutil.rmtree(out)
-        return result
+        return [produced[stem] for stem in self.stems]
 
     def reachable(self, records):
-        produced = self.produce(records)
-        return produced is not None and all(same(p, r) for p, r in zip(produced, records))
+        pinned = self.results(records)
+        if pinned is None:
+            return False
+        live, results = pinned
+        decided_results = {iid: None if value is None else value[0] for iid, value in results.items()}
+        for index, schedule in enumerate(self.schedules):
+            key = json.dumps([index, live, sorted(decided_results.items())], sort_keys=True)
+            if key not in self.cache:
+                self.cache[key] = self.run(schedule, live, results)
+            if all(same(p, r) for p, r in zip(self.cache[key], records)):
+                return True
+        return False
 
 
 SWEEP_POOL = [None, True, 0, -1, "", "x", [], {}]
@@ -1587,24 +1578,89 @@ def apply_mutation(record, kind, path, arg):
     return record
 
 
-def converter_exit(out, expected):
+def converter_exit(out, expected, known_senders=None):
     """from_intake.main's decision without publishing a file: 0 when convert() succeeds, 2 when it refuses."""
     try:
-        from_intake.convert(out, expected)
+        from_intake.convert(out, expected, known_senders)
     except (OSError, ValueError, RecursionError):
         return 2
     return 0
 
 
-def converter_exit_texts(texts, expected, sender_policy=False):
-    """The same decision for record files held in memory (every record and cross-record check; the
-    folder and file-system checks are covered by the folder tests above)."""
+def converter_exit_texts(texts, expected, data, known_senders=None):
+    """The same decision for record files held in memory (every record, source and cross-record check; the
+    folder and file-system checks are covered by the folder tests above). data: the emails' bytes, which the
+    runner keeps as sources/<intake_id>/original.eml."""
+    sources = {sha256(raw).hexdigest(): raw for raw in data}
     try:
         from_intake.convert_records([from_intake.record_from_text(text, Path(name)) for name, text in sorted(texts.items())],
-                                    expected, sender_policy=sender_policy)
+                                    expected, sources, known_senders)
     except (ValueError, RecursionError):
         return 2
     return 0
+
+
+def known_list_file():
+    """The KNOWN list as the text file a --known-senders run reads (for the converter's CLI)."""
+    path = Path(genuine()["temp"].name) / "known-senders.txt"
+    if not path.exists():
+        path.write_text("\n".join(sorted(KNOWN.addresses | KNOWN.domains)) + "\n", encoding="utf-8")
+    return path
+
+
+def run_calls(drop, out, calls, data, results, known_senders=None):
+    """Genuine multi-run history: one real runner call per list of stems, into the same --out folder."""
+    for call in calls:
+        if drop.exists():
+            shutil.rmtree(drop)
+        drop.mkdir(parents=True)
+        for stem in call:
+            (drop / f"{stem}.eml").write_bytes(data[stem])
+        intake_run(drop, out, FakeProvider(results), known_senders=known_senders)
+    return read_records(out)
+
+
+def lower_id_name(iid, prefix, below):
+    """A drop-file stem whose record id (for this email) sorts before `below`."""
+    return next(stem for stem in (f"{prefix}{i}" for i in itertools.count())
+                if sha256((iid + stem + ".eml").encode()).hexdigest() < below)
+
+
+def multi_run_corpus():
+    """Genuine folders written by SEVERAL runner calls (round-3 review, process note 2), built once:
+    {name: (stems, data, calls, records, results)}.
+
+    chain: one email copied four times, one call per copy, record ids ordered D < C < B < A; each later call
+    loads the folder in record-file order, so the runner writes A <- B <- C <- D (each copy points at the
+    lowest-id earlier copy, not at the first record).
+    mixed: two calls with a shared attachment digest, a shared message id (CONFLICT) and a duplicate."""
+    store = genuine()
+    if "multi" in store:
+        return store["multi"]
+    root = Path(store["temp"].name) / "multi"
+    corpus = {}
+    raw = eml("m01", parts=[pdf_part("m01")])
+    iid = sha256(raw).hexdigest()
+    rid = lambda stem: sha256((iid + stem + ".eml").encode()).hexdigest()  # noqa: E731
+    a = "chain-a"
+    b = lower_id_name(iid, "chain-b", rid(a))
+    c = lower_id_name(iid, "chain-c", rid(b))
+    d = lower_id_name(iid, "chain-d", rid(c))
+    data = {stem: raw for stem in (a, b, c, d)}
+    results = {iid: decided("order")}
+    calls = [[a], [b], [c], [d]]
+    records = run_calls(root / "chain-drop", root / "chain-out", calls, data, results)
+    corpus["chain"] = ([a, b, c, d], data, calls, records, results)
+    x = eml("m2x", parts=[pdf_part("m2x")])
+    y = eml("m2y", body="Second fictional order 2002", parts=[pdf_part("m2x")])  # shares x's document
+    z = eml("m2z", message_id="<m2y@fictional.example>", body="Third fictional order 2003", parts=[pdf_part("m2z")])
+    data = {"mixed-a": x, "mixed-b": y, "mixed-c": x, "mixed-d": z}
+    results = {sha256(v).hexdigest(): decided("order") for v in data.values()}
+    calls = [["mixed-b", "mixed-d"], ["mixed-a", "mixed-c"]]
+    records = run_calls(root / "mixed-drop", root / "mixed-out", calls, data, results)
+    corpus["mixed"] = (list(data), data, calls, records, results)
+    store["multi"] = corpus
+    return corpus
 
 
 class GenuineProducerOutputTests(unittest.TestCase):
@@ -1613,9 +1669,10 @@ class GenuineProducerOutputTests(unittest.TestCase):
     def convert_folder(self, kind):
         out, expected_path, records, _, _ = genuine()[kind]
         answers = Path(_GENUINE["temp"].name) / f"answers-{kind}-{next(COUNTER)}.jsonl"
+        known = ["--known-senders", str(known_list_file())] if kind == "policy" else []
         err = io.StringIO()
         with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()) as stdout:
-            code = from_intake.main(["--out", str(out), "--expected", str(expected_path), "--answers", str(answers)])
+            code = from_intake.main(["--out", str(out), "--expected", str(expected_path), "--answers", str(answers), *known])
         self.assertEqual(code, 0, err.getvalue())
         return json.loads(stdout.getvalue()), records
 
@@ -1659,6 +1716,11 @@ class GenuineProducerOutputTests(unittest.TestCase):
         self.assertEqual(from_intake.PARSER_VERSIONS, frozenset(re.findall(r'"parser_version": "([^"]+)"', runner_source)))
         self.assertIs(from_intake.LOCAL_REASONS, intake_contract.LOCAL_REASONS)
         self.assertEqual(from_intake.EXTENSIONS, {k: v[0] for k, v in intake_parser.SUPPORTED.items()})
+        # The converter re-parses with the runner's own parser and loads lists with the runner's own loader.
+        self.assertIs(from_intake.parse, intake_parser.parse)
+        self.assertIs(from_intake.load_senders, intake_senders.load)
+        self.assertIn('folder / "original.eml"', runner_source)
+        self.assertEqual(from_intake.ORIGINAL, "original.eml")
 
     def test_replay_oracle_reproduces_every_genuine_record(self):
         for kind in ("fake", "live", "policy"):
@@ -1669,6 +1731,14 @@ class GenuineProducerOutputTests(unittest.TestCase):
             if kind == "policy":  # the same records without the policy marker: the runner cannot write them
                 plain = Replay(Path(_GENUINE["temp"].name) / "oracle-check-no-policy", stems, data)
                 self.assertFalse(plain.reachable([records[s] for s in stems]))
+        for name, (stems, data, calls, records, _) in multi_run_corpus().items():
+            with self.subTest(multi_run=name):
+                genuine_records = [records[s] for s in stems]
+                single = Replay(Path(_GENUINE["temp"].name) / f"oracle-check-{name}-single", stems, data)
+                self.assertFalse(single.reachable(genuine_records), "needs several runner calls")
+                every = Replay(Path(_GENUINE["temp"].name) / f"oracle-check-{name}", stems, data,
+                               schedules=list(run_sequences(stems)))
+                self.assertTrue(every.reachable(genuine_records))
 
     def test_known_senders_run_converts_with_the_runner_hold(self):
         summary, records = self.convert_folder("policy")
@@ -1684,6 +1754,25 @@ class GenuineProducerOutputTests(unittest.TestCase):
         self.assertEqual(records["p04-unknown-attachment-only"]["reader_files"], [])
         self.assertTrue(summary["sender_policy"])
         self.assertEqual(summary["local_reason_codes_omitted"]["UNKNOWN_SENDER"], 6)
+
+    def test_multi_run_histories_convert(self):
+        """Folders written by several runner calls (each later call looks earlier records up in record-file
+        order) are genuine: they must convert, including the four-copy chain A <- B <- C <- D."""
+        for name, (stems, data, calls, records, _) in multi_run_corpus().items():
+            with self.subTest(multi_run=name):
+                root = Path(_GENUINE["temp"].name) / f"multi-convert-{name}-{next(COUNTER)}"
+                out = root / "out"
+                run_calls(root / "drop", out, calls, data, multi_run_corpus()[name][4])
+                expected = score.read_rows(expected_rows(root / "expected.jsonl", stems, data), expected=True)
+                self.assertEqual(converter_exit(out, expected), 0)
+        stems, _, _, records, _ = multi_run_corpus()["chain"]
+        a, b, c, d = (records[s] for s in stems)
+        self.assertEqual([b["duplicate_of"], c["duplicate_of"], d["duplicate_of"]],
+                         [a["record_id"], b["record_id"], c["record_id"]], "the runner's lookup order changed")
+        mixed = multi_run_corpus()["mixed"][3]
+        self.assertEqual(mixed["mixed-a"]["related_intakes"], [mixed["mixed-b"]["intake_id"]])
+        self.assertEqual(mixed["mixed-c"]["duplicate_of"], mixed["mixed-a"]["record_id"])
+        self.assertEqual(mixed["mixed-d"]["reason_code"], "CONFLICT")
 
     def test_later_run_duplicate_can_point_at_an_earlier_duplicate(self):
         """A second runner call into the same folder looks records up in file-name order, so its duplicate can
@@ -1738,11 +1827,39 @@ SWEEP_STATS = Counter()
 
 class ProducerMutationSweepTests(unittest.TestCase):
     """B02 class: for every genuine record, EVERY single-field deletion/addition/swap. The converter must
-    refuse (exit 2) exactly the mutated folders the real runner cannot write, and accept the rest."""
+    refuse (exit 2) exactly the mutated folders the real runner cannot write, and accept the rest. The oracle
+    re-runs the real runner on the real email bytes (source-derived fields included) and, for the multi-run
+    groups, over every possible sequence of runner calls."""
 
     @classmethod
     def tearDownClass(cls):
         print(f"\n[producer mutation sweep] {dict(sorted(SWEEP_STATS.items()))}", file=sys.stderr)
+
+    def compare(self, stems, data, group, replay, expected, known_senders=None):
+        """Every single-field mutation of every record of `group` ({stem: record}): converter vs oracle."""
+        genuine_records = [group[stem] for stem in stems]
+        names = {stem: f"{group[stem]['record_id']}.json" for stem in stems}
+        texts = {names[stem]: json.dumps(group[stem]) for stem in stems}
+        raws = list(data.values())
+        self.assertTrue(replay.reachable(genuine_records))
+        self.assertEqual(converter_exit_texts(texts, expected, raws, known_senders), 0)
+        peers = [r for name in ("fake", "live", "policy") for r in genuine()[name][2].values()]
+        wrong = []
+        for slot, stem in enumerate(stems):
+            others = [p for p in peers if p["source_name"] != f"{stem}.eml"] + [
+                group[s] for s in stems if s != stem]
+            for kind_, mpath, arg in single_field_mutations(group[stem], others):
+                mutated = apply_mutation(group[stem], kind_, mpath, arg)
+                candidate = list(genuine_records)
+                candidate[slot] = mutated
+                reachable = replay.reachable(candidate)
+                code = converter_exit_texts(dict(texts, **{names[stem]: json.dumps(mutated)}), expected, raws, known_senders)
+                SWEEP_STATS["mutations"] += 1
+                SWEEP_STATS["reachable" if reachable else "impossible"] += 1
+                if code != (0 if reachable else 2):
+                    wrong.append((stem, kind_, mpath, json.dumps(arg)[:80], "reachable" if reachable else "impossible", code))
+        SWEEP_STATS["replays"] += replay.runs
+        self.assertEqual(wrong[:25], [], f"{len(wrong)} mutations where the converter disagrees with the runner")
 
     def sweep(self, kind, stems):
         _, _, records, data, results = genuine()[kind]
@@ -1761,35 +1878,10 @@ class ProducerMutationSweepTests(unittest.TestCase):
         group = read_records(out)
         for stem in stems:  # each group run reproduces its records from the full corpus run (no relations lost)
             self.assertTrue(same(group[stem], records[stem]), stem)
-        shutil.rmtree(out / "sources")
-        for name in ("calls.jsonl", "quiet-digest.jsonl", ".intake-guard"):
-            if (out / name).exists():
-                (out / name).unlink()
         expected = score.read_rows(expected_rows(root / "expected.jsonl", stems, data), expected=True)
-        files = {stem: next(p for p in (out / "records").glob("*.json")
-                            if json.loads(p.read_text(encoding="utf-8"))["source_name"] == f"{stem}.eml") for stem in stems}
-        genuine_records = [group[stem] for stem in stems]
+        self.assertEqual(converter_exit(out, expected, KNOWN if policy else None), 0)
         replay = Replay(root, stems, data, policy=policy)
-        self.assertEqual(converter_exit(out, expected), 0)
-        self.assertTrue(replay.reachable(genuine_records))
-        peers = [r for name in ("fake", "live", "policy") for r in genuine()[name][2].values()]
-        texts = {files[stem].name: files[stem].read_text(encoding="utf-8") for stem in stems}
-        self.assertEqual(converter_exit_texts(texts, expected, policy), 0)
-        wrong = []
-        for slot, stem in enumerate(stems):
-            others = [p for p in peers if p["source_name"] != f"{stem}.eml"]
-            for kind_, mpath, arg in single_field_mutations(group[stem], others):
-                mutated = apply_mutation(group[stem], kind_, mpath, arg)
-                candidate = list(genuine_records)
-                candidate[slot] = mutated
-                reachable = replay.reachable(candidate)
-                code = converter_exit_texts(dict(texts, **{files[stem].name: json.dumps(mutated)}), expected, policy)
-                SWEEP_STATS["mutations"] += 1
-                SWEEP_STATS["reachable" if reachable else "impossible"] += 1
-                if code != (0 if reachable else 2):
-                    wrong.append((stem, kind_, mpath, json.dumps(arg)[:80], "reachable" if reachable else "impossible", code))
-        SWEEP_STATS["replays"] += replay.runs
-        self.assertEqual(wrong[:25], [], f"{len(wrong)} mutations where the converter disagrees with the runner")
+        self.compare(stems, {s: data[s] for s in stems}, group, replay, expected, KNOWN if policy else None)
 
     def test_fake_provider_records(self):
         for stems in SWEEP_GROUPS:
@@ -1806,20 +1898,44 @@ class ProducerMutationSweepTests(unittest.TestCase):
             with self.subTest(group=stems):
                 self.sweep("policy", stems)
 
+    def test_multi_run_records(self):
+        """Folders of several runner calls; the oracle tries every sequence of calls (75 for four emails)."""
+        for name, (stems, data, calls, records, _) in multi_run_corpus().items():
+            with self.subTest(multi_run=name):
+                root = Path(_GENUINE["temp"].name) / f"sweep-multi-{name}-{next(COUNTER)}"
+                expected = score.read_rows(expected_rows(root.with_suffix(".jsonl"), stems, data), expected=True)
+                replay = Replay(root, stems, data, schedules=list(run_sequences(stems)))
+                self.compare(stems, data, records, replay, expected)
+
 
 class SenderPolicyTests(unittest.TestCase):
-    """B01/B02 for the runner's --known-senders mode (main #40): its marker file and UNKNOWN_SENDER hold."""
+    """B01/B02 for the runner's --known-senders mode (main #40): its marker file and UNKNOWN_SENDER hold.
+    The marker holds only the list's fingerprint, so the converter takes the list itself (same fingerprint)
+    and re-derives every hold from the parsed sender address."""
 
     def folder(self):
         out, expected_path, _, _, _ = genuine()["policy"]
         target = Path(_GENUINE["temp"].name) / f"policy-copy-{next(COUNTER)}"
         shutil.copytree(out / "records", target / "records")
+        shutil.copytree(out / "sources", target / "sources")
         shutil.copy(out / from_intake.SENDER_POLICY, target / from_intake.SENDER_POLICY)
         return target, score.read_rows(expected_path, expected=True)
 
     def test_genuine_marker_converts(self):
         out, expected = self.folder()
-        self.assertEqual(converter_exit(out, expected), 0)
+        self.assertEqual(converter_exit(out, expected, KNOWN), 0)
+
+    def test_the_runs_list_is_required(self):
+        out, expected = self.folder()
+        self.assertEqual(converter_exit(out, expected), 2, "membership cannot be checked against a fingerprint")
+        other = KnownSenders(KNOWN.addresses | {"stranger@elsewhere.example"}, KNOWN.domains)
+        self.assertEqual(converter_exit(out, expected, other), 2, "a different list than the run used")
+        domain = KnownSenders(frozenset(), frozenset({"fictional.example"}))
+        self.assertEqual(converter_exit(out, expected, domain), 2, "same members for these emails, other fingerprint")
+
+    def test_list_for_a_run_without_the_marker_is_refused(self):
+        out, expected_path, _, _, _ = genuine()["fake"]
+        self.assertEqual(converter_exit(out, score.read_rows(expected_path, expected=True), KNOWN), 2)
 
     def test_unknown_sender_without_the_marker_is_refused(self):
         out, expected = self.folder()
@@ -1837,36 +1953,82 @@ class SenderPolicyTests(unittest.TestCase):
             with self.subTest(marker=label):
                 out, expected = self.folder()
                 (out / from_intake.SENDER_POLICY).write_text(text, encoding="utf-8")
-                self.assertEqual(converter_exit(out, expected), 2)
+                self.assertEqual(converter_exit(out, expected, KNOWN), 2)
         out, expected = self.folder()
         (out / from_intake.SENDER_POLICY).unlink()
         (out / from_intake.SENDER_POLICY).mkdir()
-        self.assertEqual(converter_exit(out, expected), 2, "marker is a folder")
+        self.assertEqual(converter_exit(out, expected, KNOWN), 2, "marker is a folder")
 
     def test_marker_on_a_folder_without_held_senders_converts(self):
         # A known-senders run in which every sender was listed writes exactly these records plus the marker.
         out, expected_path, _, _, _ = genuine()["fake"]
         target = Path(_GENUINE["temp"].name) / f"marker-only-{next(COUNTER)}"
         shutil.copytree(out / "records", target / "records")
+        shutil.copytree(out / "sources", target / "sources")
         shutil.copy(genuine()["policy"][0] / from_intake.SENDER_POLICY, target / from_intake.SENDER_POLICY)
-        self.assertEqual(converter_exit(target, score.read_rows(expected_path, expected=True)), 0)
+        self.assertEqual(converter_exit(target, score.read_rows(expected_path, expected=True), KNOWN), 0)
+
+    def test_hold_membership_is_re_derived_round_3(self):
+        """Round 3, new class from #40: both copies from a LISTED sender relabelled UNKNOWN_SENDER (reader files
+        cleared, genuine marker kept) must be refused; and the reverse, a held stranger relabelled as decided."""
+        _, _, records, data, _ = genuine()["policy"]
+
+        def hold(record):
+            pair = held("UNKNOWN_SENDER")
+            record.update(pair, classification=dict(pair), needs_a_look=["UNKNOWN_SENDER"], reader_files=[])
+            record.pop("note", None)
+
+        def release(record):
+            record.update(decided("order"), classification=decided("order"), needs_a_look=[],
+                          reader_files=well_formed_reader_entries(record))
+        cases = {"listed sender held (both copies)": (["p01-known-order", "p07-known-duplicate"], ["p01-known-order", "p07-known-duplicate"], hold),
+                 "listed sender held (original only)": (["p01-known-order", "p07-known-duplicate"], ["p01-known-order"], hold),
+                 "stranger released": (["p02-unknown-order"], ["p02-unknown-order"], release)}
+        for label, (stems, changed, change) in cases.items():
+            with self.subTest(case=label):
+                root = Path(_GENUINE["temp"].name) / f"membership-{next(COUNTER)}"
+                out = root / "out"
+                (out / "records").mkdir(parents=True)
+                shutil.copy(genuine()["policy"][0] / from_intake.SENDER_POLICY, out / from_intake.SENDER_POLICY)
+                write_originals(out, [data[s] for s in stems])
+                mutated = []
+                for stem in stems:
+                    record = copy.deepcopy(records[stem])
+                    if stem in changed:
+                        change(record)
+                    mutated.append(record)
+                    (out / "records" / f"{record['record_id']}.json").write_text(json.dumps(record), encoding="utf-8")
+                expected = score.read_rows(expected_rows(root / "expected.jsonl", stems, data), expected=True)
+                self.assertFalse(Replay(root, stems, data, policy=True).reachable(mutated), "not a counterexample")
+                self.assertEqual(converter_exit(out, expected, KNOWN), 2)
+                answers = root / "answers.jsonl"
+                with contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()):
+                    code = from_intake.main(["--out", str(out), "--expected", str(root / "expected.jsonl"),
+                                             "--answers", str(answers), "--known-senders", str(known_list_file())])
+                self.assertEqual(code, 2)
+                self.assertIn("UNKNOWN_SENDER" if label.startswith("listed") else "known-senders", err.getvalue())
+                self.assertFalse(answers.exists())
 
 
 class ReviewerProducerStateTests(unittest.TestCase):
-    """B02 named instances (round-2 review), each built from genuine records and confirmed impossible by
-    the replay oracle before the converter must refuse it."""
+    """B02 named instances (round-2 and round-3 reviews), each built from genuine records and confirmed
+    impossible by the replay oracle before the converter must refuse it."""
 
-    def folder(self, stems, change):
-        _, _, records, data, _ = genuine()["fake"]
+    def check(self, stems, data, records, change, schedules=None):
         root = Path(_GENUINE["temp"].name) / f"named-{next(COUNTER)}"
         (root / "out" / "records").mkdir(parents=True)
+        write_originals(root / "out", {data[s] for s in stems})
         mutated = {stem: copy.deepcopy(records[stem]) for stem in stems}
         change(mutated)
         for stem in stems:
             (root / "out" / "records" / f"{mutated[stem]['record_id']}.json").write_text(json.dumps(mutated[stem]), encoding="utf-8")
         expected = score.read_rows(expected_rows(root / "expected.jsonl", stems, data), expected=True)
-        oracle = Replay(root, stems, data).reachable([mutated[s] for s in stems])
+        oracle = Replay(root, stems, data, schedules=schedules).reachable([mutated[s] for s in stems])
         return converter_exit(root / "out", expected), oracle
+
+    def folder(self, stems, change):
+        _, _, records, data, _ = genuine()["fake"]
+        return self.check(stems, data, records, change)
 
     def assert_impossible_and_refused(self, stems, change):
         code, oracle = self.folder(stems, change)
@@ -1943,6 +2105,68 @@ class ReviewerProducerStateTests(unittest.TestCase):
         for label, (stems, change) in cases.items():
             with self.subTest(case=label):
                 self.assert_impossible_and_refused(stems, change)
+
+    def test_round_3_source_values_are_re_derived(self):
+        """Round 3, B02 part 1 and P3: values the parser derives from the kept email, changed in the record."""
+        order = "c08-three-documents"
+
+        def manifest(field, value):
+            def change(m):
+                for a in m[order]["attachment_manifest"]:
+                    a[field] = value
+            return change
+        cases = {
+            "malformed media type token": ([order], manifest("media_type", "bad type/thing")),
+            "malformed media type token, unsupported attachment": (["c06-unnamed-octet"], lambda m: (
+                m["c06-unnamed-octet"]["attachment_manifest"][0].update(media_type="bad type/thing"))),
+            "malformed disposition token, unsupported attachment": (["c06-unnamed-octet"], lambda m: (
+                m["c06-unnamed-octet"]["attachment_manifest"][0].update(disposition="bad token"))),
+            "malformed disposition token": ([order], manifest("disposition", "bad token")),
+            "well-formed but different disposition": ([order], manifest("disposition", "inline")),
+            "well-formed but different file name": ([order], manifest("filename", "other.pdf")),
+            "source_size one byte more": ([order], lambda m: m[order].update(source_size=m[order]["source_size"] + 1)),
+            "different sender": ([order], lambda m: m[order].update(sender="Other <other@fictional.example>")),
+            "message id removed": ([order], lambda m: m[order].update(message_id=None)),
+            "PARSE_FAILED relabelled LIMIT": (["c23-not-an-email"], lambda m: m["c23-not-an-email"].update(
+                reason_code="LIMIT", needs_a_look=["LIMIT"])),
+        }
+        for label, (stems, change) in cases.items():
+            with self.subTest(case=label):
+                self.assert_impossible_and_refused(stems, change)
+
+    def test_round_3_identical_malformed_emails_one_relabelled_limit(self):
+        """Round 3, P3: two copies of one malformed email are both PARSE_FAILED; one relabelled LIMIT."""
+        raw = b"not an email at all"
+        data = {"bad-a": raw, "bad-b": raw}
+        root = Path(_GENUINE["temp"].name) / f"two-malformed-{next(COUNTER)}"
+        records = run_calls(root / "drop", root / "out", [list(data)], data, {})
+        self.assertEqual({r["reason_code"] for r in records.values()}, {"PARSE_FAILED"})
+        expected = score.read_rows(expected_rows(root / "expected.jsonl", list(data), data), expected=True)
+        self.assertEqual(converter_exit(root / "out", expected), 0)
+        code, oracle = self.check(list(data), data, records, lambda m: m["bad-b"].update(reason_code="LIMIT", needs_a_look=["LIMIT"]))
+        self.assertFalse(oracle)
+        self.assertEqual(code, 2)
+
+    def test_round_3_four_copy_chain_cannot_bypass_a_lower_id_copy(self):
+        """Round 3, B02 part 2: A <- B <- C <- D over four calls (ids D < C < B < A). D pointing at A instead
+        of C is a folder no sequence of runner calls writes (C has the lowest earlier id when D is added)."""
+        stems, data, calls, records, _ = multi_run_corpus()["chain"]
+        a, b, c, d = stems
+        every = list(run_sequences(stems))
+        code, oracle = self.check(stems, data, records, lambda m: None, schedules=every)
+        self.assertEqual((code, oracle), (0, True), "the genuine chain must convert")
+        code, oracle = self.check(stems, data, records, lambda m: m[d].update(duplicate_of=records[a]["record_id"]),
+                                  schedules=every)
+        self.assertFalse(oracle, "the runner can write this; the case is not a counterexample")
+        self.assertEqual(code, 2)
+        # Genuine alternative histories are accepted, like the oracle: D -> B (A; B; then C and D in one call,
+        # both find B first) and C -> A (A; then B and C in one call, both find only A; then D finds C first).
+        for label, stem, target in (("D -> B", d, b), ("C -> A", c, a)):
+            with self.subTest(case=label):
+                code, oracle = self.check(stems, data, records,
+                                          lambda m, s=stem, t=target: m[s].update(duplicate_of=records[t]["record_id"]),
+                                          schedules=every)
+                self.assertEqual((code, oracle), (0, True))
 
 
 class EndToEndTests(unittest.TestCase):
