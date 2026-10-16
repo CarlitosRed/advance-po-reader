@@ -1,5 +1,5 @@
 {
-  "_about": "Retrofit translation (skills/retrofit-project, 2026-10-15) of tools/gate/gate.json into the framework's generic schema (tools/gate/gate.schema.md at the pinned tag). DOCUMENTATION ONLY -- this file is NOT wired to anything yet. The actually-enforcing gate stays tools/gate/po_gate.py reading tools/gate/gate.json, untouched. Moving enforcement onto tools/gate/gate.py is a separate, later decision (framework-map.md calls it a later, separate step after F2).",
+  "_about": "Retrofit translation (skills/retrofit-project, 2026-10-15) of tools/gate/gate.json into the framework's generic schema (tools/gate/gate.schema.md at the pinned tag). LIVE as of the gate cutover (PR #52, 2026-10-16): CI (.github/workflows/*) and the pre-push hook now call the pinned tools/gate/gate.py with --config pointing at this file, and ROLES.md documents it as the real merge path. tools/gate/po_gate.py and its own tools/gate/gate.json are retired, kept only per the framework's migration note ('keep the old gate file until the next PR removes it'), not deleted.",
   "_fields_needing_a_decision_before_this_could_go_live": [
     "vendors.*.names: the generic gate.py's config loader HARD-REQUIRES this to be non-empty (confirmed 2026-10-15 by actually running it: 'ERROR: config vendors[\"anthropic\"].names must not be empty' -- it will not even load otherwise). This project's signatures are 100% legacy format and these names are never actually used in a real comment; the two placeholder values below exist ONLY to satisfy the loader. Real recognition is carried entirely by legacy_signers. Flagged as friction (agent-orchestration#15): a project that is 100% legacy-format cannot produce a config the loader accepts without inventing unused placeholder names -- gate.schema.md doesn't document this as a hard requirement.",
     "magic and secrets: diffed 2026-10-15 against tools/gate/po_gate.py's own built-in MAGIC/SECRETS lists, byte-for-byte and pattern-for-pattern. IDENTICAL, all 8 magic signatures and all 4 secret patterns. No longer a guess -- confirmed safe to leave at schema default.",
@@ -28,6 +28,7 @@
     ".github/*",
     ".githooks/*",
     ".claude/*",
+    ".orchestration/*",
     "tools/gate/*",
     "backend/providers.py",
     "po_reader/model_provider.py",
