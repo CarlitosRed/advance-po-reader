@@ -12,4 +12,4 @@ no benefit; a pointer costs nothing and breaks nothing.
 
 Same cross-repo structural note as `desk.md` in this folder: the adapter spec
 assumes one repo per project, this project splits product code (here) from
-its ops log (`project-notes`) by Carlos's own long-standing design.
+its ops log (`project-notes`) by the Program Owner's own long-standing design.

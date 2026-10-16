@@ -12,18 +12,18 @@ touching `.orchestration/roles.md` would not trip the Tier-3 rule that
 the real file.
 
 Quick orientation only (not a substitute for reading `ROLES.md`):
-- **Carlos** -- Technical Owner (human). Vetoes with `hold`. Approves Tier 3
+- **The Program Owner** -- Technical Owner (human). Vetoes with `hold`. Approves Tier 3
   himself, in his own comment, never an agent.
 - **Claudio / Claude** (Anthropic, branch prefix `claude/`) and **Codex / Chat**
   (OpenAI, branch prefixes `codex/`, `chat/`) fill the PM, reviewer and builder
   roles. One chat, one job; the author never reviews its own work.
 - Four tiers: 1 (docs/README, no go, no approval), 2 (code/tests/config, plan
   go + one cross-vendor approval), 3 (protected paths -- money and trust --
-  same as 2 plus Carlos's own typed approval), 4 (billing, spend, credentials,
+  same as 2 plus the Program Owner's own typed approval), 4 (billing, spend, credentials,
   production, deletion -- humans only, never a pull request).
 - Launch limits / usage ceilings for Claude helpers: not written down as a
   fixed number anywhere in `ROLES.md` itself at this retrofit's date; the
-  working ceiling has moved by Carlos's verbal say-so several times this month
+  working ceiling has moved by the Program Owner's verbal say-so several times this month
   (see `project-notes\advance-po-reader\decisions.md`, rows for 2026-10-08 and
   2026-10-13). **UNKNOWN: no single current-ceiling fact to point to** -- this
   is a real gap, not a guess avoided for form's sake. Whoever needs the current

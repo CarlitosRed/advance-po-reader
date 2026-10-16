@@ -12,7 +12,7 @@ Nobody changes the project directly. Every change is a **pull request**: a propo
 1. The **author** (a person or an AI chat) works on its own branch and in its own copy of the folder.
 2. A **different** reviewer from the **other AI company** reads the change and writes either "go" on the plan, or "Approved at `<commit>`" on the exact version it checked. Anthropic's Claude work is reviewed by OpenAI's Codex, and the reverse. The author never approves its own work.
 3. **Automatic checks** (CI) run the tests and scan for forbidden files and secrets.
-4. For changes that touch money or trust (the rules, the model prompt, scripts, security files), **Carlos** types his own approval.
+4. For changes that touch money or trust (the rules, the model prompt, scripts, security files), **the Program Owner** types his own approval.
 5. The merge happens only through a small **gate** program that checks all of the above against the exact version being merged and writes a record into the history. (This is the rule for landing on `main`. The version 1 route into the integration branch is the one exception; see the table below.)
 6. Any new push after an approval cancels the approval: the reviewer must look again.
 
@@ -23,7 +23,7 @@ sequenceDiagram
   participant A as Author chat
   participant R as Reviewer from the other company
   participant CI as Automatic checks
-  participant C as Carlos
+  participant C as Program Owner
   participant G as Merge gate
   PM->>A: Task card with tier and allowed files
   A->>R: Draft pull request with the plan only
@@ -33,7 +33,7 @@ sequenceDiagram
   A->>CI: Evidence and cost filled in, marked ready
   CI->>A: Tests and scan pass
   R->>A: Approved at commit abc1234
-  C->>A: Tier 3 only, Carlos types his approval
+  C->>A: Tier 3 only, the Program Owner types his approval
   A->>G: merge command
   G->>G: Re-check every rule on the exact head
   G->>A: Squash merge with a Gate-Record line
@@ -87,14 +87,14 @@ gitGraph
 | --- | --- | --- |
 | Where the v1 code is | Spread over six stacked pull requests (#13, #14, #15, #16, #18, #19), plus #21. Five of the six have their own approval by Codex; #14 has none of its own and merges as a stack with #15 (the private project notes, not in this repository, 2026-10-07). #21 was approved by Codex at `51e79cc` | Together on `main` (version 1 landed as commit `3e23801`, tag `poc-v1`). Before that, on the branch `integration/ui-and-matching` (head `a76aa4a`; it contains #21 as `a9c6fe3`), which still exists but is no longer the place to clone |
 | In `main` | No | **Yes.** Version 1 landed on `main` as commit `3e23801` and is tagged `poc-v1` |
-| Done for version 1 | | Carlos's choice (recorded 2026-10-07 in the private project notes, not in this repository): PR #21 was merged into `integration/ui-and-matching` as `a9c6fe3`, **without the merge gate** (the gate only merges pull requests aimed at `main`); the merge commit's message says "Merged into integration/ui-and-matching on Carlos's option A (no gate, not main)". |
+| Done for version 1 | | The Program Owner's choice (recorded 2026-10-07 in the private project notes, not in this repository): PR #21 was merged into `integration/ui-and-matching` as `a9c6fe3`, **without the merge gate** (the gate only merges pull requests aimed at `main`); the merge commit's message says "Merged into integration/ui-and-matching on Carlos's option A (no gate, not main)" (left as the commit actually reads -- a real git commit message is history, not prose this doc controls). |
 | Tag | | `poc-v1` marks the landing commit on `main` |
-| Landing on `main` | | Went through the pull request, review and merge gate described below, with Carlos typing the Tier 3 approvals himself |
+| Landing on `main` | | Went through the pull request, review and merge gate described below, with the Program Owner typing the Tier 3 approvals himself |
 
 ## The three levels (tiers) of a change
 From `ROLES.md`. Every pull request carries exactly one label.
 
-| Tier | What it covers | Needs plan "go" | Needs approval | Needs Carlos |
+| Tier | What it covers | Needs plan "go" | Needs approval | Needs Program Owner |
 | --- | --- | --- | --- | --- |
 | 1 | Only the `docs` folder and `README.md` | no | none | no |
 | 2 | Code, tests, configuration | yes | one, from the other company | no |
@@ -104,10 +104,10 @@ From `ROLES.md`. Every pull request carries exactly one label.
 The gate raises a label that is too low and never lowers one. A documentation-only change that touches only `docs/` and `README.md` is in the Tier 1 area and goes into `main` through the normal merge gate.
 
 ## What the merge gate checks (`tools/gate/po_gate.py check <PR>`)
-State (open, not a draft, aimed at `main`); no active `hold` from anyone; a valid tier label; no forbidden files (PDFs, images, model files, keys, `.env*`, data folders) and fewer than 100 changed files; the required automatic checks passed on the exact head (`tests`, `gate-tests`, `scan`); for Tiers 2 and 3 a plan section, an evidence section and a cost section, a signed "go", and a signed "Approved at `<commit>`" matching the head from the other company; for Tier 3 Carlos's own approval of that commit. `merge` then squash-merges that exact commit and writes `Gate-Record: pass tier=N head=... reviewers=... owner=... by=...` into the history. The `Gate audit` workflow runs after every push to `main` and opens an issue if any new commit lacks that record.
+State (open, not a draft, aimed at `main`); no active `hold` from anyone; a valid tier label; no forbidden files (PDFs, images, model files, keys, `.env*`, data folders) and fewer than 100 changed files; the required automatic checks passed on the exact head (`tests`, `gate-tests`, `scan`); for Tiers 2 and 3 a plan section, an evidence section and a cost section, a signed "go", and a signed "Approved at `<commit>`" matching the head from the other company; for Tier 3 the Program Owner's own approval of that commit. `merge` then squash-merges that exact commit and writes `Gate-Record: pass tier=N head=... reviewers=... owner=... by=...` into the history. The `Gate audit` workflow runs after every push to `main` and opens an issue if any new commit lacks that record.
 
 ## What can still go wrong (honest limits, stated in `ROLES.md`)
-- **Everyone posts as one GitHub account.** Chats sign their comments by name (for example "Codex · PR review:"), but the gate cannot prove who wrote a comment, and comments can be edited. Carlos's `hold` and the audit are the backstop.
+- **Everyone posts as one GitHub account.** Chats sign their comments by name (for example "Codex · PR review:"), but the gate cannot prove who wrote a comment, and comments can be edited. The Program Owner's `hold` and the audit are the backstop.
 - **The gate cannot stop a manual merge** by someone holding the account's credentials; the audit would flag it afterwards.
 - **It checks the commit, not the code.** A reviewer who approves a bad change still approves it.
 - A merge conflict can silently void an approval; PR #11 (T-012) is the open fix, and it is a version 2 item.
@@ -118,7 +118,7 @@ On `main`: `backend-goal-checks.yml` (job `backend-goal`: the whole backend test
 ## The people and chats (from `ROLES.md`)
 | Name | Role | Company |
 | --- | --- | --- |
-| Carlos | Technical owner; vetoes with `hold`; approves Tier 3; owns billing, keys, production, deletion | human |
+| The Program Owner | Technical owner; vetoes with `hold`; approves Tier 3; owns billing, keys, production, deletion | human |
 | Claudio PM | Delivery lead: task cards, briefs, the only writer of shared notes | Anthropic |
 | Claudio IT | Platform and release: folders, GitHub housekeeping, CI, the gate | Anthropic |
 | Claudio PR review / Codex PR review | Independent reviewers; never push or merge | Anthropic / OpenAI |

@@ -35,7 +35,7 @@ Wait for **Free POC ready**, open [http://127.0.0.1:8020/poc-demo](http://127.0.
 No `data\` folder is needed beforehand: private runtime files are created locally.
 Files under `data\`, including the old CLI's `catalog-seed.json`, are private and
 are never in Git; the demo uses the fictional files under `fixtures/poc-demo/`.
-The separate live OpenAI mode on Carlos's machine needs Carlos's private key and
+The separate live OpenAI mode on the Program Owner's machine needs the Program Owner's private key and
 authorization. Never request or share keys in chat or files, and never copy his
 credentials to a teammate's machine. See the [demo runbook](docs/poc-demo-runbook.md)
 for the free workflow and its limits.
