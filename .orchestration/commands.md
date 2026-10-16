@@ -21,18 +21,31 @@ python -m pytest -m goal -q --tb=short --goal-scorecard=goal-scorecard-ci.md --j
 python -m unittest discover -s tools\gate -p "test_po_gate.py" -v
 ```
 
+## One-time per desk: clone the pinned framework
+Cut over 2026-10-15: the gate itself now lives in the framework repo, not this
+one. Every command below needs a local, shallow clone at this project's pinned
+tag, once per desk (gitignored, never committed):
+```powershell
+$pin = Get-Content .orchestration\framework.pin -Raw
+# repo: <url>  /  tag: <tag> -- parse both lines, then:
+git clone --depth 1 --branch <tag from framework.pin> <repo from framework.pin> .framework-pin
+```
+CI does this fresh on every run (see `.github\workflows\*.yml`); a desk does it
+once and re-clones only when `framework.pin`'s tag changes.
+
 ## Scan (required check, gate-enforced)
 ```powershell
-python tools\gate\po_gate.py scan --rev HEAD
+python .framework-pin\tools\gate\gate.py --config .orchestration\gate.json scan --rev HEAD
 ```
+Retired predecessor (kept in the repo, no longer enforced): `python tools\gate\po_gate.py scan --rev HEAD`.
 
 ## Gate (merge, check, audit -- see ROLES.md for who runs what, when)
 ```powershell
-python tools\gate\po_gate.py check <PR>
-python tools\gate\po_gate.py merge <PR> --as "<chat name>" --dry-run
-python tools\gate\po_gate.py merge <PR> --as "<chat name>"
-python tools\gate\po_gate.py paths
-python tools\gate\po_gate.py audit --range <old>..<new>
+python .framework-pin\tools\gate\gate.py --config .orchestration\gate.json check <PR>
+python .framework-pin\tools\gate\gate.py --config .orchestration\gate.json merge <PR> --as "<chat name>" --dry-run
+python .framework-pin\tools\gate\gate.py --config .orchestration\gate.json merge <PR> --as "<chat name>"
+python .framework-pin\tools\gate\gate.py --config .orchestration\gate.json audit --range <old>..<new>
+python .framework-pin\tools\gate\gate.py --config .orchestration\gate.json paths
 ```
 
 ## The free demo launcher
